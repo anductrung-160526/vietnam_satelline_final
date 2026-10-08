@@ -87,7 +87,7 @@ jobs:
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
       # Dùng 1 để kiểm tra ổn định trước khi tăng tốc.
-      VNGIS_EE_CONCURRENCY: "1"
+      VNGIS_EE_CONCURRENCY: "2"
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
