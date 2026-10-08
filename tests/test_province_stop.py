@@ -27,7 +27,8 @@ def admin_table():
 class ProvinceStopTests(unittest.TestCase):
     def setUp(self):
         self.admin = admin_table()
-        for name, value in (("MODE", "full"), ("STOP_AFTER_PROVINCE", "Cần Thơ"),
+        for name, value in (("MODE", "full"), ("START_FROM_PROVINCE", ""), ("PROVINCE_ORDER", "gadm"),
+                            ("STOP_AFTER_PROVINCE", "Cần Thơ"),
                             ("STOP_EVENT", threading.Event()), ("STOP_REASON", [None]),
                             ("MAX_ATTEMPTS", 3)):
             p = patch.object(v, name, value)
@@ -101,7 +102,8 @@ class ProvinceMainTests(unittest.TestCase):
         self.addCleanup(self.root.cleanup)
 
         values = {
-            "MODE": "full", "STOP_AFTER_PROVINCE": "Cần Thơ", "MAX_ATTEMPTS": 3,
+            "MODE": "full", "START_FROM_PROVINCE": "", "PROVINCE_ORDER": "gadm",
+            "STOP_AFTER_PROVINCE": "Cần Thơ", "MAX_ATTEMPTS": 3,
             "LOCAL_ROOT": self.root.name, "PREFLIGHT": False, "MAX_RUNTIME_SEC": 0,
             "STOP_EVENT": threading.Event(), "STOP_REASON": [None],
             "ADMIN_DF": None, "ADMIN_BY_GID": {}, "PARTS_STAMP": None, "STATUS_FILE": None,

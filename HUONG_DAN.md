@@ -1,4 +1,8 @@
-# Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions
+# Hướng dẫn cho nhánh Cao Bằng–Hà Nội
+
+**Nhánh này dùng [SETUP_CAO_BANG_HA_NOI.md](SETUP_CAO_BANG_HA_NOI.md)**: project `vngis-ee-cao-bang-hanoi`, phạm vi 11 tỉnh từ Cao Bằng đến Hà Nội theo alphabet, đầu ra `VNGISDash_2024_Cao Bang_Ha Noi` trên Drive `adt.wqiqc@gmail.com`, hai secrets riêng. Các mục bên dưới là tài liệu phiên bản cũ; không áp dụng project, secrets, phạm vi hoặc thư mục đầu ra cũ cho nhánh này.
+
+# Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions (bản cũ)
 
 Pipeline chạy notebook `VNGISDash_Task123_Merged_final.ipynb` (chỉ 3 chức năng: trích chỉ số ảnh ngày và đêm, lấy tif ngày, lấy tif đêm) cho toàn bộ xã/phường (GADM 4.1 cấp 3), 12 tháng năm 2024, và ghi kết quả lên Google Drive. Mỗi lượt chạy khoảng 5 giờ 15 phút, hết lượt thì tự gọi lượt kế tiếp. Trạng thái nằm trên Drive nên lượt sau làm tiếp đúng chỗ dừng, bạn có thể tắt máy.
 
