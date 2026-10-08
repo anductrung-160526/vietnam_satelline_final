@@ -1,0 +1,3 @@
+Temporary orderly stop to activate the Can Tho province boundary.
+Wait for the current workflow to finish its final Drive sync.
+Then remove this file and run the full workflow with stop_after_province set to Can Tho.
