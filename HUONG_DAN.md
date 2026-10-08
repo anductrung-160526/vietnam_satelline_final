@@ -121,6 +121,12 @@ Các dòng "Đối chiếu ..." phải PASS: CSV lệch tối đa 1e-6; ảnh tr
 
 ## 7. Chạy toàn quốc
 
+Workflow hiện có trường `stop_after_province`, mặc định **Cần Thơ**. Với `mode=full`, pipeline xử lý theo thứ tự mã GADM, hoàn tất từng tỉnh trước khi chuyển tỉnh, chỉ chạy các tỉnh đến hết Cần Thơ rồi đồng bộ Drive và thoát với mã 0. Không xếp việc của các tỉnh sau điểm dừng. Nhập tên tỉnh (có/không dấu, có/không khoảng trắng) hoặc GID_1; để trống trường này khi muốn chạy toàn quốc.
+
+Nếu một lượt hết thời gian, workflow nối lượt và giữ nguyên điểm dừng Cần Thơ. Xã đã `done` được bỏ qua khi chạy tiếp. Nếu có xã không hoàn tất nhưng đã hết số lượt thử, hoặc không có trong asset, pipeline dừng báo lỗi thay vì coi tỉnh đã xong và chạy sang tỉnh kế tiếp.
+
+Mã mới chỉ áp dụng từ lượt chạy mới. Với lượt đang chạy, tạo `STOP` ở repository để dừng có trật tự, chờ đồng bộ và thoát, cập nhật mã rồi xóa `STOP`. Chọn **Run workflow**, `mode=full`, `stop_after_province=Cần Thơ` để tiếp tục trạng thái trên Drive. Không xóa dữ liệu hoặc trạng thái cũ.
+
 Sau khi thí điểm PASS: **Run workflow** với `mode` = `full`, `workers` = `8`. Kết quả ghi vào **`VNGISDash_2024`**.
 
 Theo dõi:

@@ -34,6 +34,12 @@ on:
         required: false
         default: "2"
 
+      stop_after_province:
+        description: "Chế độ full: chạy đến hết tỉnh này rồi dừng; để trống để chạy toàn quốc"
+        required: false
+        type: string
+        default: "Cần Thơ"
+
 concurrency:
   group: vngis-2024
   cancel-in-progress: false
@@ -47,6 +53,7 @@ env:
   VNGIS_PILOT_N: ${{ inputs.pilot_n }}
   VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024' || 'VNGISDash_2024_PILOT' }}
   VNGIS_RCLONE_REMOTE: gdrive
+  VNGIS_STOP_AFTER_PROVINCE: ${{ inputs.stop_after_province }}
 
 jobs:
   gate:
@@ -276,6 +283,7 @@ jobs:
         if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
         env:
           GH_TOKEN: ${{ github.token }}
+          STOP_AFTER_PROVINCE_INPUT: ${{ inputs.stop_after_province }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP" \
@@ -287,7 +295,8 @@ jobs:
               --ref "$GITHUB_REF_NAME" \
               -f mode="${{ inputs.mode }}" \
               -f pilot_n="${{ inputs.pilot_n }}" \
-              -f workers="${{ inputs.workers }}"
+              -f workers="${{ inputs.workers }}" \
+              -f stop_after_province="$STOP_AFTER_PROVINCE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

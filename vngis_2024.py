@@ -14,8 +14,8 @@ Cấu trúc đầu ra (cấp 1 = thư mục trên Drive):
   _control/                                         (trạng thái, log, báo cáo)
 
 Tăng tốc so với notebook (không đổi công thức, tham số): Task 1 và Task 3.2 gom 12 tháng thành 1 lần gọi
-Earth Engine; việc kiểm tra "tháng có ảnh không" của Task 2/3.1 gom thành 1 lần gọi; 24 ảnh của một xã
-tải song song.
+Earth Engine; việc kiểm tra "tháng có ảnh không" của Task 2/3.1 gom thành 1 lần gọi; truy vấn và tải ảnh
+tuân theo một giới hạn đồng thời chung để hỗ trợ project ở Restricted Mode.
 
 Chạy:
     python vngis_2024.py               chạy pipeline
@@ -25,7 +25,8 @@ Mã thoát: 0 xong toàn bộ | 1 lỗi cấu hình hoặc preflight | 2 sự c�
 """
 
 import os, io, re, sys, json, time, glob, math, shutil, zipfile, signal, logging, calendar, struct
-import threading, subprocess, unicodedata, warnings
+import threading, subprocess, unicodedata, warnings, random
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -51,7 +52,7 @@ def _env(name, default, cast=str):
 YEAR = 2024
 MONTHS = list(range(1, 13))
 
-PROJECT_ID = "digital-vietnam-earth"                               # notebook cell 11
+PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-2")               # project chịu quota Earth Engine
 ASSET_ID = f"projects/{PROJECT_ID}/assets/communes_l3"             # notebook cell 11
 
 MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
@@ -60,6 +61,7 @@ if MODE not in ("pilot", "full"):
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
+STOP_AFTER_PROVINCE = _env("VNGIS_STOP_AFTER_PROVINCE", "")
 
 # Ảnh ngày: số kênh lưu vào tif. 6 = BLUE..SWIR2 (NDVI, NDBI, MNDWI, BSI tính lại được từ 6 kênh này);
 # 10 = đủ 10 kênh như notebook (file lớn gần gấp đôi).
@@ -77,11 +79,12 @@ if DAY_SCALE_INV not in (1000, 10000):
     raise SystemExit("VNGIS_DAY_SCALE phải là 10000 hoặc 1000")
 DAY_NODATA = -32768
 
-N_WORKERS = _env("VNGIS_WORKERS", 8, int)                         # số xã chạy song song
-if MODE == "pilot":
-    N_WORKERS = max(N_WORKERS, min(PILOT_N, 16))                  # thí điểm: mọi xã chạy cùng lúc
-MONTH_THREADS = _env("VNGIS_MONTH_THREADS", 12, int)              # số ảnh tải song song trong 1 xã
-EE_CONCURRENCY = _env("VNGIS_EE_CONCURRENCY", 24, int)            # tổng số lệnh gọi EE cùng lúc
+N_WORKERS = _env("VNGIS_WORKERS", 2, int)                         # số xã chạy song song
+MONTH_THREADS = _env("VNGIS_MONTH_THREADS", 2, int)               # số ảnh tải song song trong 1 xã
+EE_CONCURRENCY = _env("VNGIS_EE_CONCURRENCY", 1, int)             # giới hạn CHUNG truy vấn và tải ảnh
+EE_MAX_RETRIES = _env("VNGIS_EE_MAX_RETRIES", 8, int)
+if min(N_WORKERS, MONTH_THREADS, EE_CONCURRENCY, EE_MAX_RETRIES) < 1:
+    raise SystemExit("VNGIS_WORKERS, VNGIS_MONTH_THREADS, VNGIS_EE_CONCURRENCY và VNGIS_EE_MAX_RETRIES phải >= 1")
 RUN_ID = _env("VNGIS_RUN_ID", "local")
 MAX_RUNTIME_SEC = _env("VNGIS_MAX_RUNTIME_SEC", 0, int)
 EE_KEY_FILE = _env("VNGIS_EE_KEY_FILE", "")
@@ -95,7 +98,8 @@ MAX_TILE_SPLIT = 8
 TILING_OK = [True]
 
 EE_SEM = threading.BoundedSemaphore(EE_CONCURRENCY)
-DL_SEM = threading.BoundedSemaphore(EE_CONCURRENCY)
+_ee_cooldown_lock = threading.Lock()
+_ee_cooldown_until = 0.0
 
 DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", "VNGISDash_2024_PILOT" if MODE == "pilot" else "VNGISDash_2024")
 RCLONE_REMOTE = _env("VNGIS_RCLONE_REMOTE", "gdrive")
@@ -257,7 +261,7 @@ def init_earth_engine():
             email = json.load(f)["client_email"]
         EE_CREDENTIALS = ee.ServiceAccountCredentials(email, EE_KEY_FILE)
         ee.Initialize(credentials=EE_CREDENTIALS, **kwargs)
-        log.info(f"Earth Engine sẵn sàng: service account {email}, endpoint "
+        log.info(f"Earth Engine sẵn sàng: project={PROJECT_ID}, service account {email}, endpoint "
                  f"{'high-volume' if EE_HIGH_VOLUME else 'standard'}.")
     else:
         ee.Initialize(**kwargs)
@@ -265,7 +269,7 @@ def init_earth_engine():
             EE_CREDENTIALS = ee.data.get_persistent_credentials()
         except Exception:
             EE_CREDENTIALS = None
-        log.info("Earth Engine sẵn sàng (tài khoản cá nhân).")
+        log.info(f"Earth Engine sẵn sàng: project={PROJECT_ID} (tài khoản cá nhân).")
     ee.data.setDeadline(EE_DEADLINE_SEC * 1000)
     communes_fc = ee.FeatureCollection(ASSET_ID)
 
@@ -340,8 +344,7 @@ VIIRS_B = "NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG"
 
 
 def ee_getinfo(obj):
-  with EE_SEM:
-    return obj.getInfo()
+  return _ee_call(obj.getInfo)
 
 
 # ---------- Kế hoạch tải: 1 lần gọi cho cả 12 tháng ----------
@@ -516,6 +519,63 @@ class TooLargeError(RuntimeError):
     pass
 
 
+class _RetryableEEError(RuntimeError):
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(value):
+    if not value:
+        return 0.0
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+
+
+def _wait_ee_cooldown():
+    while True:
+        check_stop()
+        with _ee_cooldown_lock:
+            remaining = _ee_cooldown_until - time.monotonic()
+        if remaining <= 0:
+            return
+        STOP_EVENT.wait(min(remaining, 60))
+
+
+def _ee_call(call, max_retry=EE_MAX_RETRIES):
+    """Một hạn mức cho getInfo, tạo URL và tải ảnh; mọi luồng cùng nghỉ khi gặp 429."""
+    global _ee_cooldown_until
+    last = None
+    for attempt in range(max_retry):
+        check_stop()
+        with EE_SEM:
+            _wait_ee_cooldown()
+            try:
+                return call()
+            except (ee.EEException, requests.RequestException, _RetryableEEError) as exc:
+                kind = _classify(str(exc))
+                if kind == "too_large":
+                    raise TooLargeError(str(exc)) from exc
+                if kind == "permanent":
+                    raise PermanentError(str(exc)) from exc
+                last = exc
+                delay = max(min(60, 5 * 2 ** attempt) + random.uniform(0, 5),
+                            _retry_after_seconds(getattr(exc, "retry_after", None)))
+                if kind == "rate_limit":
+                    with _ee_cooldown_lock:
+                        _ee_cooldown_until = max(_ee_cooldown_until, time.monotonic() + delay)
+        if attempt + 1 < max_retry:
+            log.warning(f"Earth Engine {'HTTP 429 / quá hạn mức' if kind == 'rate_limit' else 'lỗi tạm thời'}: "
+                        f"chờ {delay:.1f}s, thử lại {attempt + 2}/{max_retry}.")
+            STOP_EVENT.wait(delay)
+    raise RuntimeError(f"Earth Engine thất bại sau {max_retry} lần: {last}") from last
+
+
 def _dl_record(ok, err=None):
     trip = False
     with _dl_lock:
@@ -547,6 +607,8 @@ def _http_get(url, timeout=600):
 
 def _classify(msg):
     low = msg.lower()
+    if re.search(r"\b429\b", low) or "too many requests" in low or "concurrency limit" in low:
+        return "rate_limit"
     if any(k in low for k in _TOO_LARGE_ERR):
         return "too_large"
     if any(k in low for k in _PERMANENT_ERR):
@@ -554,52 +616,26 @@ def _classify(msg):
     return "transient"
 
 
-def fetch_geotiff_bytes(img, region, scale, max_retry=4):
+def fetch_geotiff_bytes(img, region, scale, max_retry=EE_MAX_RETRIES):
     """Đúng tham số notebook cell 21. Trả bytes GeoTIFF; lỗi nào cũng kèm mã HTTP và nội dung."""
-    last = None
-    for attempt in range(max_retry):
-        check_stop()
-        try:
-            with EE_SEM:
-                url = img.getDownloadURL({"region": region, "scale": scale, "crs": "EPSG:4326",
-                                          "format": "GEO_TIFF", "filePerBand": False})
-        except ee.EEException as exc:
-            kind = _classify(str(exc))
-            if kind == "too_large":
-                raise TooLargeError(str(exc))
-            if kind == "permanent":
-                raise PermanentError(f"getDownloadURL bị từ chối: {exc}")
-            last = f"getDownloadURL: {exc}"
-            time.sleep(5 * (attempt + 1))
-            continue
-        try:
-            with DL_SEM:
-                r = _http_get(url)
-        except requests.RequestException as exc:
-            last = f"mạng: {exc}"
-            time.sleep(5 * (attempt + 1))
-            continue
+    def fetch_once():
+        url = img.getDownloadURL({"region": region, "scale": scale, "crs": "EPSG:4326",
+                                  "format": "GEO_TIFF", "filePerBand": False})
+        r = _http_get(url)
         if r.status_code >= 400:
             body = (r.text or "")[:400].replace("\n", " ")
             msg = f"HTTP {r.status_code}: {body}"
-            kind = _classify(msg) if r.status_code not in (401, 403) else "permanent"
-            if kind == "too_large":
-                raise TooLargeError(msg)
-            if kind == "permanent":
+            if r.status_code in (401, 403):
                 raise PermanentError(msg)
-            last = msg
-            time.sleep(5 * (attempt + 1))
-            continue
+            raise _RetryableEEError(msg, r.headers.get("Retry-After"))
         data = r.content
         if data[:2] == b"PK":                       # đôi khi EE trả về file zip (notebook cell 21)
             z = zipfile.ZipFile(io.BytesIO(data))
             data = z.read([n for n in z.namelist() if n.lower().endswith(".tif")][0])
         if len(data) < 200:
-            last = f"file tải về chỉ {len(data)} byte"
-            time.sleep(5 * (attempt + 1))
-            continue
+            raise _RetryableEEError(f"file tải về chỉ {len(data)} byte")
         return data
-    raise RuntimeError(f"Tải thất bại sau {max_retry} lần: {last}")
+    return _ee_call(fetch_once, max_retry)
 
 
 def _grid_offset(a, b, res):
@@ -744,7 +780,7 @@ def _rewrite_bytes_to_tif(data, path, writer):
 
 
 def _bbox(region):
-    coords = region.bounds(maxError=1).getInfo()["coordinates"][0]
+    coords = ee_getinfo(region.bounds(maxError=1))["coordinates"][0]
     xs, ys = [c[0] for c in coords], [c[1] for c in coords]
     return min(xs), min(ys), max(xs), max(ys)
 
@@ -1211,12 +1247,31 @@ def natural_sort_key(gid_str):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(gid_str))]
 
 
+def province_boundary(admin, requested):
+    """Chọn điểm dừng theo GID_1 hoặc tên tỉnh, hỗ trợ tên có/không dấu và khoảng trắng."""
+    provinces = admin[["GID_1", "NAME_1"]].drop_duplicates()
+    key = normalize_str_t1(requested.strip())
+    matches = provinces[
+        (provinces["GID_1"] == requested.strip())
+        | (provinces["NAME_1"].map(normalize_str_t1) == key)
+    ]
+    ids = matches["GID_1"].unique()
+    if len(ids) != 1:
+        raise ValueError(f"Tỉnh dừng '{requested}' không khớp duy nhất với GADM. "
+                         "Nhập đúng NAME_1 hoặc GID_1 của tỉnh.")
+    ordered = sorted(provinces["GID_1"].unique(), key=natural_sort_key)
+    return set(ordered[:ordered.index(ids[0]) + 1])
+
+
 def load_targets(admin):
     """Không chọn tỉnh, xã bằng tay. full: mọi xã. pilot: tự lấy PILOT_N xã đầu tiên theo thứ tự mã,
     xen kẽ phường (đô thị) và xã (nông thôn) để thử cả hai loại; thiếu loại nào thì lấy bù theo thứ tự."""
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_3"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
+        if STOP_AFTER_PROVINCE:
+            allowed = province_boundary(admin, STOP_AFTER_PROVINCE)
+            df = df[df["GID_1"].isin(allowed)].reset_index(drop=True)
         return df
     t = df["TYPE_3"].str.strip().str.lower()
     pools = [list(df.index[t == "phường"]), list(df.index[t == "xã"])]
@@ -1336,6 +1391,33 @@ OUTAGE_SLEEP_SEC = 900
 MAX_OUTAGES = 8
 
 
+class ProvinceIncompleteError(RuntimeError):
+    pass
+
+
+def next_round_jobs(gids, rows, statuses):
+    """Khi có điểm dừng, chỉ xếp việc của một tỉnh; không chạy vượt qua tỉnh còn lỗi."""
+    if MODE != "full" or not STOP_AFTER_PROVINCE:
+        return [(g, rows[g], "full") for g in gids if not core_finished(statuses.get(g))]
+
+    provinces = sorted({rows[g]["GID_1"] for g in gids}, key=natural_sort_key)
+    for province in provinces:
+        members = [g for g in gids if rows[g]["GID_1"] == province]
+        incomplete = [g for g in members if (statuses.get(g) or {}).get("status") != "done"]
+        if not incomplete:
+            continue
+        blocked = [g for g in incomplete if core_finished(statuses.get(g))]
+        if blocked:
+            name = rows[members[0]]["NAME_1"]
+            raise ProvinceIncompleteError(
+                f"Tỉnh {name} ({province}) còn {len(blocked)} xã không hoàn tất "
+                f"nhưng đã hết lượt thử hoặc không có trong asset (ví dụ {blocked[0]}). "
+                "Dừng để xử lý lỗi; không chuyển sang tỉnh tiếp theo. Xem _control/progress.csv."
+            )
+        return [(g, rows[g], "full") for g in incomplete]
+    return []
+
+
 def run_round(jobs, statuses):
     """jobs: list (gid, row, kind)."""
     t0 = time.time()
@@ -1430,7 +1512,7 @@ def main():
     STATUS_FILE = L(D_STATUS, f"status_{PARTS_STAMP}.jsonl")
     setup_logging()
     log.info(f"VNGISDash {YEAR} | chế độ {MODE} | đích {REMOTE_BASE} | {N_WORKERS} xã x {MONTH_THREADS} ảnh song song"
-             f" | ảnh ngày {DAY_BANDS} kênh {DAY_FORMAT}")
+             f" | ảnh ngày {DAY_BANDS} kênh {DAY_FORMAT} | tối đa {EE_CONCURRENCY} yêu cầu EE cùng lúc")
     try:
         # Khởi tạo Earth Engine song song với việc kéo trạng thái từ Drive
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -1448,6 +1530,9 @@ def main():
     gids = list(rows)
     log.info(f"Danh sách: {len(gids):,} xã, {targets['GID_1'].nunique()} tỉnh"
              + (f" (thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
+    if MODE == "full" and STOP_AFTER_PROVINCE:
+        log.info(f"Điểm dừng: sau tỉnh {STOP_AFTER_PROVINCE}. "
+                 "Chạy lần lượt từng tỉnh; không xếp việc của tỉnh sau điểm dừng.")
 
     statuses = load_all_status()
     if PREFLIGHT:
@@ -1485,9 +1570,17 @@ def main():
         while not STOP_EVENT.is_set():
             statuses = load_all_status()
             write_progress(targets, statuses)
-            jobs = [(g, rows[g], "full") for g in gids if not core_finished(statuses.get(g))]
+            try:
+                jobs = next_round_jobs(gids, rows, statuses)
+            except ProvinceIncompleteError as exc:
+                log.error(str(exc))
+                code = 1
+                break
             if not jobs:
                 break
+            if MODE == "full" and STOP_AFTER_PROVINCE:
+                first = jobs[0][1]
+                log.info(f"Tỉnh đang xử lý: {first['NAME_1']} ({first['GID_1']})")
             log.info(f"Vòng mới: {len(jobs):,} xã cần xử lý")
             result = run_round(jobs, statuses)
             if result == "stop":
@@ -1520,6 +1613,9 @@ def main():
         log.info(f"HOÀN TẤT: {progress['status'].value_counts().to_dict()}")
         if len(failed):
             log.warning(f"{len(failed)} xã không đạt sau {MAX_ATTEMPTS} lần, xem _control/progress.csv")
+        if MODE == "full" and STOP_AFTER_PROVINCE and not len(failed) and code == 0:
+            log.info(f"Đã hoàn tất đến tỉnh {STOP_AFTER_PROVINCE}; "
+                     "đã đồng bộ Drive và dừng. Không nối sang tỉnh tiếp theo.")
         return code or 0
 
     log.info(f"Chưa xong: còn {len(unfinished):,} xã | {progress['status'].value_counts().to_dict()}")
