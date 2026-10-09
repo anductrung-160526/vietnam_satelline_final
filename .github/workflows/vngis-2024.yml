@@ -109,6 +109,11 @@ jobs:
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
+      # Nghỉ chung cho EE sau mỗi 10 huyện done hoặc khi hoàn tất một tỉnh.
+      VNGIS_REST_EVERY_N: ${{ vars.VNGIS_DISTRICTS_REST_EVERY_N || '10' }}
+      VNGIS_REST_AFTER_PROVINCE: ${{ vars.VNGIS_DISTRICTS_REST_AFTER_PROVINCE || 'true' }}
+      VNGIS_REST_SEC: ${{ vars.VNGIS_DISTRICTS_REST_SEC || '30' }}
+
       # Định dạng ảnh ngày.
       VNGIS_DAY_FORMAT: "int16"
       VNGIS_DAY_BANDS: "10"

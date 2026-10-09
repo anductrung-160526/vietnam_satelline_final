@@ -112,6 +112,11 @@ EE_CONCURRENCY = _env("VNGIS_EE_CONCURRENCY", 1, int)             # giới hạn
 EE_MAX_RETRIES = _env("VNGIS_EE_MAX_RETRIES", 8, int)
 if min(N_WORKERS, MONTH_THREADS, EE_CONCURRENCY, EE_MAX_RETRIES) < 1:
     raise SystemExit("VNGIS_WORKERS, VNGIS_MONTH_THREADS, VNGIS_EE_CONCURRENCY và VNGIS_EE_MAX_RETRIES phải >= 1")
+REST_EVERY_N = _env("VNGIS_REST_EVERY_N", 10, int)
+REST_AFTER_PROVINCE = _env("VNGIS_REST_AFTER_PROVINCE", True, bool)
+REST_SEC = _env("VNGIS_REST_SEC", 30, int)
+if REST_EVERY_N < 0 or REST_SEC < 0:
+    raise SystemExit("VNGIS_REST_EVERY_N và VNGIS_REST_SEC phải >= 0")
 RUN_ID = _env("VNGIS_RUN_ID", "local")
 MAX_RUNTIME_SEC = _env("VNGIS_MAX_RUNTIME_SEC", 0, int)
 EE_KEY_FILE = _env("VNGIS_EE_KEY_FILE", "")
@@ -129,11 +134,12 @@ class EERequestGate:
     def __init__(self, limit):
         self.limit = limit
         self.active = 0
+        self.paused = False
         self.condition = threading.Condition()
 
     def __enter__(self):
         with self.condition:
-            while self.active >= self.limit:
+            while self.paused or self.active >= self.limit:
                 check_stop()
                 self.condition.wait(timeout=0.5)
             check_stop()
@@ -151,6 +157,27 @@ class EERequestGate:
             self.limit = 1 if restricted else max(1, old // 2)
             self.condition.notify_all()
         return old, self.limit
+
+    def pause(self, seconds, reason):
+        """Chặn yêu cầu mới, đợi yêu cầu đang chạy xong rồi nghỉ; STOP ngắt được."""
+        with self.condition:
+            self.paused = True
+        try:
+            log.info(f"[rest] {reason}: chờ các yêu cầu EE đang chạy kết thúc.")
+            with self.condition:
+                while self.active and not STOP_EVENT.is_set():
+                    self.condition.wait(timeout=0.5)
+            if STOP_EVENT.is_set():
+                return False
+            log.info(f"[rest] Nghỉ chủ động {seconds}s cho tất cả luồng EE; đồng bộ Drive vẫn chạy.")
+            interrupted = STOP_EVENT.wait(seconds)
+            if not interrupted:
+                log.info("[rest] Hết thời gian nghỉ, tiếp tục lấy dữ liệu.")
+            return not interrupted
+        finally:
+            with self.condition:
+                self.paused = False
+                self.condition.notify_all()
 
 
 EE_SEM = EERequestGate(EE_CONCURRENCY)
@@ -1855,8 +1882,42 @@ def next_round_jobs(gids, rows, statuses):
     return [(g, rows[g], "full") for g in gids if not core_finished(statuses.get(g))]
 
 
-def run_round(jobs, statuses):
+class DistrictRestPolicy:
+    """Đếm huyện mới hoàn tất trong lượt; dùng toàn bộ GADM để xác nhận hết tỉnh."""
+    def __init__(self, rows, statuses):
+        self.provinces = {}
+        self.names = {}
+        self.province_by_gid = {}
+        for row in rows:
+            province, gid = row["GID_1"], row["GID_2"]
+            self.provinces.setdefault(province, set()).add(gid)
+            self.names[province] = row["NAME_1"]
+            self.province_by_gid[gid] = province
+        self.done = {gid for gid in self.province_by_gid if district_complete(statuses.get(gid))}
+        self.finished_provinces = {p for p, gids in self.provinces.items() if gids <= self.done}
+        self.new_done = 0
+
+    def observe(self, gid, info):
+        if gid in self.done or gid not in self.province_by_gid or info.get("status") != "done" or not district_complete(info):
+            return []
+        self.done.add(gid)
+        self.new_done += 1
+        reasons = []
+        if REST_EVERY_N and self.new_done % REST_EVERY_N == 0:
+            reasons.append(f"đã hoàn tất {self.new_done} huyện mới trong lượt (mỗi {REST_EVERY_N} huyện)")
+        province = self.province_by_gid[gid]
+        if province not in self.finished_provinces and self.provinces[province] <= self.done:
+            self.finished_provinces.add(province)
+            if REST_AFTER_PROVINCE:
+                reasons.append(f"đã hoàn tất tỉnh {self.names[province]} ({len(self.provinces[province])} huyện)")
+        return reasons
+
+
+def run_round(jobs, statuses, rest_policy=None):
     """jobs: list (gid, row, kind)."""
+    if rest_policy is None:
+        rows = {**ADMIN_BY_GID, **{gid: row for gid, row, _ in jobs}}
+        rest_policy = DistrictRestPolicy(rows.values(), statuses)
     t0 = time.time()
     done_now = 0
     completed_now = 0
@@ -1919,10 +1980,15 @@ def run_round(jobs, statuses):
             log.info(f"[speed] {completed_now} huyện done mới trong {elapsed/60:.1f} phút | "
                      f"{rate:.1f} huyện/giờ | hàng đợi còn {remaining}/{len(jobs)} | "
                      f"ETA tham khảo {eta} giờ Việt Nam")
+        reasons = rest_policy.observe(gid, info)
+        if reasons and REST_SEC > 0 and not STOP_EVENT.is_set():
+            EE_SEM.pause(REST_SEC, "; ".join(reasons))
 
     try:
         for fut in as_completed(futures):
             consume(fut)
+            if STOP_EVENT.is_set():
+                break
             if len(pending_fail) >= OUTAGE_STREAK:
                 log.error(f"{OUTAGE_STREAK} huyện lỗi liên tiếp: nghi sự cố chung, tạm dừng vòng.")
                 outage = True
@@ -1959,6 +2025,8 @@ def main():
     setup_logging()
     log.info(f"VNGISDash huyện {START_MONTH}–{END_MONTH} | chế độ {MODE} | đích {REMOTE_BASE} | {N_WORKERS} huyện x {MONTH_THREADS} ảnh song song"
              f" | ảnh ngày {DAY_BANDS} kênh {DAY_FORMAT} {DAY_IMAGE_SCALE} m | tối đa {EE_CONCURRENCY} yêu cầu EE cùng lúc")
+    log.info(f"[rest] Cấu hình: mỗi {REST_EVERY_N} huyện mới hoàn tất (0=tắt), "
+             f"hết tỉnh={REST_AFTER_PROVINCE}, nghỉ {REST_SEC}s (0=tắt nghỉ).")
     try:
         # Khởi tạo Earth Engine song song với việc kéo trạng thái từ Drive
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -2006,6 +2074,7 @@ def main():
         log.warning("Có file _control/STOP trên Drive: không chạy.")
         return 130
 
+    rest_policy = DistrictRestPolicy(ADMIN_BY_GID.values(), statuses)
     uploader = Uploader()
     uploader.start()
     outages, code = 0, 0
@@ -2017,7 +2086,7 @@ def main():
             if not jobs:
                 break
             log.info(f"Vòng mới: {len(jobs):,} huyện cần xử lý")
-            result = run_round(jobs, statuses)
+            result = run_round(jobs, statuses, rest_policy)
             if result == "stop":
                 break
             if result == "outage":

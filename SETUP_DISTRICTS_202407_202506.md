@@ -125,6 +125,9 @@ Trong tab **Variables**, tùy chọn:
 | `VNGIS_DISTRICTS_EE_PROJECT` | `vngis-ee-2`; project truyền vào `ee.Initialize` |
 | `VNGIS_DISTRICTS_EE_ASSET` | Trống → `projects/<project>/assets/districts_l2` |
 | `VNGIS_DISTRICTS_EE_CONCURRENCY` | Mặc định `4`, tự giảm khi 429; đặt `1` nếu project đang Restricted Mode |
+| `VNGIS_DISTRICTS_REST_EVERY_N` | `10`; nghỉ sau mỗi 10 huyện mới hoàn tất trong một lượt; `0` tắt mốc này |
+| `VNGIS_DISTRICTS_REST_AFTER_PROVINCE` | `true`; nghỉ khi toàn bộ huyện của một tỉnh đã hoàn tất; `false` tắt mốc này |
+| `VNGIS_DISTRICTS_REST_SEC` | `30`; số giây nghỉ chủ động; `0` tắt toàn bộ nghỉ chủ động |
 
 Nếu đã tạo variable concurrency=`1` theo bản hướng dẫn cũ, nó vẫn được ưu tiên. Để thử chế độ nhanh, đặt `4`; theo dõi log `[quota]` tự hạ mức khi cần, không tiếp tục tăng khi lỗi quota.
 
@@ -224,3 +227,40 @@ Kiểm thử offline dùng EE giả lập và TIFF thật nhỏ để xác minh 
 710 huyện × 12 tháng tương ứng 8.520 TIFF ngày + 8.520 TIFF đêm và 8.520 dòng cho mỗi CSV khi đủ dữ liệu. Nếu chưa có huyện full nào xong, 60 huyện/giờ cần khoảng **11 giờ 50 phút**, 90 huyện/giờ cần khoảng **7 giờ 53 phút**, 30 huyện/giờ cần khoảng **23 giờ 40 phút**. Cộng thêm thời gian pilot, khởi động các lượt và đồng bộ cuối. Tốc độ không nhất thiết tăng 6,25 lần khi số pixel giảm 6,25 lần: truy vấn CSV, tính composite, hạn mức compute, network và Drive vẫn ảnh hưởng.
 
 Sau 30–60 phút full, so sánh `(710 - số huyện done) / tốc độ thực tế` với thời gian còn lại tới **12:00 10/10/2026, UTC+7**. ETA ban đầu có thể lạc quan vì huyện lớn/mây nhiều xử lý lâu hơn. Nếu project tiếp tục Restricted Mode và tự giảm về 1, hoặc tốc độ thấp hơn mức cần đạt, không có căn cứ cam kết kịp mốc này chỉ bằng chỉnh code. Không tăng số project/tài khoản để né quota; không đổi CSV thiếu thành số 0/done.
+
+## 11. Nghỉ chủ động và các tham số tốc độ
+
+Mặc định **nghỉ 30 giây sau mỗi 10 huyện mới hoàn tất, hoặc khi hoàn tất toàn bộ huyện của một tỉnh**. Nếu huyện thứ 10 cũng là huyện cuối tỉnh thì chỉ nghỉ một lần 30 giây. Mốc tỉnh dựa trên toàn bộ bảng GADM cấp 2 và tính cả huyện đã hoàn tất ở lượt trước; pilot chỉ lấy một phần tỉnh không được coi là hoàn tất cả tỉnh. Huyện `partial`, thiếu dữ liệu, lỗi hoặc thử lại cùng huyện đã xong không được cộng vào bộ đếm.
+
+Khoảng nghỉ áp dụng cho tất cả luồng Earth Engine: chặn yêu cầu mới, đợi yêu cầu đang chạy kết thúc, rồi bắt đầu tính đủ 30 giây. Uploader vẫn đồng bộ các file đã tải lên Drive. STOP hoặc hết giờ của lượt ngắt được cả lúc đợi lẫn lúc nghỉ; trạng thái huyện đã xong vẫn được giữ để nối lượt. Bộ đếm huyện mới được giữ qua các vòng thử lại trong cùng lượt Actions, và bắt đầu lại ở lượt Actions tiếp theo.
+
+Log có dạng:
+
+```text
+[rest] đã hoàn tất 10 huyện mới trong lượt (mỗi 10 huyện): chờ các yêu cầu EE đang chạy kết thúc.
+[rest] Nghỉ chủ động 30s cho tất cả luồng EE; đồng bộ Drive vẫn chạy.
+[rest] Hết thời gian nghỉ, tiếp tục lấy dữ liệu.
+```
+
+Không cần tạo Variables để bật cơ chế này. Để chỉnh, dùng ba repository Variables ở mục 5. Khi chạy Python trực tiếp, tên tương ứng là **`VNGIS_REST_EVERY_N`**, **`VNGIS_REST_AFTER_PROVINCE`**, **`VNGIS_REST_SEC`**. Nghỉ cố định giúp giảm tải từng đợt; backoff khi lỗi 429 vẫn hoạt động riêng và quota Google không thay đổi. Với 710 huyện chạy mới trong một lượt, 70 mốc 10 huyện và 63 mốc tỉnh thêm tối đa khoảng **66,5 phút nghỉ**, ít hơn khi các mốc trùng nhau; chưa tính thời gian đợi yêu cầu đang chạy kết thúc.
+
+Các tham số dưới đây là giá trị mặc định trên **workflow của nhánh huyện**; Python trực tiếp và Variables đang tồn tại có thể khác:
+
+| Tham số trong Python / YAML | Mặc định Actions | Tác động và nơi chỉnh |
+|---|---|---|
+| `VNGIS_WORKERS` | `4` | Số huyện xử lý song song; chỉnh ô `workers` khi Run workflow |
+| `VNGIS_MONTH_THREADS` | `2` | Số tác vụ tải ảnh song song trong mỗi huyện; chỉnh YAML |
+| `VNGIS_EE_CONCURRENCY` | `4`, tự giảm khi 429 | Giới hạn chung số yêu cầu EE đang chạy, gồm CSV/tạo URL/tải TIFF; chỉnh variable `VNGIS_DISTRICTS_EE_CONCURRENCY` |
+| `VNGIS_DAY_IMAGE_SCALE` | `50` m | Quyết định số pixel TIFF ngày; chỉnh ô `day_scale` (20 hoặc 50). Không đổi phép tính CSV |
+| `VNGIS_DAY_BANDS` | `10` | Số kênh TIFF ngày, ảnh hưởng dung lượng; giữ 10 để đủ bộ kênh đã thống nhất |
+| `VNGIS_DAY_FORMAT` / `VNGIS_DAY_SCALE` | `int16` / `10000` | Định dạng lưu và hệ số lượng tử hóa; `10000` là hệ số giá trị, không phải độ phân giải mét. Chuyển Int16 ở máy chạy sau tải, chủ yếu giảm dung lượng lưu/upload |
+| `VNGIS_TIFF_ZLEVEL` | `6` | Mức nén DEFLATE 1–9; mức cao thường tốn CPU hơn, nén không mất dữ liệu |
+| `VNGIS_UPLOAD_EVERY_SEC` | `300` s | Chu kỳ đồng bộ Drive; giảm chu kỳ làm file xuất hiện sớm hơn, không tăng tốc EE |
+| `VNGIS_REST_EVERY_N` / `VNGIS_REST_AFTER_PROVINCE` / `VNGIS_REST_SEC` | `10` / `true` / `30` s | Mốc và thời gian nghỉ chủ động; chỉnh ba Variables ở mục 5 |
+| `VNGIS_EE_MAX_RETRIES` | `8` | Số lần thử mỗi thao tác EE; thời gian backoff gốc tăng 5 → 10 → 20 → 40 → 60 giây, cộng jitter và tuân theo Retry-After |
+| `VNGIS_MAX_RUNTIME_SEC` | `18900` s | Thời lượng một lượt 5 giờ 15 phút; hết giờ thì đồng bộ và nối lượt, không phải tốc độ mỗi huyện |
+| `RCLONE_COMMON` trong `vngis_2024.py` | `--transfers 4`, `--checkers 8`, `--tpslimit 8` | Song song và giới hạn tốc độ API khi tải lên Drive; cấu hình trong code, độc lập với giới hạn EE |
+
+`workers=4` × `MONTH_THREADS=2` có thể tạo 8 tác vụ tải ảnh, nhưng **tối đa 4 yêu cầu EE đang chạy** do giới hạn chung; nếu bị hạ về 1 thì tăng workers không vượt qua được giới hạn này. TIFF đêm giữ 500 m. Huyện lớn phải chia nhiều ô và project Restricted Mode vẫn có thể chậm dù có nghỉ chủ động. Xem `[speed]`, `[quota]`, `[rest]` để đo tốc độ và các khoảng nghỉ thực tế.
+
+Bản sửa chỉ áp dụng cho lượt mới: chờ lượt cũ kết thúc, hoặc tạo STOP trên đúng branch rồi đợi đồng bộ xong, xóa STOP và Run workflow. Thư mục Drive, project, asset và Secrets giữ nguyên.

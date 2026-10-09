@@ -51,7 +51,7 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
-                           STOP_EVENT=threading.Event(), STOP_REASON=[None], DAY_IMAGE_SCALE=20, REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
+                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REST_SEC=0, DAY_IMAGE_SCALE=20, REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
                            _dl_stats={'ok':0,'fail':0,'last_err':''})
         p.start()
         self.addCleanup(p.stop)
@@ -380,6 +380,76 @@ class SpeedTests(LocalCase):
         self.assertIn('hàng đợi còn 1/2',summary)
 
 
+class RestPolicyTests(LocalCase):
+    def rows(self,n,province='VNM.1_1'):
+        return [{**ROW,'GID_1':province,'GID_2':f'{province}.{i}'} for i in range(n)]
+
+    def test_only_new_complete_districts_count_toward_ten(self):
+        rows=self.rows(12);policy=v.DistrictRestPolicy(rows,{})
+        for row in rows[:9]:
+            self.assertEqual(policy.observe(row['GID_2'],complete_state(row['GID_2'])),[])
+        gid=rows[9]['GID_2'];partial=complete_state(gid)
+        partial.update(status='partial');partial['t2']['2024-07']='no_data'
+        self.assertEqual(policy.observe(gid,partial),[])
+        self.assertEqual(len(policy.observe(gid,complete_state(gid))),1)
+        self.assertEqual(policy.observe(gid,complete_state(gid)),[])
+        self.assertEqual(policy.new_done,10)
+
+    def test_province_completion_uses_previous_done_districts(self):
+        rows=self.rows(3)
+        previous={row['GID_2']:complete_state(row['GID_2']) for row in rows[:2]}
+        policy=v.DistrictRestPolicy(rows,previous)
+        reasons=policy.observe(rows[2]['GID_2'],complete_state(rows[2]['GID_2']))
+        self.assertEqual(policy.new_done,1)
+        self.assertEqual(len(reasons),1);self.assertIn('tỉnh An Giang (3 huyện)',reasons[0])
+        self.assertEqual(policy.observe(rows[2]['GID_2'],complete_state(rows[2]['GID_2'])),[])
+
+    def test_province_rest_does_not_reset_ten_district_counter(self):
+        rows=self.rows(4)+self.rows(7,'VNM.2_1');policy=v.DistrictRestPolicy(rows,{})
+        for row in rows[:3]:policy.observe(row['GID_2'],complete_state(row['GID_2']))
+        reasons=policy.observe(rows[3]['GID_2'],complete_state(rows[3]['GID_2']))
+        self.assertEqual(len(reasons),1);self.assertIn('tỉnh',reasons[0])
+        for row in rows[4:9]:self.assertEqual(policy.observe(row['GID_2'],complete_state(row['GID_2'])),[])
+        reasons=policy.observe(rows[9]['GID_2'],complete_state(rows[9]['GID_2']))
+        self.assertEqual(len(reasons),1);self.assertIn('10 huyện mới',reasons[0])
+
+    def test_pilot_subset_does_not_imply_entire_province_finished(self):
+        rows=self.rows(3);policy=v.DistrictRestPolicy(rows,{})
+        self.assertEqual(policy.observe(rows[0]['GID_2'],complete_state(rows[0]['GID_2'])),[])
+        self.assertEqual(policy.finished_provinces,set())
+
+    def test_coincident_ten_and_province_milestones_pause_only_once(self):
+        rows=self.rows(10);jobs=[(r['GID_2'],r,'full') for r in rows]
+        policy=v.DistrictRestPolicy(rows,{});gate=Mock()
+        with patch.multiple(v,REST_SEC=30,EE_SEM=gate), \
+             patch.object(v,'process_district',side_effect=lambda row,prev:complete_state(row['GID_2'])):
+            self.assertEqual(v.run_round(jobs,{},policy),'ok')
+        gate.pause.assert_called_once()
+        seconds,reason=gate.pause.call_args.args
+        self.assertEqual(seconds,30);self.assertIn('10 huyện mới',reason);self.assertIn('tỉnh An Giang',reason)
+
+    def test_counter_survives_retry_rounds_and_stop_interrupts_rest(self):
+        rows=self.rows(3);policy=v.DistrictRestPolicy(rows,{});states={}
+        def stop_in_rest(seconds,reason):v.request_stop('deadline');return False
+        gate=Mock();gate.pause.side_effect=stop_in_rest
+        with patch.multiple(v,REST_SEC=30,REST_EVERY_N=2,REST_AFTER_PROVINCE=False,EE_SEM=gate), \
+             patch.object(v,'process_district',side_effect=lambda row,prev:complete_state(row['GID_2'])):
+            self.assertEqual(v.run_round([(rows[0]['GID_2'],rows[0],'full')],states,policy),'ok')
+            gate.pause.assert_not_called()
+            self.assertEqual(v.run_round([(rows[1]['GID_2'],rows[1],'full')],states,policy),'stop')
+        gate.pause.assert_called_once();self.assertEqual(policy.new_done,2)
+        self.assertEqual(states[rows[1]['GID_2']]['status'],'done')
+
+    def test_rest_can_be_disabled_without_changing_completed_status(self):
+        rows=self.rows(1);policy=v.DistrictRestPolicy(rows,{});gate=Mock();states={}
+        with patch.object(v,'EE_SEM',gate), \
+             patch.object(v,'process_district',return_value=complete_state(rows[0]['GID_2'])):
+            self.assertEqual(v.run_round([(rows[0]['GID_2'],rows[0],'full')],states,policy),'ok')
+        gate.pause.assert_not_called();self.assertEqual(states[rows[0]['GID_2']]['status'],'done')
+        with patch.multiple(v,REST_EVERY_N=0,REST_AFTER_PROVINCE=False):
+            self.assertEqual(v.DistrictRestPolicy(rows,{}).observe(rows[0]['GID_2'],complete_state(rows[0]['GID_2'])),[])
+
+
 class MainTests(LocalCase):
     def setUp(self):
         super().setUp();self.states={};self.rounds=[]
@@ -392,13 +462,13 @@ class MainTests(LocalCase):
                     rclone_sync_once=Mock(return_value=True))
         p=patch.multiple(v,**values);p.start();self.addCleanup(p.stop)
 
-    def finish(self,jobs,statuses):
+    def finish(self,jobs,statuses,rest_policy=None):
         self.rounds.append([gid for gid,_,_ in jobs])
         for gid,_,_ in jobs:self.states[gid]=complete_state(gid)
         return 'ok'
 
     def test_deadline_then_resume_processes_only_unfinished_districts(self):
-        def deadline(jobs,statuses):
+        def deadline(jobs,statuses,rest_policy=None):
             self.finish(jobs[:1],statuses);v.request_stop('deadline');return 'stop'
         with patch.object(v,'run_round',side_effect=deadline):self.assertEqual(v.main(),3)
         v.STOP_EVENT.clear();v.STOP_REASON[0]=None

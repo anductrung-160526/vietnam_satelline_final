@@ -110,6 +110,57 @@ class EarthEngineRequestTests(unittest.TestCase):
             future.result(timeout=1)
         self.assertTrue(entered.is_set());self.assertEqual(gate.active,0)
 
+    def test_proactive_rest_drains_active_requests_and_blocks_all_new_requests(self):
+        gate=v.EERequestGate(4)
+        active_started=threading.Event();release_active=threading.Event()
+        drain_started=threading.Event();rest_started=threading.Event();release_rest=threading.Event()
+        new_entered=threading.Event();waits=[]
+        def existing():
+            with gate:
+                active_started.set();release_active.wait(2)
+        def waiting():
+            with gate:new_entered.set()
+        def rest_wait(seconds):
+            waits.append((seconds,gate.active,gate.paused))
+            rest_started.set();release_rest.wait(2)
+            return False
+        def log(message):
+            if 'chờ các yêu cầu' in message:drain_started.set()
+        pool=ThreadPoolExecutor(max_workers=3)
+        try:
+            with patch.object(v.STOP_EVENT,'wait',side_effect=rest_wait),patch.object(v.log,'info',side_effect=log):
+                first=pool.submit(existing);self.assertTrue(active_started.wait(1))
+                rest=pool.submit(gate.pause,30,'10 huyện')
+                self.assertTrue(drain_started.wait(1))
+                next_request=pool.submit(waiting)
+                self.assertFalse(rest_started.wait(0.03));self.assertFalse(new_entered.is_set())
+                release_active.set();self.assertTrue(rest_started.wait(1))
+                self.assertFalse(new_entered.wait(0.03))
+                gate.reduce();release_rest.set()
+                self.assertTrue(rest.result(timeout=1));first.result(timeout=1);next_request.result(timeout=1)
+        finally:
+            release_active.set();release_rest.set();pool.shutdown(wait=True)
+        self.assertEqual(waits,[(30,0,True)])
+        self.assertTrue(new_entered.is_set());self.assertEqual(gate.active,0)
+        self.assertFalse(gate.paused);self.assertEqual(gate.limit,2)
+
+    def test_stop_interrupts_proactive_rest_and_releases_gate(self):
+        gate=v.EERequestGate(4)
+        def stop(seconds):v.request_stop('deadline');return True
+        with patch.object(v.STOP_EVENT,'wait',side_effect=stop):
+            self.assertFalse(gate.pause(30,'hết tỉnh'))
+        self.assertFalse(gate.paused);self.assertEqual(gate.active,0)
+        with self.assertRaises(v.StopRequested):
+            with gate:pass
+
+    def test_stop_while_draining_does_not_wait_thirty_seconds(self):
+        gate=v.EERequestGate(4)
+        with gate:
+            v.STOP_EVENT.set()
+            with patch.object(v.STOP_EVENT,'wait') as wait:
+                self.assertFalse(gate.pause(30,'10 huyện'))
+            wait.assert_not_called();self.assertFalse(gate.paused)
+
     def test_download_429_respects_retry_after(self):
         waits = self.fake_clock()
         image = SimpleNamespace(getDownloadURL=Mock(return_value="url"))
