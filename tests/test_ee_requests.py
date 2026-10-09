@@ -18,7 +18,7 @@ class EarthEngineRequestTests(unittest.TestCase):
     def setUp(self):
         for name, value in (("EE_SEM", threading.BoundedSemaphore(1)),
                             ("STOP_EVENT", threading.Event()), ("_ee_cooldown_until", 0.0),
-                            ("EE_CREDENTIALS", None), ("communes_fc", None)):
+                            ("EE_CREDENTIALS", None), ("districts_fc", None)):
             p = patch.object(v, name, value)
             p.start()
             self.addCleanup(p.stop)

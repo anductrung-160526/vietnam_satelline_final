@@ -1,0 +1,372 @@
+"""Cross-year dates, level-2 queries, durable resume and real GeoTIFF checks."""
+import io
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+import threading
+import unittest
+from unittest.mock import Mock, patch
+
+import numpy as np
+import pandas as pd
+import rasterio
+from rasterio.transform import from_origin
+
+with patch.dict(os.environ, {'VNGIS_SKIP_MAIN': '1'}):
+    import vngis_2024 as v
+import verify_pilot as verify
+
+ROW = {'GID_1': 'VNM.1_1', 'NAME_1': 'An Giang', 'GID_2': 'VNM.1.1_1',
+       'NAME_2': 'An Phú', 'TYPE_2': 'Huyện'}
+URBAN = {'GID_1': 'VNM.1_1', 'NAME_1': 'An Giang', 'GID_2': 'VNM.1.3_1',
+         'NAME_2': 'Châu Đốc', 'TYPE_2': 'Thành phố'}
+
+
+def complete_state(gid=ROW['GID_2']):
+    return {'gid_2': gid, 'profile': v.OUTPUT_PROFILE, 'period': v.PERIOD_ID,
+            'status': 'done', 't1': 'ok', 't3csv': 'ok',
+            **{slot: dict.fromkeys(v.MONTH_KEYS, 'ok') for slot in
+               ('t2', 't3img', 't1_by_month', 't3csv_by_month')}}
+
+
+def day_props(row=ROW):
+    return [{**row, 'YEAR': y, 'MONTH': m, **dict.fromkeys(v.T1_FEATURES, 0.2)} for y, m in v.PERIODS]
+
+
+def night_records(row=ROW):
+    return pd.DataFrame([{**row, 'YEAR': y, 'MONTH': m, 'TIME': v.month_key((y,m)),
+                          'DATA_STATUS': 'ok', 'ERROR': '', 'TNL': float(i+1)}
+                         for i,(y,m) in enumerate(v.PERIODS)]).reindex(columns=v.NIGHT_COLUMNS)
+
+
+class LocalCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / '_control/status').mkdir(parents=True)
+        p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
+                           PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
+                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REMOTE_TIFS=set(),
+                           _dl_stats={'ok':0,'fail':0,'last_err':''})
+        p.start()
+        self.addCleanup(p.stop)
+
+
+class DateTests(unittest.TestCase):
+    def test_exact_twelve_months_across_year(self):
+        self.assertEqual(v.PERIODS, [(2024,m) for m in range(7,13)] + [(2025,m) for m in range(1,7)])
+        self.assertEqual(v.MONTH_KEYS[5:7], ['2024-12','2025-01'])
+
+    def test_calendar_end_is_exclusive_next_month(self):
+        self.assertEqual(v._month_dates(2024,12), ('2024-12-01','2025-01-01'))
+        self.assertEqual(v._month_dates(2024,2), ('2024-02-01','2024-03-01'))
+        self.assertEqual(v._month_dates(2025,6), ('2025-06-01','2025-07-01'))
+
+    def test_invalid_or_reversed_month_range_fails(self):
+        for a,b in [('2024-13','2025-06'),('2024-7','2025-06'),('2025-06','2024-07')]:
+            with self.subTest(a=a), self.assertRaises(ValueError):
+                v.month_pairs(a,b)
+
+    def test_tiff_filenames_preserve_gid_and_year(self):
+        ctx=v.build_ctx(ROW)
+        self.assertEqual(v.day_name(ctx,(2024,12)), 'VNM.1.1_1_day_202412.tif')
+        self.assertEqual(v.day_name(ctx,(2025,1)), 'VNM.1.1_1_day_202501.tif')
+        self.assertNotEqual(v.night_name(ctx,(2024,7)),v.night_name(ctx,(2025,7)))
+        self.assertNotIn('GID_3',v.ADM_COLS)
+
+    def test_full_targets_ignore_commune_province_boundary(self):
+        admin=pd.DataFrame([URBAN,ROW])
+        with patch.object(v,'MODE','full'):
+            selected=v.load_targets(admin)
+        self.assertEqual(list(selected.GID_2),[ROW['GID_2'],URBAN['GID_2']])
+
+    def test_pilot_samples_rural_and_urban_districts(self):
+        with patch.multiple(v,MODE='pilot',PILOT_N=2):
+            selected=v.load_targets(pd.DataFrame([ROW,URBAN]))
+        self.assertEqual(set(selected.TYPE_2), {'Huyện','Thành phố'})
+
+
+class Node:
+    def __init__(self,calls,kind='node'):
+        self.calls,self.kind=calls,kind
+    def __getattr__(self,name):
+        def method(*args,**kwargs):
+            self.calls.append((name,args,kwargs))
+            if name=='map' and self.kind=='featurecollection':
+                args[0](Node(self.calls,'feature'))
+            if name=='reduceRegions':
+                return Node(self.calls,'featurecollection')
+            return self
+        return method
+
+
+def fake_ee(calls):
+    return SimpleNamespace(ImageCollection=lambda *a:Node(calls,'imagecollection'),
+                           FeatureCollection=lambda *a:Node(calls,'featurecollection'),
+                           Image=lambda *a:Node(calls),Dictionary=lambda a:a,List=lambda a:a,
+                           Reducer=Node(calls),Filter=Node(calls),
+                           Algorithms=SimpleNamespace(If=lambda condition,a,b:a))
+
+
+class QueryTests(unittest.TestCase):
+    def test_fetch_plan_queries_exact_year_month_dates(self):
+        calls=[]
+        result={'n_fc':1,'months':[[1,0,0,1,0] for _ in v.PERIODS]}
+        with patch.object(v,'ee',fake_ee(calls)),patch.object(v,'ee_getinfo',return_value=result):
+            count,plan=v.fetch_plan(Node(calls),Node(calls))
+        self.assertEqual(count,1)
+        self.assertEqual(list(plan),v.PERIODS)
+        dates=[args for name,args,kw in calls if name=='filterDate']
+        self.assertIn(('2025-01-01','2025-02-01'),dates)
+        self.assertNotIn(('2024-01-01','2024-02-01'),dates)
+
+    def test_task1_tags_year_and_month_on_each_feature(self):
+        calls=[]
+        with patch.object(v,'ee',fake_ee(calls)),patch.object(v,'ee_getinfo',return_value={'features':[]}):
+            v.task1_all_months(Node(calls))
+        tags=[args[0] for name,args,kw in calls if name=='set']
+        self.assertEqual(tags,[{'YEAR':y,'MONTH':m} for y,m in v.PERIODS])
+        selected=[args[0] for name,args,kw in calls if name=='select' and args and isinstance(args[0],list)]
+        self.assertTrue(any('GID_2' in cols for cols in selected))
+
+    def night_data(self,missing=None):
+        return {'area_ha':123.0,'months':[{'n':0} if i==missing else
+                 {'n':1,'all':{'avg_rad_count':2,'avg_rad_sum':float(i+1),'avg_rad_mean':0.5,
+                               'avg_rad_stdDev':0.1,'avg_rad_min':0.0,'avg_rad_max':1.0},
+                  'cnt':{'is_lit':1},'cf':{'cf_cvg':4},'lit':{'lit_rad':0.2}}
+                  for i in range(12)]}
+
+    def night_frame(self,data):
+        calls=[]
+        with patch.object(v,'ee',fake_ee(calls)),patch.object(v,'ee_getinfo',return_value=data):
+            return v.task3_all_months(Node(calls),ROW)
+
+    def test_night_rolling_and_growth_continue_over_new_year(self):
+        frame=self.night_frame(self.night_data())
+        january=frame[(frame.YEAR==2025)&(frame.MONTH==1)].iloc[0]
+        self.assertEqual(january.TIME,'2025-01')
+        self.assertEqual(january.TNL_MA3,6)
+        self.assertAlmostEqual(january.TNL_MOM_GROWTH_PCT,(7/6-1)*100)
+        self.assertEqual(list(frame.columns),v.NIGHT_COLUMNS)
+
+    def test_missing_viirs_month_is_null_and_not_bridged_for_growth(self):
+        frame=self.night_frame(self.night_data(missing=5))
+        self.assertEqual(len(frame),12)
+        self.assertEqual(frame.iloc[5].DATA_STATUS,'no_data')
+        self.assertTrue(pd.isna(frame.iloc[5].TNL))
+        self.assertTrue(pd.isna(frame.iloc[6].TNL_MOM_GROWTH_PCT))
+
+    def test_no_viirs_data_does_not_create_zero_measurements(self):
+        frame=self.night_frame({'area_ha':10,'months':[{'n':0}]*12})
+        self.assertTrue(frame.DATA_STATUS.eq('no_data').all())
+        self.assertTrue(frame.TNL.isna().all())
+
+
+def tif_bytes(array,transform,nodata=np.nan,crs='EPSG:4326'):
+    with rasterio.MemoryFile() as mf:
+        with mf.open(driver='GTiff',height=array.shape[1],width=array.shape[2],count=array.shape[0],
+                     dtype=array.dtype,crs=crs,transform=transform,nodata=nodata) as dst:
+            dst.write(array)
+        return mf.read()
+
+
+class TiffTests(LocalCase):
+    def tiles(self,bad=False,misaligned=False):
+        full=np.arange(10*6*6,dtype='float32').reshape(10,6,6)
+        res=20/111319.49
+        tr=from_origin(105,22,res,res)
+        paths=[]
+        for i,(r,c) in enumerate([(0,0),(0,2),(2,0),(2,2)]):
+            a=full[:,r:r+4,c:c+4].copy()
+            if bad and i==1:a[:,0,0]+=100
+            transform=from_origin(105+c*res+(res/2 if misaligned and i==1 else 0),22-r*res,res,res)
+            path=self.root/f'{i}.tile';path.write_bytes(tif_bytes(a,transform));paths.append(str(path))
+        return full,tr,paths
+
+    def test_streaming_mosaic_preserves_all_pixels_and_transform(self):
+        full,tr,paths=self.tiles()
+        path=self.root/'merged.tif';v.mosaic_tile_files(paths,str(path))
+        with rasterio.open(path) as src:
+            np.testing.assert_array_equal(src.read(),full)
+            self.assertEqual(src.transform,tr)
+            self.assertEqual(src.compression.value,'DEFLATE')
+        self.assertEqual(v.inspect_tif(str(path),10),(True,False,''))
+
+    def test_overlap_with_different_values_is_rejected(self):
+        _,_,paths=self.tiles(bad=True)
+        with self.assertRaisesRegex(RuntimeError,'chồng lấn'):
+            v.mosaic_tile_files(paths,str(self.root/'bad.tif'))
+
+    def test_half_pixel_shift_is_rejected(self):
+        _,_,paths=self.tiles(misaligned=True)
+        with self.assertRaisesRegex(RuntimeError,'lưới pixel'):
+            v.mosaic_tile_files(paths,str(self.root/'bad.tif'))
+
+    def test_large_download_uses_same_scale_for_every_tile(self):
+        full,tr,paths=self.tiles()
+        payloads=[Path(p).read_bytes() for p in paths]
+        response=Mock(side_effect=[v.TooLargeError('request size too large (60000000 bytes)'),*payloads])
+        path=self.root/'download.tif'
+        with patch.object(v,'fetch_geotiff_bytes',response),patch.object(v,'_bbox',return_value=(0,0,6,6)),\
+             patch.object(v,'_split_bbox',return_value=['a','b','c','d']):
+            self.assertEqual(v.download_tif('image','region',20,str(path),'test'),4)
+        self.assertTrue(all(call.args[2]==20 for call in response.call_args_list))
+        with rasterio.open(path) as src:np.testing.assert_array_equal(src.read(),full)
+
+    def test_legitimate_zero_night_radiance_is_not_empty(self):
+        a=np.zeros((2,2,2),'float64');a[1]=5
+        path=self.root/'night.tif';path.write_bytes(tif_bytes(a,from_origin(105,22,500/111319.49,500/111319.49)))
+        self.assertEqual(v.inspect_tif(str(path),2),(True,False,''))
+
+    def test_all_nodata_is_empty(self):
+        path=self.root/'empty.tif';path.write_bytes(tif_bytes(np.full((10,2,2),np.nan,'float32'),from_origin(105,22,.001,.001)))
+        self.assertEqual(v.inspect_tif(str(path),10),(True,True,''))
+
+
+class ProcessTests(LocalCase):
+    def setUp(self):
+        super().setUp()
+        self.fc=Mock();self.fc.filter.return_value=self.fc
+        self.downloads=[]
+        mocks=dict(districts_fc=self.fc,fetch_plan=Mock(return_value=(1,{p:{'s2_window':0,'viirs':v.VIIRS_A} for p in v.PERIODS})),
+                   task1_all_months=Mock(return_value=day_props()),task3_all_months=Mock(return_value=night_records()),
+                   day_image=Mock(),night_image=Mock(),_download_month=Mock(side_effect=self.download))
+        p=patch.multiple(v,**mocks);p.start();self.addCleanup(p.stop)
+        p=patch.object(v.ee.Filter,'eq',return_value='filter');p.start();self.addCleanup(p.stop)
+
+    def download(self,kind,ctx,period,img,path):
+        self.downloads.append((kind,period))
+        Path(path).parent.mkdir(parents=True,exist_ok=True)
+        bands,scale,dtype=(10,20,'float32') if kind=='day' else (2,500,'float64')
+        Path(path).write_bytes(tif_bytes(np.ones((bands,2,2),dtype),from_origin(105,22,scale/111319.49,scale/111319.49)))
+        return 1,False
+
+    def test_process_writes_all_months_and_verified_csv_tiff(self):
+        state=v.process_district(ROW,None)
+        self.assertTrue(v.district_complete(state));self.assertEqual(state['status'],'done')
+        self.assertEqual(len(self.downloads),24)
+        self.assertEqual(set(state['t2']),set(v.MONTH_KEYS))
+        v.write_status(state);v.build_national_csv()
+        day=pd.read_csv(self.root/'CSV/day_indices.csv');night=pd.read_csv(self.root/'CSV/night_indices.csv')
+        self.assertEqual(len(day),12);self.assertEqual(len(night),12)
+        checks=verify.verify_district(str(self.root),ROW['GID_2'],state,day,night)
+        self.assertTrue(all(level=='PASS' for _,level,_ in checks),checks)
+        v.process_district(ROW,state)
+        self.assertEqual(len(self.downloads),24)
+
+    def test_resume_redownloads_only_missing_january_file(self):
+        state=v.process_district(ROW,None);v.write_status(state)
+        ctx=v.build_ctx(ROW);path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2025,1))))
+        path.unlink()
+        restored=v.load_all_status()[ROW['GID_2']]
+        self.assertEqual(restored['t2']['2025-01'],'pending')
+        self.assertEqual(restored['t2']['2024-12'],'ok')
+        v.process_district(ROW,restored)
+        self.assertEqual(self.downloads[24:],[('day',(2025,1))])
+
+    def test_no_source_month_stays_partial_and_csv_has_nulls(self):
+        props=day_props()[1:]
+        v.task1_all_months.return_value=props
+        plan={p:{'s2_window':None if p==(2024,7) else 0,'viirs':v.VIIRS_A} for p in v.PERIODS}
+        v.fetch_plan.return_value=(1,plan)
+        state=v.process_district(ROW,None)
+        self.assertEqual(state['status'],'partial');self.assertFalse(v.district_complete(state))
+        self.assertEqual(state['t2']['2024-07'],'no_data')
+        v.build_national_csv();day=pd.read_csv(self.root/'CSV/day_indices.csv')
+        self.assertEqual(len(day),12);self.assertEqual(day.iloc[0].DATA_STATUS,'no_data')
+        self.assertTrue(day.iloc[0][v.T1_FEATURES].isna().all())
+
+    def test_missing_csv_parts_reset_csv_completion_on_resume(self):
+        state=v.process_district(ROW,None);v.write_status(state)
+        for path in (self.root/'_control/parts').glob('day_*.jsonl'):path.unlink()
+        restored=v.load_all_status()[ROW['GID_2']]
+        self.assertEqual(restored['t1'],'pending')
+        self.assertEqual(restored['status'],'partial')
+
+    def test_status_from_different_period_is_ignored(self):
+        state=complete_state();state['period']='202401-202412';v.write_status(state)
+        self.assertEqual(v.load_all_status(),{})
+
+    def test_csv_deduplicates_by_year_month_and_filters_foreign_periods(self):
+        records=v.day_records(ROW,day_props())[:1]
+        records += [{**records[0],'YEAR':2025},{**records[0],'YEAR':2023}]
+        with patch.object(v,'PERIODS',v.PERIODS+[(2025,7)]):
+            v.append_parts('day',records)
+            v.append_parts('day',[{**records[0],'BLUE_mean':9}])
+            v.build_national_csv()
+        day=pd.read_csv(self.root/'CSV/day_indices.csv')
+        self.assertEqual(list(day.YEAR),[2024,2025])
+        self.assertEqual(day.iloc[0].BLUE_mean,9)
+
+    def test_wrong_gid_in_statistics_is_rejected(self):
+        props=day_props();props[0]['GID_2']=URBAN['GID_2']
+        with self.assertRaisesRegex(RuntimeError,'GID_2'):
+            v.day_records(ROW,props)
+
+    def test_missing_band_mean_is_not_a_complete_statistics_month(self):
+        props=day_props();props[0]['NDVI_mean']=None
+        records=v.day_records(ROW,props)
+        self.assertEqual(records[0]['DATA_STATUS'],'no_data')
+        self.assertEqual(records[1]['DATA_STATUS'],'ok')
+
+    def test_checkpoint_before_exception_is_preserved_by_run_round(self):
+        def failing_process(row,previous):
+            period=v.PERIODS[0];ctx=v.build_ctx(row)
+            path=v.L(ctx['rel_day_dir'],v.day_name(ctx,period))
+            self.download('day',ctx,period,None,path)
+            state={'gid_2':row['GID_2'],'period':v.PERIOD_ID,'profile':v.OUTPUT_PROFILE,
+                   't2':{v.month_key(period):'ok'},'t3img':{},'errors':[]}
+            v._checkpoint(state)
+            raise RuntimeError('Temporary error after one download')
+        with patch.object(v,'process_district',side_effect=failing_process):
+            v.run_round([(ROW['GID_2'],ROW,'full')],{})
+        restored=v.load_all_status()[ROW['GID_2']]
+        self.assertEqual(restored['t2'][v.MONTH_KEYS[0]],'ok')
+        self.assertEqual(restored['attempts'],1)
+
+
+class MainTests(LocalCase):
+    def setUp(self):
+        super().setUp();self.states={};self.rounds=[]
+        values=dict(MODE='full',PREFLIGHT=False,MAX_RUNTIME_SEC=0,ADMIN_DF=None,
+                    setup_logging=Mock(),init_earth_engine=Mock(),init_storage=Mock(),
+                    build_admin_table=Mock(return_value=pd.DataFrame([ROW,URBAN])),
+                    load_all_status=Mock(side_effect=lambda:self.states.copy()),install_signal_handlers=Mock(),
+                    drive_stop_exists=Mock(return_value=False),Uploader=Mock(),
+                    run_round=Mock(side_effect=self.finish),build_national_csv=Mock(),
+                    rclone_sync_once=Mock(return_value=True))
+        p=patch.multiple(v,**values);p.start();self.addCleanup(p.stop)
+
+    def finish(self,jobs,statuses):
+        self.rounds.append([gid for gid,_,_ in jobs])
+        for gid,_,_ in jobs:self.states[gid]=complete_state(gid)
+        return 'ok'
+
+    def test_deadline_then_resume_processes_only_unfinished_districts(self):
+        def deadline(jobs,statuses):
+            self.finish(jobs[:1],statuses);v.request_stop('deadline');return 'stop'
+        with patch.object(v,'run_round',side_effect=deadline):self.assertEqual(v.main(),3)
+        v.STOP_EVENT.clear();v.STOP_REASON[0]=None
+        self.assertEqual(v.main(),0)
+        self.assertEqual(self.rounds,[[ROW['GID_2']],[URBAN['GID_2']]])
+
+    def test_exhausted_missing_data_is_failure_not_success(self):
+        state=complete_state();state['t2']['2025-01']='no_data';state.update(status='partial',attempts=3)
+        self.states={ROW['GID_2']:state,URBAN['GID_2']:complete_state(URBAN['GID_2'])}
+        self.assertEqual(v.main(),1);v.run_round.assert_not_called()
+
+    def test_final_upload_failure_is_not_reported_as_success(self):
+        self.states={r['GID_2']:complete_state(r['GID_2']) for r in [ROW,URBAN]}
+        v.rclone_sync_once.return_value=False
+        self.assertEqual(v.main(),1)
+
+    def test_empty_pilot_verification_fails(self):
+        with patch('sys.argv',['verify_pilot.py','--root',str(self.root)]):
+            self.assertEqual(verify.main(),1)
+
+
+if __name__=='__main__':
+    unittest.main()
