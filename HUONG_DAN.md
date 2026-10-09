@@ -1,6 +1,6 @@
-# Hướng dẫn cho nhánh Cao Bằng–Hà Nội
+# Hướng dẫn cho nhánh Hà Tĩnh–Lai Châu
 
-**Nhánh này dùng [SETUP_CAO_BANG_HA_NOI.md](SETUP_CAO_BANG_HA_NOI.md)**: project `vngis-ee-cao-bang-hanoi`, phạm vi 11 tỉnh từ Cao Bằng đến Hà Nội theo alphabet, đầu ra `VNGISDash_2024_Cao Bang_Ha Noi` trên Drive `adt.wqiqc@gmail.com`, hai secrets riêng. Các mục bên dưới là tài liệu phiên bản cũ; không áp dụng project, secrets, phạm vi hoặc thư mục đầu ra cũ cho nhánh này.
+**Nhánh này dùng [SETUP_HA_TINH_LAI_CHAU.md](SETUP_HA_TINH_LAI_CHAU.md)**: project `vngis-ee-ha-tinh-lai-chau`, phạm vi 11 tỉnh từ Hà Tĩnh đến Lai Châu theo alphabet, đầu ra `VNGISDash_2024_Ha Tinh_Lai Chau` trên Drive `adt.wqiqc@gmail.com`, hai secrets riêng. Các mục bên dưới là tài liệu phiên bản cũ; không áp dụng project, secrets, phạm vi hoặc thư mục đầu ra cũ cho nhánh này.
 
 # Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions (bản cũ)
 

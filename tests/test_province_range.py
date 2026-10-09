@@ -11,8 +11,7 @@ import pandas as pd
 with patch.dict(os.environ, {"VNGIS_SKIP_MAIN": "1"}):
     import vngis_2024 as v
 
-EXPECTED = ["VNM.14_1", "VNM.19_1", "VNM.15_1", "VNM.16_1", "VNM.20_1",
-            "VNM.17_1", "VNM.18_1", "VNM.21_1", "VNM.26_1", "VNM.28_1", "VNM.27_1"]
+EXPECTED = ['VNM.29_1', 'VNM.22_1', 'VNM.23_1', 'VNM.24_1', 'VNM.25_1', 'VNM.30_1', 'VNM.31_1', 'VNM.32_1', 'VNM.33_1', 'VNM.34_1', 'VNM.36_1']
 
 
 def gadm_fixture():
@@ -31,8 +30,8 @@ class ProvinceRangeTests(unittest.TestCase):
         cls.admin = gadm_fixture()
 
     def setUp(self):
-        p = patch.multiple(v, MODE="full", START_FROM_PROVINCE="Cao Bằng",
-                           STOP_AFTER_PROVINCE="Hà Nội", PROVINCE_ORDER="alphabet")
+        p = patch.multiple(v, MODE="full", START_FROM_PROVINCE='Hà Tĩnh',
+                           STOP_AFTER_PROVINCE='Lai Châu', PROVINCE_ORDER="alphabet")
         p.start()
         self.addCleanup(p.stop)
 
@@ -40,31 +39,31 @@ class ProvinceRangeTests(unittest.TestCase):
         targets = v.load_targets(self.admin)
         self.assertEqual(len(self.admin), 11163)
         self.assertEqual(self.admin.GID_1.nunique(), 63)
-        self.assertEqual(len(targets), 2072)
+        self.assertEqual(len(targets), 2012)
         self.assertEqual(list(targets.GID_1.drop_duplicates()), EXPECTED)
-        self.assertEqual((targets.GID_1 == "VNM.28_1").sum(), 116)
-        self.assertEqual((targets.GID_1 == "VNM.27_1").sum(), 584)
+        self.assertEqual((targets.GID_1 == 'VNM.34_1').sum(), 102)
+        self.assertEqual((targets.GID_1 == 'VNM.36_1').sum(), 108)
 
     def test_pilot_stays_in_scope_even_when_requesting_more_than_scope(self):
         with patch.multiple(v, MODE="pilot", PILOT_N=3000):
             targets = v.load_targets(self.admin)
-        self.assertEqual(len(targets), 2072)
+        self.assertEqual(len(targets), 2012)
         self.assertEqual(set(targets.GID_1), set(EXPECTED))
 
-    def test_small_pilot_starts_in_cao_bang_and_samples_both_types(self):
+    def test_small_pilot_starts_at_range_beginning_and_samples_both_types(self):
         with patch.multiple(v, MODE="pilot", PILOT_N=2):
             targets = v.load_targets(self.admin)
-        self.assertEqual(set(targets.GID_1), {"VNM.14_1"})
+        self.assertEqual(set(targets.GID_1), {'VNM.29_1'})
         self.assertEqual(set(targets.TYPE_3), {"Xã", "Phường"})
 
     def test_endpoint_names_without_accents_and_exact_ids(self):
-        for start, end in (("Cao Bang", "Ha Noi"), ("VNM.14_1", "VNM.27_1")):
+        for start, end in (('ha tinh', 'lai chau'), ('VNM.29_1', 'VNM.36_1')):
             with self.subTest(start=start), patch.multiple(v, START_FROM_PROVINCE=start,
                                                          STOP_AFTER_PROVINCE=end):
                 self.assertEqual(v.province_boundary(self.admin, end), set(EXPECTED))
 
     def test_reversed_range_fails(self):
-        with patch.multiple(v, START_FROM_PROVINCE="Hà Nội", STOP_AFTER_PROVINCE="Cao Bằng"):
+        with patch.multiple(v, START_FROM_PROVINCE='Lai Châu', STOP_AFTER_PROVINCE='Hà Tĩnh'):
             with self.assertRaises(ValueError):
                 v.load_targets(self.admin)
 
@@ -74,16 +73,16 @@ class ProvinceRangeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     v.load_targets(self.admin)
 
-    def test_resume_schedules_ha_nam_before_ha_noi_despite_larger_gid(self):
+    def test_resume_schedules_penultimate_province_before_final_province(self):
         targets = v.load_targets(self.admin)
         rows = {r["GID_3"]: r for r in targets.to_dict("records")}
         states = {g: {"status": "done"} for g, row in rows.items()
                   if row["GID_1"] in EXPECTED[:-2]}
         jobs = v.next_round_jobs(list(rows), rows, states)
-        self.assertEqual({r["GID_1"] for _, r, _ in jobs}, {"VNM.28_1"})
-        self.assertEqual(len(jobs), 116)
+        self.assertEqual({r["GID_1"] for _, r, _ in jobs}, {'VNM.34_1'})
+        self.assertEqual(len(jobs), 102)
 
-    def test_full_pipeline_resumes_same_scope_and_finishes_after_hanoi(self):
+    def test_full_pipeline_resumes_same_scope_and_finishes_at_range_end(self):
         states, rounds = {}, []
         with tempfile.TemporaryDirectory() as root:
             with patch.multiple(v, LOCAL_ROOT=root, PREFLIGHT=False, MAX_RUNTIME_SEC=0,
@@ -108,14 +107,14 @@ class ProvinceRangeTests(unittest.TestCase):
                 )
                 with patch.multiple(v, **mocks):
                     self.assertEqual(v.main(), 3)
-                    self.assertEqual(rounds, [{"VNM.14_1"}])
+                    self.assertEqual(rounds, [{'VNM.29_1'}])
                     v.STOP_EVENT.clear()
                     v.STOP_REASON[0] = None
                     self.assertEqual(v.main(), 0)
                     self.assertEqual(rounds, [{gid} for gid in EXPECTED])
-                    self.assertEqual(len(states), 2072)
+                    self.assertEqual(len(states), 2012)
                     report = pd.read_csv(Path(root) / "_control" / "progress.csv")
-                    self.assertEqual(len(report), 2072)
+                    self.assertEqual(len(report), 2012)
                     self.assertTrue((report.status == "done").all())
                     self.assertEqual(set(report.GID_1), set(EXPECTED))
                     self.assertTrue(mocks["rclone_sync_once"].call_args.kwargs["final"])
