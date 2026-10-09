@@ -5,12 +5,12 @@ VNGISDash 2024: pipeline tự động cấp xã chạy trên GitHub Actions.
 Nguồn khoa học: VNGISDash_Task123_Merged_final.ipynb. Pipeline chỉ giữ 3 chức năng:
   (1) trích xuất chỉ số từ ảnh ngày (Task 1) và ảnh đêm (Task 3.2), (2) lấy ảnh tif ngày (Task 2),
   (3) lấy ảnh tif đêm (Task 3.1). Không có bước chọn tỉnh, xã: VNGIS_MODE=pilot tự lấy VNGIS_PILOT_N xã,
-  VNGIS_MODE=full chạy mọi xã.
+  VNGIS_MODE=full chạy mọi xã trong phạm vi cấu hình.
 
 Cấu trúc đầu ra (cấp 1 = thư mục trên Drive):
   Day/<GID_1>_<tỉnh>/<GID_3>_<xã>/<GID_3>_day_2024MM.tif
   Night/<GID_1>_<tỉnh>/<GID_3>_<xã>/<GID_3>_night_2024MM.tif
-  CSV/day_indices.csv, CSV/night_indices.csv         (gộp toàn quốc)
+  CSV/day_indices.csv, CSV/night_indices.csv         (gộp phạm vi cấu hình)
   _control/                                         (trạng thái, log, báo cáo)
 
 Tăng tốc so với notebook (không đổi công thức, tham số): Task 1 và Task 3.2 gom 12 tháng thành 1 lần gọi
@@ -52,8 +52,8 @@ def _env(name, default, cast=str):
 YEAR = 2024
 MONTHS = list(range(1, 13))
 
-PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-2")               # project chịu quota Earth Engine
-ASSET_ID = f"projects/{PROJECT_ID}/assets/communes_l3"             # notebook cell 11
+PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-soc-trang-yen-bai")
+ASSET_ID = _env("VNGIS_EE_ASSET", f"projects/{PROJECT_ID}/assets/communes_l3")
 
 MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
 if MODE not in ("pilot", "full"):
@@ -61,7 +61,11 @@ if MODE not in ("pilot", "full"):
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
-STOP_AFTER_PROVINCE = _env("VNGIS_STOP_AFTER_PROVINCE", "")
+START_FROM_PROVINCE = _env("VNGIS_START_FROM_PROVINCE", "Sóc Trăng")
+STOP_AFTER_PROVINCE = _env("VNGIS_STOP_AFTER_PROVINCE", "Yên Bái")
+PROVINCE_ORDER = _env("VNGIS_PROVINCE_ORDER", "alphabet")
+if PROVINCE_ORDER not in ("alphabet", "gadm"):
+    raise SystemExit("VNGIS_PROVINCE_ORDER phải là alphabet hoặc gadm")
 
 # Ảnh ngày: số kênh lưu vào tif. 6 = BLUE..SWIR2 (NDVI, NDBI, MNDWI, BSI tính lại được từ 6 kênh này);
 # 10 = đủ 10 kênh như notebook (file lớn gần gấp đôi).
@@ -101,7 +105,8 @@ EE_SEM = threading.BoundedSemaphore(EE_CONCURRENCY)
 _ee_cooldown_lock = threading.Lock()
 _ee_cooldown_until = 0.0
 
-DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", "VNGISDash_2024_PILOT" if MODE == "pilot" else "VNGISDash_2024")
+DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", "VNGISDash_2024_Soc Trang_Yen Bai_PILOT" if MODE == "pilot"
+                   else "VNGISDash_2024_Soc Trang_Yen Bai")
 RCLONE_REMOTE = _env("VNGIS_RCLONE_REMOTE", "gdrive")
 REMOTE_BASE = f"{RCLONE_REMOTE}:{DRIVE_FOLDER}"
 LOCAL_ROOT = _env("VNGIS_LOCAL_ROOT", os.path.expanduser(f"~/vngis_2024/{DRIVE_FOLDER}"))
@@ -1247,8 +1252,23 @@ def natural_sort_key(gid_str):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(gid_str))]
 
 
-def province_boundary(admin, requested):
-    """Chọn điểm dừng theo GID_1 hoặc tên tỉnh, hỗ trợ tên có/không dấu và khoảng trắng."""
+def province_name_key(name):
+    """Alphabet bỏ dấu, giữ khoảng trắng: cùng cách sắp xếp bảng 63 tỉnh."""
+    name = unicodedata.normalize("NFD", str(name)).lower().replace("đ", "d")
+    return " ".join("".join(c for c in name if not unicodedata.combining(c)).split())
+
+
+def ordered_provinces(admin):
+    provinces = admin[["GID_1", "NAME_1"]].drop_duplicates().to_dict("records")
+    if PROVINCE_ORDER == "alphabet":
+        provinces.sort(key=lambda r: (province_name_key(r["NAME_1"]), natural_sort_key(r["GID_1"])))
+    else:
+        provinces.sort(key=lambda r: natural_sort_key(r["GID_1"]))
+    return [r["GID_1"] for r in provinces]
+
+
+def province_id(admin, requested):
+    """Khớp GID_1 hoặc tên tỉnh có/không dấu và khoảng trắng."""
     provinces = admin[["GID_1", "NAME_1"]].drop_duplicates()
     key = normalize_str_t1(requested.strip())
     matches = provinces[
@@ -1257,21 +1277,31 @@ def province_boundary(admin, requested):
     ]
     ids = matches["GID_1"].unique()
     if len(ids) != 1:
-        raise ValueError(f"Tỉnh dừng '{requested}' không khớp duy nhất với GADM. "
+        raise ValueError(f"Tỉnh '{requested}' không khớp duy nhất với GADM. "
                          "Nhập đúng NAME_1 hoặc GID_1 của tỉnh.")
-    ordered = sorted(provinces["GID_1"].unique(), key=natural_sort_key)
-    return set(ordered[:ordered.index(ids[0]) + 1])
+    return ids[0]
+
+
+def province_boundary(admin, requested):
+    ordered = ordered_provinces(admin)
+    start = ordered.index(province_id(admin, START_FROM_PROVINCE)) if START_FROM_PROVINCE else 0
+    end = ordered.index(province_id(admin, requested)) if requested else len(ordered) - 1
+    if start > end:
+        raise ValueError("Tỉnh bắt đầu đứng sau tỉnh kết thúc trong thứ tự đã chọn.")
+    return set(ordered[start:end + 1])
 
 
 def load_targets(admin):
-    """Không chọn tỉnh, xã bằng tay. full: mọi xã. pilot: tự lấy PILOT_N xã đầu tiên theo thứ tự mã,
-    xen kẽ phường (đô thị) và xã (nông thôn) để thử cả hai loại; thiếu loại nào thì lấy bù theo thứ tự."""
-    df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_3"]))]
+    """Lọc phạm vi trước khi chọn xã; pilot và full đều nằm trong Sóc Trăng–Yên Bái."""
+    scoped = admin
+    if START_FROM_PROVINCE or (MODE == "full" and STOP_AFTER_PROVINCE):
+        allowed = province_boundary(admin, STOP_AFTER_PROVINCE)
+        scoped = admin[admin["GID_1"].isin(allowed)].reset_index(drop=True)
+    rank = {gid: i for i, gid in enumerate(ordered_provinces(scoped))}
+    df = scoped.iloc[sorted(range(len(scoped)), key=lambda i:
+                           (rank[scoped.iloc[i]["GID_1"]], natural_sort_key(scoped.iloc[i]["GID_3"])))]
     df = df.reset_index(drop=True)
     if MODE == "full":
-        if STOP_AFTER_PROVINCE:
-            allowed = province_boundary(admin, STOP_AFTER_PROVINCE)
-            df = df[df["GID_1"].isin(allowed)].reset_index(drop=True)
         return df
     t = df["TYPE_3"].str.strip().str.lower()
     pools = [list(df.index[t == "phường"]), list(df.index[t == "xã"])]
@@ -1397,10 +1427,10 @@ class ProvinceIncompleteError(RuntimeError):
 
 def next_round_jobs(gids, rows, statuses):
     """Khi có điểm dừng, chỉ xếp việc của một tỉnh; không chạy vượt qua tỉnh còn lỗi."""
-    if MODE != "full" or not STOP_AFTER_PROVINCE:
+    if MODE != "full" or not (START_FROM_PROVINCE or STOP_AFTER_PROVINCE):
         return [(g, rows[g], "full") for g in gids if not core_finished(statuses.get(g))]
 
-    provinces = sorted({rows[g]["GID_1"] for g in gids}, key=natural_sort_key)
+    provinces = ordered_provinces(pd.DataFrame([rows[g] for g in gids])) if gids else []
     for province in provinces:
         members = [g for g in gids if rows[g]["GID_1"] == province]
         incomplete = [g for g in members if (statuses.get(g) or {}).get("status") != "done"]
@@ -1531,7 +1561,8 @@ def main():
     log.info(f"Danh sách: {len(gids):,} xã, {targets['GID_1'].nunique()} tỉnh"
              + (f" (thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
     if MODE == "full" and STOP_AFTER_PROVINCE:
-        log.info(f"Điểm dừng: sau tỉnh {STOP_AFTER_PROVINCE}. "
+        log.info(f"Phạm vi: {START_FROM_PROVINCE or 'đầu danh sách'} → {STOP_AFTER_PROVINCE} "
+                 f"(thứ tự {PROVINCE_ORDER}). "
                  "Chạy lần lượt từng tỉnh; không xếp việc của tỉnh sau điểm dừng.")
 
     statuses = load_all_status()
