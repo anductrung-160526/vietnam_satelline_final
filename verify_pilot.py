@@ -32,7 +32,12 @@ def check_tif(path, bands, scale, night=False):
     if not ok or empty:
         return 'FAIL', note or 'Không có pixel hợp lệ'
     with rasterio.open(path) as src:
-        if any(np.dtype(dtype).kind != 'f' for dtype in src.dtypes):
+        if not night and v.DAY_FORMAT == 'int16':
+            if any(dtype != 'int16' for dtype in src.dtypes) or src.nodata != v.DAY_NODATA:
+                return 'FAIL', 'TIFF ngày phải là Int16 với NoData -32768'
+            if any(abs(s - 1.0 / v.DAY_SCALE_INV) > 1e-12 for s in src.scales) or any(src.offsets):
+                return 'FAIL', 'Sai scale/offset Int16'
+        elif any(np.dtype(dtype).kind != 'f' for dtype in src.dtypes):
             return 'FAIL', 'TIFF không có kiểu float'
         if night and any(dtype != 'float64' for dtype in src.dtypes):
             return 'FAIL', 'Ảnh đêm phải là float64'

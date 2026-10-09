@@ -137,7 +137,11 @@ Trong **Settings → Actions → General**, policy phải cho phép workflow t�
 4. Kiểm tra thư mục **`VNGISDash_202407_202506_Districts_PILOT`** trên Drive. Khi pilot đạt, tạo lượt mới trên đúng branch với **`mode=full`, `workers=2`**.
 5. Full phải ghi **710 huyện, 63 tỉnh**. Khi hoàn tất đầy đủ, mỗi CSV có **8.520 dòng huyện–tháng**, có 12 TIFF ngày và 12 TIFF đêm mỗi huyện (tổng 8.520 file mỗi loại).
 
-Sentinel-2 ngày: median, 10 kênh BLUE/GREEN/RED/NIR/SWIR1/SWIR2/NDVI/NDBI/MNDWI/BSI; TIFF float, 20 m. Task 1 giữ reducer mean/stdDev ở scale **50 m** như pipeline gốc. TIFF ngày giữ lựa chọn cửa sổ tháng, rồi ±15/±30 ngày khi không có cảnh; CSV Task 1 tính trên tháng lịch chính. VIIRS đêm: avg_rad/cf_cvg float64, 500 m; reducer và công thức chỉ số giữ từ notebook. Ngày cuối tháng được bao gồm bằng end-exclusive là ngày đầu tháng tiếp theo.
+Sentinel-2 ngày: median, 10 kênh BLUE/GREEN/RED/NIR/SWIR1/SWIR2/NDVI/NDBI/MNDWI/BSI; TIFF **Int16, 20 m, scale 0.0001, offset 0, NoData -32768**. Đọc giá trị thực bằng **DN × 0.0001**. Trong miền biểu diễn, sai số làm tròn tối đa 0.00005; giá trị vượt miền ±3.2767 gây lỗi rõ ràng, không bị tự cắt. TIFF đêm vẫn avg_rad/cf_cvg float64, 500 m.
+
+CSV được tính **trên ảnh float gốc ở Earth Engine**, trước và độc lập với lượng tử hóa TIFF; Task 1 giữ mean/stdDev ở scale **50 m**. Trước tiên dùng cảnh có CLOUDY_PIXEL_PERCENTAGE < 85; nếu có kênh thiếu mean sau mask, thử toàn bộ cảnh **của đúng tháng đó**, vẫn giữ mask QA60, median và công thức chỉ số. Log ghi kênh thiếu, số cảnh và số pixel mỗi kênh. Nếu vẫn không có pixel hợp lệ, giữ null/no_data; không mở rộng tháng để lấp CSV. TIFF ngày giữ lựa chọn cửa sổ tháng, rồi ±15/±30 ngày khi không có cảnh. Ngày cuối tháng được bao gồm bằng end-exclusive là ngày đầu tháng tiếp theo.
+
+Int16 giảm dung lượng TIFF lưu trên máy/Drive; bước chuyển đổi thực hiện theo block sau khi tải, nên giới hạn 32 MB mỗi yêu cầu Earth Engine vẫn có thể cần chia ô. Không tính lại CSV từ TIFF Int16. Công thức chỉ số đêm không thay đổi.
 
 CSV metadata dùng `GID_2`, `NAME_2`, `TYPE_2` và `YEAR`, `MONTH`. `DISTRICT_AREA_HA` là diện tích huyện. Rolling TNL qua tháng 12 sang tháng 1 liên tục; tháng thiếu giữ null, tăng trưởng không lấy tháng xa hơn để lấp khoảng trống. `DATA_STATUS=no_data`/`ERROR` thể hiện không có cảnh hoặc pixel hợp lệ; không điền 0 để giả lập đo đạc.
 
@@ -163,6 +167,14 @@ _control/logs/
 - Tiếp tục: xóa STOP đúng chỗ, chọn **Run workflow** trên branch này, cùng mode. Không xóa `_control/status` hoặc `_control/parts`.
 - Dữ liệu thiếu đã hết lần thử: xác định nguyên nhân trong progress/log, khắc phục rồi tăng `VNGIS_MAX_ATTEMPTS` trong workflow cho lượt mới nếu cần. Không đặt status=done bằng tay.
 - Final sync thất bại trả mã 1. Lượt chạy lại đối chiếu file hiện có để phục hồi TIFF/CSV chưa đồng bộ. Ảnh lớn được chia ô cùng scale và ghép theo block trên đĩa, không giảm độ phân giải hoặc resample. File `.part` chưa hoàn tất không được upload.
+
+### Nâng cấp lượt float đã chạy trước bản sửa
+
+Tạo STOP trên branch, chờ lượt cũ đồng bộ và kết thúc, rồi xóa STOP và **Run workflow tạo lượt mới** trên branch này. Lượt đang chạy sử dụng code cũ; cập nhật branch không thay code của runner đang hoạt động. Không cần đổi thư mục Drive hoặc xóa kết quả cũ.
+
+Pipeline tự nhận manifest float cũ của đúng kỳ/cấp: giữ TIFF đêm và CSV đêm, tính lại CSV ngày theo chính sách bổ sung ở trên. TIFF ngày đã có được lấy từ Drive và chuyển Int16 cục bộ, không tải lại ảnh đó từ Earth Engine. Nếu file thực sự mất, pipeline tải lại tháng tương ứng. `_control/int16_uploaded.json` chỉ đánh dấu TIFF Int16 đã upload; file float còn trên Drive không được nhầm là đã hoàn tất nâng cấp.
+
+Uploader và đối chiếu trạng thái dùng cùng khóa; chuyển file lên Drive không làm reset số lần thử. Kể cả một lượt rclone chỉ chuyển được một phần, những file chuyển thành công vẫn được ghi nhận. Dữ liệu thực sự thiếu chỉ thử đến giới hạn `VNGIS_MAX_ATTEMPTS`, rồi báo lỗi. Nếu log vẫn ghi CSV ngày 07/2024 no_data, xem chẩn đoán số cảnh/pixel thay vì chạy lặp vô hạn.
 
 ## 8. Xử lý lỗi
 

@@ -49,7 +49,7 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
-                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REMOTE_TIFS=set(),
+                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
                            _dl_stats={'ok':0,'fail':0,'last_err':''})
         p.start()
         self.addCleanup(p.stop)
@@ -241,7 +241,12 @@ class ProcessTests(LocalCase):
         self.downloads.append((kind,period))
         Path(path).parent.mkdir(parents=True,exist_ok=True)
         bands,scale,dtype=(10,20,'float32') if kind=='day' else (2,500,'float64')
-        Path(path).write_bytes(tif_bytes(np.ones((bands,2,2),dtype),from_origin(105,22,scale/111319.49,scale/111319.49)))
+        arr=np.ones((bands,2,2),dtype)
+        tr=from_origin(105,22,scale/111319.49,scale/111319.49)
+        if kind=='day' and v.DAY_FORMAT=='int16':
+            v.write_day_int16(path,arr,tr,'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+        else:
+            Path(path).write_bytes(tif_bytes(arr,tr))
         return 1,False
 
     def test_process_writes_all_months_and_verified_csv_tiff(self):
@@ -366,6 +371,143 @@ class MainTests(LocalCase):
     def test_empty_pilot_verification_fails(self):
         with patch('sys.argv',['verify_pilot.py','--root',str(self.root)]):
             self.assertEqual(verify.main(),1)
+
+
+class Int16UpgradeTests(LocalCase):
+    def test_quantization_preserves_scale_nodata_and_csv_precision(self):
+        arr=np.array([[[0.123456, -0.201234], [np.nan, 0.0]]]*10, dtype='float32')
+        source=self.root/'source.tif'; target=self.root/'target.tif'
+        source.write_bytes(tif_bytes(arr,from_origin(105,22,20/111319.49,20/111319.49)))
+        v.convert_day_file(str(source),str(target))
+        with rasterio.open(target) as dst:
+            self.assertEqual(dst.dtypes,('int16',)*10)
+            self.assertEqual(dst.scales,(0.0001,)*10)
+            self.assertEqual(dst.nodata,-32768)
+            decoded=dst.read().astype(float)*dst.scales[0]
+            valid=np.isfinite(arr)
+            self.assertLessEqual(np.max(np.abs(decoded[valid]-arr[valid])),0.00005)
+            self.assertEqual(dst.read()[0,1,0],-32768)
+        props=day_props();props[0]['BLUE_mean']=0.123456789
+        self.assertEqual(v.day_records(ROW,props)[0]['BLUE_mean'],0.123456789)
+        self.assertEqual(verify.check_tif(target,10,20)[0],'PASS')
+
+    def test_out_of_range_is_rejected_instead_of_silently_clipped(self):
+        with self.assertRaisesRegex(RuntimeError,'ngoài miền Int16'):
+            v.quantize_day(np.array([4.0]),None)
+        self.assertEqual(v.quantize_day(np.array([np.inf,np.nan]),None).tolist(),[-32768,-32768])
+
+    def test_tiled_int16_export_streams_mosaic_and_preserves_decoded_pixels(self):
+        full=np.arange(10*4*4,dtype='float32').reshape(10,4,4)/1000
+        res=20/111319.49
+        tiles=[tif_bytes(full[:,r:r+2,c:c+2],from_origin(105+c*res,22-r*res,res,res))
+               for r,c in [(0,0),(0,2),(2,0),(2,2)]]
+        target=self.root/'tiled.tif'
+        with patch.object(v,'fetch_geotiff_bytes',side_effect=tiles),patch.object(v,'_bbox',return_value=(105,21,106,22)), \
+             patch.object(v,'_split_bbox',return_value=[1,2,3,4]),patch.object(v,'mosaic_tiles') as in_memory:
+            self.assertEqual(v.download_tif(None,None,20,str(target),'test',writer=v.write_day_int16,force_tiles=2),4)
+            in_memory.assert_not_called()
+        with rasterio.open(target) as dst:
+            np.testing.assert_allclose(dst.read()*dst.scales[0],full,atol=0.00005)
+        self.assertEqual(verify.check_tif(target,10,20)[0],'PASS')
+
+    def test_legacy_upgrade_reuses_night_and_schedules_day_conversion(self):
+        old=complete_state();old.update(profile=v.LEGACY_FLOAT_PROFILE,attempts=3)
+        upgraded=v.migrate_float_status(old)
+        self.assertEqual(upgraded['profile'],v.OUTPUT_PROFILE)
+        self.assertEqual(upgraded['attempts'],0)
+        self.assertEqual(upgraded['t1'],'pending')
+        self.assertEqual(set(upgraded['convert_day_months']),set(v.MONTH_KEYS))
+        self.assertEqual(set(upgraded['t2'].values()),{'pending'})
+        self.assertEqual(set(upgraded['t3img'].values()),{'ok'})
+        self.assertEqual(old['profile'],v.LEGACY_FLOAT_PROFILE)
+        self.assertTrue(v.part_current('night',{'_profile':v.LEGACY_FLOAT_PROFILE}))
+        self.assertFalse(v.part_current('day',{'_profile':v.LEGACY_FLOAT_PROFILE}))
+
+    def test_converts_existing_day_without_any_earth_engine_download(self):
+        ctx=v.build_ctx(ROW);ctx['convert_day_months']=['2024-07']
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        path.parent.mkdir(parents=True)
+        path.write_bytes(tif_bytes(np.full((10,3,3),0.123456,'float32'),from_origin(105,22,20/111319.49,20/111319.49)))
+        with patch.object(v,'download_tif') as download:
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+            download.assert_not_called()
+        self.assertEqual(verify.check_tif(path,10,20)[0],'PASS')
+
+    def test_remote_conversion_uses_rclone_and_cleans_temporary_files(self):
+        ctx=v.build_ctx(ROW);ctx['convert_day_months']=['2024-07']
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        data=tif_bytes(np.full((10,2,2),0.2,'float32'),from_origin(105,22,20/111319.49,20/111319.49))
+        def copy(args,**kwargs):
+            self.assertEqual(args[0],'copyto');Path(args[2]).write_bytes(data);return True
+        with patch.object(v,'_rclone',side_effect=copy),patch.object(v,'download_tif') as download:
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+            download.assert_not_called()
+        self.assertFalse(Path(str(path)+'.source.part').exists())
+        self.assertEqual(verify.check_tif(path,10,20)[0],'PASS')
+
+    def test_partial_rclone_move_still_remembers_successfully_uploaded_file(self):
+        ctx=v.build_ctx(ROW);path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        path.parent.mkdir(parents=True)
+        v.write_day_int16(str(path),np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+        rel=str(path.relative_to(self.root))
+        def move(args,**kwargs):
+            if args[0]=='move':
+                snapshot=Path(args[args.index('--files-from')+1]).read_text()
+                self.assertIn(path.name,snapshot)
+                self.assertTrue(v._sync_lock.locked())
+                path.unlink();return False
+            return True
+        with patch.object(v,'_rclone',side_effect=move):
+            self.assertFalse(v.rclone_sync_once())
+        self.assertIn(rel,v.REMOTE_TIFS)
+        state=complete_state();state['attempts']=2
+        for period in v.PERIODS:
+            for folder,name in [('rel_day_dir',v.day_name),('rel_night_dir',v.night_name)]:
+                v.REMOTE_TIFS.add(ctx[folder]+'/'+name(ctx,period))
+        v.REMOTE_INT16_TIFS.update(v.REMOTE_TIFS)
+        restored=v.reconcile_status(state)
+        self.assertEqual(restored['attempts'],2)
+        self.assertEqual(restored['t2']['2024-07'],'ok')
+
+    def test_status_reconciliation_shares_upload_lock(self):
+        v.write_status(complete_state())
+        def reconcile(state,parts):
+            self.assertTrue(v._sync_lock.locked());return state
+        with patch.object(v,'reconcile_status',side_effect=reconcile):
+            self.assertIn(ROW['GID_2'],v.load_all_status())
+
+    def test_old_float_on_drive_is_not_mistaken_for_uploaded_int16(self):
+        ctx=v.build_ctx(ROW)
+        for period in v.PERIODS:
+            v.REMOTE_TIFS.add(ctx['rel_day_dir']+'/'+v.day_name(ctx,period))
+            v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+        state=complete_state();state['attempts']=2
+        restored=v.reconcile_status(state)
+        self.assertFalse(v.district_complete(restored))
+        self.assertEqual(set(restored['convert_day_months']),set(v.MONTH_KEYS))
+        v.REMOTE_INT16_TIFS.update(v.REMOTE_TIFS)
+        self.assertTrue(v.district_complete(v.reconcile_status(state)))
+
+    def test_missing_july_csv_retries_only_july_with_same_calendar_dates(self):
+        calls=[];primary=day_props();primary[0]['BLUE_mean']=None
+        fixed=day_props()[0];fixed.update({b+'_count':10 for b in v.DAY_BANDS_ALL})
+        results=[{'features':[{'properties':p} for p in primary]},
+                 {'scenes':3,'features':[{'properties':fixed}]}]
+        with patch.object(v,'ee',fake_ee(calls)),patch.object(v,'ee_getinfo',side_effect=results) as query:
+            records=v.task1_all_months(Node(calls))
+        self.assertEqual(query.call_count,2)
+        self.assertTrue(all(r['DATA_STATUS']=='ok' for r in v.day_records(ROW,records)))
+        dates=[args for name,args,kw in calls if name=='filterDate']
+        self.assertEqual(dates[-1],('2024-07-01','2024-08-01'))
+
+    def test_no_valid_pixels_still_reports_missing_band_and_bounds_retries(self):
+        props=day_props();props[0]['BLUE_mean']=None
+        records=v.day_records(ROW,props)
+        self.assertEqual(records[0]['DATA_STATUS'],'no_data')
+        self.assertIn('BLUE',records[0]['ERROR'])
+        state=complete_state();state.update(attempts=3,status='partial')
+        state['t1_by_month']['2024-07']='no_data'
+        self.assertTrue(v.core_finished(state));self.assertFalse(v.district_complete(state))
 
 
 if __name__=='__main__':

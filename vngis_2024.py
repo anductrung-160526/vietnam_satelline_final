@@ -91,11 +91,11 @@ DAY_BANDS = _env("VNGIS_DAY_BANDS", 10, int)
 if DAY_BANDS not in (6, 10):
     raise SystemExit("VNGIS_DAY_BANDS phải là 6 hoặc 10")
 # Kiểu lưu ảnh ngày: float = giữ nguyên giá trị Earth Engine trả về, nén DEFLATE không mất dữ liệu (như bản 4);
-# int16 = số nguyên round(giá trị × VNGIS_DAY_SCALE), file nhỏ hơn ~3-4 lần nhưng nhiều trình xem không mở được.
-DAY_FORMAT = _env("VNGIS_DAY_FORMAT", "float").lower()
+# int16 = round(giá trị × VNGIS_DAY_SCALE), dữ liệu thô bằng nửa Float32; đọc giá trị bằng DN × scale.
+DAY_FORMAT = _env("VNGIS_DAY_FORMAT", "int16").lower()
 if DAY_FORMAT not in ("float", "int16"):
     raise SystemExit("VNGIS_DAY_FORMAT phải là float hoặc int16")
-DAY_SCALE_INV = _env("VNGIS_DAY_SCALE", 10000, int)  # int16 = round(giá trị × 10000); 1000 cho file nhỏ hơn ~40%
+DAY_SCALE_INV = _env("VNGIS_DAY_SCALE", 10000, int)
 if DAY_SCALE_INV not in (1000, 10000):
     raise SystemExit("VNGIS_DAY_SCALE phải là 10000 hoặc 1000")
 DAY_NODATA = -32768
@@ -147,7 +147,8 @@ NIGHT_COLUMNS = ADM_COLS + ["YEAR", "MONTH", "TIME", "DISTRICT_AREA_HA", "TNL",
                  "MEAN_RAD", "STD_RAD", "MIN_RAD", "MAX_RAD", "SPATIAL_CV", "LIT_PIXELS", "LIT_AREA_HA",
                  "ELECTRIFICATION_RATIO_PCT", "LIT_POP_PROXY", "CLOUD_FREE_OBS", "TNL_MA3",
                  "TNL_MOM_GROWTH_PCT", "DATA_STATUS", "ERROR"]
-OUTPUT_PROFILE = f"{SCHEMA_ID}:{PERIOD_ID}:day-{DAY_FORMAT}-{DAY_BANDS}-{DAY_SCALE_INV}"
+LEGACY_FLOAT_PROFILE = f"{SCHEMA_ID}:{PERIOD_ID}:day-float-{DAY_BANDS}-{DAY_SCALE_INV}"
+OUTPUT_PROFILE = f"{SCHEMA_ID}:{PERIOD_ID}:day-{DAY_FORMAT}-{DAY_BANDS}-{DAY_SCALE_INV}:csv-calendar-v2"
 
 log = logging.getLogger("vngis")
 
@@ -434,7 +435,31 @@ def task1_all_months(district_fc):
     per_month.append(ee.FeatureCollection(ee.Algorithms.If(raw_col.size().gt(0), stats,
                                                            ee.FeatureCollection([]))))
   feats = ee_getinfo(ee.FeatureCollection(per_month).flatten())["features"]
-  return [f["properties"] for f in feats]
+  props = [f["properties"] for f in feats]
+  indexed = {(int(p["YEAR"]), int(p["MONTH"])): p for p in props}
+  for year, month in PERIODS:
+    p = indexed.get((year, month), {})
+    missing = [b for b in bands if _clean(p.get(f"{b}_mean")) is None]
+    if not missing:
+      continue
+    log.warning(f"CSV day {year}-{month:02d}: thiếu mean {','.join(missing)}; thử toàn bộ cảnh của đúng tháng, vẫn mask QA60")
+    s, e = _month_dates(year, month)
+    raw = ee.ImageCollection(S2_COLLECTION).filterBounds(district_fc).filterDate(s, e)
+    tensor = add_indices(raw.map(mask_s2_sr).median())
+    stats = tensor.select(bands).reduceRegions(
+        collection=district_fc, reducer=reducers.combine(ee.Reducer.count(), sharedInputs=True),
+        scale=50, tileScale=4, crs="EPSG:4326", maxPixelsPerRegion=1e9)
+    result = ee_getinfo(ee.Dictionary({"features": ee.Algorithms.If(raw.size().gt(0),
+        stats.toList(stats.size()), ee.List([])), "scenes": raw.size()}))
+    for feature in result.get("features", []):
+      candidate = dict(feature["properties"], YEAR=year, MONTH=month)
+      absent = [b for b in bands if _clean(candidate.get(f"{b}_mean")) is None]
+      log.info(f"CSV day {year}-{month:02d}: cảnh={result.get('scenes', '?')}, "
+               f"pixel={ {b: candidate.get(b + '_count', 0) for b in bands} }, thiếu mean={absent}")
+      candidate["_diagnostic"] = (f"cảnh={result.get('scenes', '?')}; thiếu mean={','.join(absent)}; "
+                                  f"pixel={ {b: candidate.get(b + '_count', 0) for b in bands} }")
+      indexed[(year, month)] = candidate
+  return list(indexed.values())
 
 
 # ---------- Task 3.2: notebook cell 38, gom 12 tháng thành 1 lần gọi ----------
@@ -847,23 +872,27 @@ def _best_compression():
     return _COMP[0]
 
 
+def quantize_day(arr, nodata):
+    a = arr.astype("float64")
+    invalid = ~np.isfinite(a)
+    if nodata is not None:
+        invalid |= arr == nodata
+    q = np.round(np.where(invalid, 0, a) * DAY_SCALE_INV)
+    if np.any((np.abs(q) > 32767) & ~invalid):
+        raise RuntimeError(f"Giá trị ngoài miền Int16 với scale {1.0 / DAY_SCALE_INV:g}; không tự cắt giá trị. Dùng TIFF float cho dữ liệu này.")
+    q = q.astype("int16")
+    q[invalid] = DAY_NODATA
+    return q
+
+
 def write_day_int16(path, arr, transform, crs, nodata, desc):
     """Ảnh ngày: lưu reflectance/chỉ số dưới dạng int16 = round(giá trị × DAY_SCALE_INV), scale ghi trong file.
     Với 10000: sai số tối đa 0,00005 (nửa bước 1e-4, bằng độ chính xác gốc của Sentinel-2 SR). NoData = -32768."""
-    a = arr.astype("float64")
-    invalid = np.isnan(a)
-    if nodata is not None and not (isinstance(nodata, float) and math.isnan(nodata)):
-        invalid |= (arr == nodata)
-    q = np.round(a * DAY_SCALE_INV)
-    over = int(np.sum((np.abs(q) > 32767) & ~invalid))
-    if over:
-        log.debug(f"{os.path.basename(path)}: {over} pixel vượt ngưỡng int16, bị chặn ở ±3.2767")
-    q = np.clip(np.nan_to_num(q, nan=0.0), -32767, 32767).astype("int16")
-    q[invalid] = DAY_NODATA
+    q = quantize_day(arr, nodata)
     import rasterio
     profile = {"driver": "GTiff", "height": q.shape[1], "width": q.shape[2], "count": q.shape[0], "dtype": "int16",
                "crs": crs, "transform": transform, "nodata": DAY_NODATA, "predictor": 2,
-               "tiled": True, "blockxsize": 256, "blockysize": 256, **_best_compression()}
+               "tiled": True, "BIGTIFF": "IF_SAFER", "blockxsize": 256, "blockysize": 256, **_best_compression()}
     with rasterio.open(path, "w", **profile) as dst:
         dst.write(q)
         dst.scales = [1.0 / DAY_SCALE_INV] * q.shape[0]
@@ -873,6 +902,24 @@ def write_day_int16(path, arr, transform, crs, nodata, desc):
         for i, d in enumerate(desc or [], start=1):
             if d:
                 dst.set_band_description(i, d)
+
+
+def convert_day_file(source, target):
+    """Lượng tử hóa theo block; không giữ cả TIFF huyện trong RAM."""
+    import rasterio
+    with rasterio.open(source) as src:
+        profile = src.profile.copy()
+        profile.update(dtype="int16", nodata=DAY_NODATA, compress="DEFLATE", predictor=2,
+                       zlevel=9, tiled=True, blockxsize=256, blockysize=256, BIGTIFF="IF_SAFER")
+        with rasterio.open(target, "w", **profile) as dst:
+            for _, window in src.block_windows(1):
+                dst.write(quantize_day(src.read(window=window), src.nodata), window=window)
+            dst.scales = [1.0 / DAY_SCALE_INV] * src.count
+            dst.offsets = [0.0] * src.count
+            dst.update_tags(SCALE_FACTOR=str(1.0 / DAY_SCALE_INV), NOTE="value = DN * scale; CSV tính trên float gốc")
+            for i, desc in enumerate(src.descriptions, 1):
+                if desc:
+                    dst.set_band_description(i, desc)
 
 
 def _rewrite_bytes_to_tif(data, path, writer):
@@ -933,6 +980,10 @@ def download_tif(img, region, scale, path, label, writer=write_tif, force_tiles=
                         paths.append(tile_path)
                     if writer is write_tif:
                         mosaic_tile_files(paths, tmp)
+                    elif writer is write_day_int16:
+                        float_path = os.path.join(tile_dir, "mosaic.tif")
+                        mosaic_tile_files(paths, float_path)
+                        convert_day_file(float_path, tmp)
                     else:
                         parts = []
                         for tile_path in paths:
@@ -1018,6 +1069,36 @@ def _clean(v):
 def _download_month(kind, ctx, period, img, path):
     label = f"[{ctx['gid2']}] {kind} {month_key(period)}"
     if kind == "day":
+        if DAY_FORMAT == "int16" and month_key(period) in ctx.get("convert_day_months", []):
+            with _sync_lock:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                rel = os.path.relpath(path, LOCAL_ROOT).replace(os.sep, "/")
+                if not os.path.isfile(path):
+                    if not _rclone(["copyto", f"{REMOTE_BASE}/{rel}", path + ".source.part"], timeout=1800):
+                        raise RuntimeError(f"Không tải được TIFF đã có để chuyển Int16: {rel}")
+                    source = path + ".source.part"
+                else:
+                    source = path
+                try:
+                    import rasterio
+                    with rasterio.open(source) as src:
+                        already = all(d == "int16" for d in src.dtypes) and all(
+                            abs(s - 1.0 / DAY_SCALE_INV) < 1e-12 for s in src.scales)
+                    if already:
+                        if source != path:
+                            os.replace(source, path)
+                    else:
+                        convert_day_file(source, path + ".part")
+                        os.replace(path + ".part", path)
+                    ok, empty, note = inspect_tif(path, DAY_BANDS)
+                    if not ok:
+                        raise RuntimeError(note)
+                    log.info(f"{label}: dùng TIFF đã có, chuyển Int16; không tải lại từ EE")
+                    return 1, empty
+                finally:
+                    for leftover in (path + ".source.part", path + ".part"):
+                        if os.path.isfile(leftover):
+                            os.remove(leftover)
         n = download_tif(img, img_region(ctx), 20, path, label,
                          writer=write_day_int16 if DAY_FORMAT == "int16" else write_tif)
         ok, empty, note = inspect_tif(path, DAY_BANDS)
@@ -1059,7 +1140,9 @@ def day_records(row, props):
         r.update({k: _clean(p.get(k)) if p else None for k in T1_FEATURES})
         valid = all(r[f"{band}_mean"] is not None for band in DAY_BANDS_ALL)
         r.update(DATA_STATUS="ok" if valid else "no_data",
-                 ERROR="" if valid else "Không đủ pixel hợp lệ cho mean của cả 10 kênh trong tháng")
+                 ERROR="" if valid else "Thiếu mean: " + ",".join(
+                     b for b in DAY_BANDS_ALL if r[f"{b}_mean"] is None) +
+                     "; " + (p.get("_diagnostic", "Không có pixel hợp lệ hoặc không có cảnh") if p else "Không có cảnh"))
         records.append(r)
     return records
 
@@ -1075,6 +1158,7 @@ def process_district(row, prev):
     ctx = build_ctx(row)
     gid2 = ctx["gid2"]
     prev = prev if current_status(prev) else {}
+    ctx["convert_day_months"] = list(prev.get("convert_day_months", []))
     info = {"gid_2": gid2, "gid_1": ctx["gid1"], "run_id": RUN_ID,
             "period": PERIOD_ID, "profile": OUTPUT_PROFILE, "schema": SCHEMA_ID,
             "attempts": int(prev.get("attempts", 0)),
@@ -1084,6 +1168,7 @@ def process_district(row, prev):
             "t2": dict(prev.get("t2") or {}), "t3img": dict(prev.get("t3img") or {}),
             "empty_months_t2": list(prev.get("empty_months_t2") or []),
             "tiles_used": dict(prev.get("tiles_used") or {}), "day_bands": DAY_BANDS, "errors": []}
+    info["convert_day_months"] = list(ctx["convert_day_months"])
     fc = districts_fc.filter(ee.Filter.eq("GID_2", gid2))
     geom = fc.geometry()
     ctx["geom"] = geom
@@ -1125,6 +1210,8 @@ def process_district(row, prev):
                 try:
                     n, empty = fut.result()
                     slot[key] = "no_data" if empty else "ok"
+                    if kind == "day" and key in info["convert_day_months"]:
+                        info["convert_day_months"].remove(key)
                     if empty:
                         info["errors"].append(f"{kind} {key}: TIFF không có pixel hợp lệ")
                         if kind == "day" and key not in info["empty_months_t2"]:
@@ -1182,13 +1269,18 @@ def _read_parts(kind):
     return rows
 
 
+def part_current(kind, record):
+    return record.get("_profile") == OUTPUT_PROFILE or (
+        kind == "night" and DAY_FORMAT == "int16" and record.get("_profile") == LEGACY_FLOAT_PROFILE)
+
+
 def build_national_csv():
     os.makedirs(L(D_CSV), exist_ok=True)
     for kind, rel, cols in (("day", DAY_CSV, DAY_COLUMNS), ("night", NIGHT_CSV, NIGHT_COLUMNS)):
         rows = _read_parts(kind)
         if not rows:
             continue
-        rows = [r for r in rows if r.get("_profile") == OUTPUT_PROFILE
+        rows = [r for r in rows if part_current(kind, r)
                 and (int(r.get("YEAR", 0)), int(r.get("MONTH", 0))) in PERIODS
                 and (not ADMIN_BY_GID or r.get("GID_2") in ADMIN_BY_GID)]
         if not rows:
@@ -1231,20 +1323,37 @@ def load_all_status():
                         d = json.loads(line)
                     except Exception:
                         continue
+                    if isinstance(d, dict) and "gid_2" in d:
+                        d = migrate_float_status(d)
                     if isinstance(d, dict) and "gid_2" in d and current_status(d):
                         out[d["gid_2"]] = d
         except OSError:
             continue
     part_keys = {
         kind: {(r.get("GID_2"), month_key((int(r["YEAR"]), int(r["MONTH"]))))
-               for r in _read_parts(kind) if r.get("_profile") == OUTPUT_PROFILE
+               for r in _read_parts(kind) if part_current(kind, r)
                and r.get("DATA_STATUS") == "ok"}
         for kind in ("day", "night")
     }
-    return {gid: reconcile_status(st, part_keys) for gid, st in out.items()}
+    # Cùng khóa với uploader: không nhìn thấy khoảng trống giữa move và cập nhật REMOTE_TIFS.
+    with _sync_lock:
+        return {gid: reconcile_status(st, part_keys) for gid, st in out.items()}
+
+
+def migrate_float_status(st):
+    if DAY_FORMAT != "int16" or st.get("profile") != LEGACY_FLOAT_PROFILE or st.get("period") != PERIOD_ID:
+        return st
+    st = dict(st)
+    old_day = dict(st.get("t2") or {})
+    st.update(profile=OUTPUT_PROFILE, status="partial", attempts=0,
+              t1="pending", t1_by_month={},
+              convert_day_months=[k for k, val in old_day.items() if val == "ok"],
+              t2={k: "pending" if val == "ok" else val for k, val in old_day.items()})
+    return st
 
 
 REMOTE_TIFS = set()
+REMOTE_INT16_TIFS = set()
 
 
 def reconcile_status(st, part_keys=None):
@@ -1258,6 +1367,11 @@ def reconcile_status(st, part_keys=None):
         key = month_key(period)
         for slot, folder, name in (("t2", "rel_day_dir", day_name), ("t3img", "rel_night_dir", night_name)):
             rel = f"{ctx[folder]}/{name(ctx, period)}"
+            if (slot == "t2" and DAY_FORMAT == "int16" and st[slot].get(key) == "ok"
+                    and not os.path.isfile(L(rel)) and rel in REMOTE_TIFS and rel not in REMOTE_INT16_TIFS):
+                st[slot][key] = "pending"
+                st["convert_day_months"] = list(set(st.get("convert_day_months", [])) | {key})
+                st["attempts"] = 0
             if st[slot].get(key) == "ok" and rel not in REMOTE_TIFS and not os.path.isfile(L(rel)):
                 st[slot][key] = "pending"
                 # Mất file chưa đồng bộ không tiêu tốn thêm số lần thử dữ liệu.
@@ -1313,12 +1427,31 @@ def rclone_sync_once(final=False):
             src = L(d)
             if os.path.isdir(src):
                 candidates = list(glob.glob(os.path.join(src, "**", "*.tif"), recursive=True))
-                ok = _rclone(["move", src, f"{REMOTE_BASE}/{d}", "--filter", "- *.part", "--filter", "+ *.tif",
-                              "--filter", "- *", *age, *RCLONE_COMMON])
+                int16_candidates = []
+                if d == D_DAY and DAY_FORMAT == "int16":
+                    import rasterio
+                    for p in candidates:
+                        with rasterio.open(p) as tif:
+                            if all(dtype == "int16" for dtype in tif.dtypes) and all(
+                                    abs(scale - 1.0 / DAY_SCALE_INV) < 1e-12 for scale in tif.scales):
+                                int16_candidates.append(p)
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".files") as snapshot:
+                    snapshot.write("\n".join(os.path.relpath(p, src).replace(os.sep, "/") for p in candidates))
+                    snapshot.flush()
+                    ok = _rclone(["move", src, f"{REMOTE_BASE}/{d}", "--files-from", snapshot.name,
+                                  *age, *RCLONE_COMMON]) if candidates else True
                 success = ok and success
-                if ok:
-                    REMOTE_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
-                                       for p in candidates if not os.path.isfile(p))
+                # rclone move chỉ xóa file đã upload thành công, kể cả khi một file khác lỗi.
+                REMOTE_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
+                                   for p in candidates if not os.path.isfile(p))
+                REMOTE_INT16_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
+                                         for p in int16_candidates if not os.path.isfile(p))
+        if DAY_FORMAT == "int16":
+            os.makedirs(L(D_CONTROL), exist_ok=True)
+            marker = L(D_CONTROL, "int16_uploaded.json")
+            with open(marker + ".part", "w", encoding="utf-8") as f:
+                json.dump(sorted(REMOTE_INT16_TIFS), f)
+            os.replace(marker + ".part", marker)
         for d in (D_CSV, D_CONTROL):
             src = L(d)
             if os.path.isdir(src):
@@ -1360,7 +1493,7 @@ def drive_stop_exists():
 
 
 def init_storage():
-    global REMOTE_TIFS
+    global REMOTE_TIFS, REMOTE_INT16_TIFS
     for d in (LOCAL_ROOT, L(D_STATUS), L(D_PARTS), L(D_LOGS), CACHE_DIR):
         os.makedirs(d, exist_ok=True)
     if shutil.which("rclone") is None:
@@ -1372,7 +1505,10 @@ def init_storage():
     old_manifest = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"],
                                   capture_output=True, text=True, timeout=180)
     if old_manifest.returncode == 0 and json.loads(old_manifest.stdout) != manifest:
-        raise RuntimeError("Thư mục Drive có cấu hình cấp hành chính/thời gian khác. Chọn thư mục đầu ra mới.")
+        old = json.loads(old_manifest.stdout)
+        if DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
+            raise RuntimeError("Thư mục Drive có cấu hình cấp hành chính/thời gian khác. Chọn thư mục đầu ra mới.")
+        log.info("Nâng cấp thư mục float cũ: giữ TIFF đêm/CSV đêm, chuyển TIFF ngày đã có sang Int16, tính lại CSV ngày.")
     if old_manifest.returncode != 0 and not any(s in old_manifest.stderr.lower() for s in ("not found", "doesn't exist")):
         raise RuntimeError("Không kiểm tra được manifest Drive: " + old_manifest.stderr[-200:])
     with open(L(D_CONTROL, "pipeline.json"), "w", encoding="utf-8") as f:
@@ -1387,6 +1523,15 @@ def init_storage():
     if listing.returncode != 0:
         raise RuntimeError("Không kiểm tra được TIFF trên Drive: " + listing.stderr[-200:])
     REMOTE_TIFS = set(listing.stdout.splitlines())
+    if DAY_FORMAT == "int16":
+        marker = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"],
+                                capture_output=True, text=True, timeout=180)
+        if marker.returncode == 0:
+            REMOTE_INT16_TIFS = set(json.loads(marker.stdout)) & REMOTE_TIFS
+        elif any(s in marker.stderr.lower() for s in ("not found", "doesn't exist")):
+            REMOTE_INT16_TIFS = set()
+        else:
+            raise RuntimeError("Không kiểm tra được trạng thái TIFF Int16 trên Drive: " + marker.stderr[-200:])
     # Cảnh báo nếu đích còn cấu trúc của bản pipeline cũ
     old = subprocess.run(["rclone", "lsf", REMOTE_BASE, "--dirs-only"], capture_output=True, text=True, timeout=120)
     if any(x.strip("/") in ("03_Provinces", "04_Status", "1_Task1_Spectral_Indices", "2_Task2_Day_S2")

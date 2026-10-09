@@ -101,7 +101,7 @@ jobs:
       VNGIS_EE_MAX_RETRIES: "8"
 
       # Định dạng ảnh ngày.
-      VNGIS_DAY_FORMAT: "float"
+      VNGIS_DAY_FORMAT: "int16"
       VNGIS_DAY_BANDS: "10"
       VNGIS_DAY_SCALE: "10000"
 
