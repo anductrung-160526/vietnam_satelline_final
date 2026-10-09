@@ -99,6 +99,12 @@ DAY_SCALE_INV = _env("VNGIS_DAY_SCALE", 10000, int)
 if DAY_SCALE_INV not in (1000, 10000):
     raise SystemExit("VNGIS_DAY_SCALE phải là 10000 hoặc 1000")
 DAY_NODATA = -32768
+DAY_IMAGE_SCALE = _env("VNGIS_DAY_IMAGE_SCALE", 20, int)
+if DAY_IMAGE_SCALE not in (20, 50):
+    raise SystemExit("VNGIS_DAY_IMAGE_SCALE phải là 20 hoặc 50 mét")
+TIFF_ZLEVEL = _env("VNGIS_TIFF_ZLEVEL", 6, int)
+if not 1 <= TIFF_ZLEVEL <= 9:
+    raise SystemExit("VNGIS_TIFF_ZLEVEL phải nằm trong 1..9")
 
 N_WORKERS = _env("VNGIS_WORKERS", 2, int)                         # số huyện chạy song song
 MONTH_THREADS = _env("VNGIS_MONTH_THREADS", 2, int)               # số ảnh tải song song trong 1 huyện
@@ -118,11 +124,41 @@ DOWNLOAD_FAIL_LIMIT = 24
 MAX_TILE_SPLIT = _env("VNGIS_MAX_TILE_SPLIT", 32, int)
 TILING_OK = [True]
 
-EE_SEM = threading.BoundedSemaphore(EE_CONCURRENCY)
+class EERequestGate:
+    """Giới hạn chung, giảm số slot khi server báo 429; không tự tăng lại trong lượt."""
+    def __init__(self, limit):
+        self.limit = limit
+        self.active = 0
+        self.condition = threading.Condition()
+
+    def __enter__(self):
+        with self.condition:
+            while self.active >= self.limit:
+                check_stop()
+                self.condition.wait(timeout=0.5)
+            check_stop()
+            self.active += 1
+        return self
+
+    def __exit__(self, *args):
+        with self.condition:
+            self.active -= 1
+            self.condition.notify_all()
+
+    def reduce(self, restricted=False):
+        with self.condition:
+            old = self.limit
+            self.limit = 1 if restricted else max(1, old // 2)
+            self.condition.notify_all()
+        return old, self.limit
+
+
+EE_SEM = EERequestGate(EE_CONCURRENCY)
 _ee_cooldown_lock = threading.Lock()
 _ee_cooldown_until = 0.0
 
 DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", f"VNGISDash_{PERIOD_ID.replace('-', '_')}_Districts"
+                   + ("_50m" if DAY_IMAGE_SCALE == 50 else "")
                    + ("_PILOT" if MODE == "pilot" else ""))
 RCLONE_REMOTE = _env("VNGIS_RCLONE_REMOTE", "gdrive")
 REMOTE_BASE = f"{RCLONE_REMOTE}:{DRIVE_FOLDER}"
@@ -149,6 +185,8 @@ NIGHT_COLUMNS = ADM_COLS + ["YEAR", "MONTH", "TIME", "DISTRICT_AREA_HA", "TNL",
                  "TNL_MOM_GROWTH_PCT", "DATA_STATUS", "ERROR"]
 LEGACY_FLOAT_PROFILE = f"{SCHEMA_ID}:{PERIOD_ID}:day-float-{DAY_BANDS}-{DAY_SCALE_INV}"
 OUTPUT_PROFILE = f"{SCHEMA_ID}:{PERIOD_ID}:day-{DAY_FORMAT}-{DAY_BANDS}-{DAY_SCALE_INV}:csv-calendar-v2"
+if DAY_IMAGE_SCALE != 20:
+    OUTPUT_PROFILE += f":day-scale-{DAY_IMAGE_SCALE}"
 
 log = logging.getLogger("vngis")
 
@@ -297,6 +335,8 @@ def init_earth_engine():
             EE_CREDENTIALS = None
         log.info(f"Earth Engine sẵn sàng: project={PROJECT_ID} (tài khoản cá nhân).")
     ee.data.setDeadline(EE_DEADLINE_SEC * 1000)
+    # _ee_call quản lý retry/cooldown chung; tránh SDK retry riêng trước khi gate nhận 429.
+    ee.data.setMaxRetries(0)
     districts_fc = ee.FeatureCollection(ASSET_ID)
 
 
@@ -620,6 +660,10 @@ def _ee_call(call, max_retry=EE_MAX_RETRIES):
                 delay = max(min(60, 5 * 2 ** attempt) + random.uniform(0, 5),
                             _retry_after_seconds(getattr(exc, "retry_after", None)))
                 if kind == "rate_limit":
+                    if hasattr(EE_SEM, "reduce"):
+                        old, new = EE_SEM.reduce(restricted="restricted" in str(exc).lower())
+                        if new < old:
+                            log.warning(f"[quota] Giảm số yêu cầu EE đồng thời {old} -> {new}; giữ mức này đến hết lượt")
                     with _ee_cooldown_lock:
                         _ee_cooldown_until = max(_ee_cooldown_until, time.monotonic() + delay)
         if attempt + 1 < max_retry:
@@ -781,7 +825,7 @@ def mosaic_tile_files(paths, target):
     width=max(t['col']+t['width'] for t in metadata)
     profile=dict(driver='GTiff',width=width,height=height,count=first['count'],dtype=first['dtype'],
                  crs=first['crs'],transform=Affine(resx,0,left,0,resy,top),nodata=first['nodata'],
-                 compress='DEFLATE',zlevel=9,predictor=3 if np.issubdtype(np.dtype(first['dtype']),np.floating) else 2,
+                 compress='DEFLATE',zlevel=TIFF_ZLEVEL,predictor=3 if np.issubdtype(np.dtype(first['dtype']),np.floating) else 2,
                  tiled=True,blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
     previous=[]
     with rasterio.open(target,'w+',**profile) as dst:
@@ -845,7 +889,7 @@ def write_tif(path, arr, transform, crs, nodata, desc):
     import rasterio
     profile = {"driver": "GTiff", "height": arr.shape[1], "width": arr.shape[2], "count": arr.shape[0],
                "dtype": arr.dtype, "crs": crs, "transform": transform, "nodata": nodata,
-               "compress": "DEFLATE", "zlevel": 9,
+               "compress": "DEFLATE", "zlevel": TIFF_ZLEVEL,
                "predictor": 3 if np.issubdtype(arr.dtype, np.floating) else 2,
                "tiled": True, "blockxsize": 256, "blockysize": 256, "BIGTIFF": "IF_SAFER"}
     with rasterio.open(path, "w", **profile) as dst:
@@ -866,9 +910,9 @@ def _best_compression():
             with rasterio.MemoryFile() as mf, mf.open(driver="GTiff", width=8, height=8, count=1, dtype="int16",
                                                       compress="ZSTD", zstd_level=19) as d:
                 d.write(np.zeros((1, 8, 8), "int16"))
-            _COMP.append({"compress": "DEFLATE", "zlevel": 9})   # DEFLATE: mọi phần mềm GIS đọc được
+            _COMP.append({"compress": "DEFLATE", "zlevel": TIFF_ZLEVEL})   # DEFLATE: mọi phần mềm GIS đọc được
         except Exception:
-            _COMP.append({"compress": "DEFLATE", "zlevel": 9})
+            _COMP.append({"compress": "DEFLATE", "zlevel": TIFF_ZLEVEL})
     return _COMP[0]
 
 
@@ -910,7 +954,7 @@ def convert_day_file(source, target):
     with rasterio.open(source) as src:
         profile = src.profile.copy()
         profile.update(dtype="int16", nodata=DAY_NODATA, compress="DEFLATE", predictor=2,
-                       zlevel=9, tiled=True, blockxsize=256, blockysize=256, BIGTIFF="IF_SAFER")
+                       zlevel=TIFF_ZLEVEL, tiled=True, blockxsize=256, blockysize=256, BIGTIFF="IF_SAFER")
         with rasterio.open(target, "w", **profile) as dst:
             for _, window in src.block_windows(1):
                 dst.write(quantize_day(src.read(window=window), src.nodata), window=window)
@@ -1130,14 +1174,20 @@ def _download_month(kind, ctx, period, img, path):
             reused = reuse_day_tif(ctx, period, path, label)
             if reused is not None:
                 return reused
-        n = download_tif(img, img_region(ctx), 20, path, label,
-                         writer=write_day_int16 if DAY_FORMAT == "int16" else write_tif)
+        n = download_tif(img, img_region(ctx), DAY_IMAGE_SCALE, path, label,
+                         writer=write_day_int16 if DAY_FORMAT == "int16" else write_tif,
+                         force_tiles=(ctx.get("tile_hints") or {}).get(kind, 0))
         ok, empty, note = inspect_tif(path, DAY_BANDS)
     else:
-        n = download_tif(img, img_region(ctx), 500, path, label, writer=write_tif)
+        n = download_tif(img, img_region(ctx), 500, path, label, writer=write_tif,
+                         force_tiles=(ctx.get("tile_hints") or {}).get(kind, 0))
         ok, empty, note = inspect_tif(path, 2)
     if not ok:
         raise RuntimeError(f"file kiểm tra lỗi: {note}")
+    if n > 1:
+        hints = ctx.setdefault("tile_hints", {})
+        hints[kind] = max(hints.get(kind, 0), math.ceil(math.sqrt(n)))
+    log.info(f"{label}: {'no_data' if empty else 'OK'}, {n} ô, {os.path.getsize(path)/1024/1024:.1f} MB")
     return n, empty
 
 
@@ -1190,6 +1240,9 @@ def process_district(row, prev):
     gid2 = ctx["gid2"]
     prev = prev if current_status(prev) else {}
     ctx["convert_day_months"] = list(prev.get("convert_day_months", []))
+    ctx["tile_hints"] = {kind: max([0] + [math.ceil(math.sqrt(n))
+        for key, n in (prev.get("tiles_used") or {}).items() if key.startswith(kind + "_")])
+        for kind in ("day", "night")}
     info = {"gid_2": gid2, "gid_1": ctx["gid1"], "run_id": RUN_ID,
             "period": PERIOD_ID, "profile": OUTPUT_PROFILE, "schema": SCHEMA_ID,
             "attempts": int(prev.get("attempts", 0)),
@@ -1304,7 +1357,7 @@ def _read_parts(kind):
 
 def part_current(kind, record):
     return record.get("_profile") == OUTPUT_PROFILE or (
-        kind == "night" and DAY_FORMAT == "int16" and record.get("_profile") == LEGACY_FLOAT_PROFILE)
+        kind == "night" and DAY_IMAGE_SCALE == 20 and DAY_FORMAT == "int16" and record.get("_profile") == LEGACY_FLOAT_PROFILE)
 
 
 def build_national_csv():
@@ -1374,7 +1427,7 @@ def load_all_status():
 
 
 def migrate_float_status(st):
-    if DAY_FORMAT != "int16" or st.get("profile") != LEGACY_FLOAT_PROFILE or st.get("period") != PERIOD_ID:
+    if DAY_IMAGE_SCALE != 20 or DAY_FORMAT != "int16" or st.get("profile") != LEGACY_FLOAT_PROFILE or st.get("period") != PERIOD_ID:
         return st
     st = dict(st)
     old_day = dict(st.get("t2") or {})
@@ -1560,7 +1613,7 @@ def init_storage():
                                   capture_output=True, text=True, timeout=180)
     if old_manifest.returncode == 0 and json.loads(old_manifest.stdout) != manifest:
         old = json.loads(old_manifest.stdout)
-        if DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
+        if DAY_IMAGE_SCALE != 20 or DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
             raise RuntimeError("Thư mục Drive có cấu hình cấp hành chính/thời gian khác. Chọn thư mục đầu ra mới.")
         log.info("Nâng cấp thư mục float cũ: giữ TIFF đêm/CSV đêm, chuyển TIFF ngày đã có sang Int16, tính lại CSV ngày.")
     if old_manifest.returncode != 0 and not any(s in old_manifest.stderr.lower() for s in ("not found", "doesn't exist")):
@@ -1666,6 +1719,18 @@ def load_targets(admin):
         for pool in pools:
             if pool and len(picks) < PILOT_N:
                 picks.append(pool.pop(0))
+        if PILOT_N >= 6 and len(picks) >= 2:
+            # Pilot lớn lấy thêm các huyện phân bố trên cả nước để đo tốc độ thực tế.
+            goal = min(PILOT_N, len(df))
+            for i in np.linspace(0, len(df)-1, goal-1, dtype=int)[1:]:
+                if int(i) not in picks:
+                    picks.append(int(i))
+            for i in df.index:
+                if len(picks) >= goal:
+                    break
+                if int(i) not in picks:
+                    picks.append(int(i))
+            break
     return df.loc[sorted(picks)].reset_index(drop=True)
 
 
@@ -1695,7 +1760,16 @@ def _probe_drive():
                          capture_output=True, text=True, timeout=300)
     if res.returncode != 0 or res.stdout.strip() != stamp:
         raise PreflightError(f"Đọc lại file thử trên Drive không khớp: {res.stderr.strip()[-200:]}")
-    return "Drive OK"
+    about = subprocess.run(["rclone", "about", RCLONE_REMOTE + ":", "--json"],
+                           capture_output=True, text=True, timeout=120)
+    if about.returncode == 0:
+        try:
+            quota = json.loads(about.stdout)
+            if "free" in quota:
+                return f"Drive OK; còn {int(quota['free'])/1024**3:.1f} GiB trống"
+        except (ValueError, TypeError):
+            pass
+    return "Drive OK; chưa đọc được dung lượng trống"
 
 
 def _probe_ee(row):
@@ -1712,7 +1786,7 @@ def _probe_ee(row):
         raise PreflightError(f"Huyện thử {gid2} không có ảnh Sentinel-2 hoặc VIIRS nào trong khoảng {START_MONTH}–{END_MONTH}.")
     img = day_image(m_day, plan[m_day]["s2_window"], geom).select(DAY_BANDS_ALL[:DAY_BANDS]).clip(region)
     try:
-        whole = fetch_geotiff_bytes(img, region, 20)
+        whole = fetch_geotiff_bytes(img, region, DAY_IMAGE_SCALE)
         night = fetch_geotiff_bytes(night_image(m_night, plan[m_night]["viirs"], geom).clip(region), region, 500)
     except Exception as exc:
         raise PreflightError(f"Tải ảnh thử thất bại: {exc}")
@@ -1724,7 +1798,7 @@ def _probe_ee(row):
     msg = f"ảnh ngày {len(whole)/1024:.0f} KB, ảnh đêm {len(night)/1024:.0f} KB"
     if PREFLIGHT_TILE_TEST:
         try:
-            parts = [fetch_geotiff_bytes(img, rect, 20) for rect in _split_bbox(_bbox(region), 2)]
+            parts = [fetch_geotiff_bytes(img, rect, DAY_IMAGE_SCALE) for rect in _split_bbox(_bbox(region), 2)]
             a_tiled, tr_tiled, *_ = mosaic_tiles(parts)
             compare_on_grid(a_whole, tr_whole, a_tiled, tr_tiled)
             msg += "; chia ô trùng khớp từng pixel"
@@ -1785,6 +1859,7 @@ def run_round(jobs, statuses):
     """jobs: list (gid, row, kind)."""
     t0 = time.time()
     done_now = 0
+    completed_now = 0
     pending_fail = []
     outage = False
     pool = ThreadPoolExecutor(max_workers=N_WORKERS, thread_name_prefix="w")
@@ -1794,7 +1869,7 @@ def run_round(jobs, statuses):
     handled = set()
 
     def consume(fut):
-        nonlocal done_now
+        nonlocal done_now, completed_now
         handled.add(fut)
         if fut.cancelled():
             return
@@ -1829,14 +1904,21 @@ def run_round(jobs, statuses):
         statuses[gid] = info
         write_status(info)
         done_now += 1
+        completed_now += info.get("status") == "done"
         errs = f" | lỗi: {info['errors'][:2]}" if info.get("errors") else ""
         t2 = info.get("t2") or {}
         log.info(f"[{gid}] {kind} -> {info.get('status')} | T1={info.get('t1')} "
                  f"T2={sum(v == 'ok' for v in t2.values())}/{len(PERIODS)} T3img={sum(v == 'ok' for v in (info.get('t3img') or {}).values())}/{len(PERIODS)} "
                  f"T3csv={info.get('t3csv')} | {info.get('seconds', 0)}s | lần {attempts}{errs}")
-        if done_now % 20 == 0:
-            rate = done_now / max(time.time() - t0, 1)
-            log.info(f"Tiến độ vòng: {done_now}/{len(jobs)} | {rate*3600:.0f} việc/giờ")
+        if done_now % 5 == 0 or done_now == len(jobs):
+            elapsed = max(time.time() - t0, 1)
+            rate = completed_now / elapsed * 3600
+            remaining = sum(not district_complete(statuses.get(g)) for g, _, _ in jobs)
+            eta = (datetime.now(timezone.utc) + timedelta(hours=remaining / rate)).astimezone(
+                timezone(timedelta(hours=7))).strftime("%d/%m %H:%M") if rate > 0 else "chưa đủ dữ liệu"
+            log.info(f"[speed] {completed_now} huyện done mới trong {elapsed/60:.1f} phút | "
+                     f"{rate:.1f} huyện/giờ | hàng đợi còn {remaining}/{len(jobs)} | "
+                     f"ETA tham khảo {eta} giờ Việt Nam")
 
     try:
         for fut in as_completed(futures):
@@ -1876,7 +1958,7 @@ def main():
     STATUS_FILE = L(D_STATUS, f"status_{PARTS_STAMP}.jsonl")
     setup_logging()
     log.info(f"VNGISDash huyện {START_MONTH}–{END_MONTH} | chế độ {MODE} | đích {REMOTE_BASE} | {N_WORKERS} huyện x {MONTH_THREADS} ảnh song song"
-             f" | ảnh ngày {DAY_BANDS} kênh {DAY_FORMAT} | tối đa {EE_CONCURRENCY} yêu cầu EE cùng lúc")
+             f" | ảnh ngày {DAY_BANDS} kênh {DAY_FORMAT} {DAY_IMAGE_SCALE} m | tối đa {EE_CONCURRENCY} yêu cầu EE cùng lúc")
     try:
         # Khởi tạo Earth Engine song song với việc kéo trạng thái từ Drive
         with ThreadPoolExecutor(max_workers=2) as ex:

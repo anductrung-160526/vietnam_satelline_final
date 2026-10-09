@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import threading
+import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -49,7 +51,7 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
-                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
+                           STOP_EVENT=threading.Event(), STOP_REASON=[None], DAY_IMAGE_SCALE=20, REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
                            _dl_stats={'ok':0,'fail':0,'last_err':''})
         p.start()
         self.addCleanup(p.stop)
@@ -82,6 +84,27 @@ class DateTests(unittest.TestCase):
         with patch.object(v,'MODE','full'):
             selected=v.load_targets(admin)
         self.assertEqual(list(selected.GID_2),[ROW['GID_2'],URBAN['GID_2']])
+
+    def test_fast_profile_uses_separate_50m_folder_and_does_not_upgrade_20m_state(self):
+        script="""import json, vngis_2024 as v
+old={'profile':v.LEGACY_FLOAT_PROFILE,'period':v.PERIOD_ID,'gid_2':'VNM.1.1_1'}
+print(json.dumps({'scale':v.DAY_IMAGE_SCALE,'folder':v.DRIVE_FOLDER,'profile':v.OUTPUT_PROFILE,'migrated':v.current_status(v.migrate_float_status(old))}))"""
+        env={**os.environ,'VNGIS_SKIP_MAIN':'1','VNGIS_DAY_IMAGE_SCALE':'50','VNGIS_MODE':'pilot'}
+        env.pop('VNGIS_DRIVE_FOLDER',None)
+        result=subprocess.run([sys.executable,'-c',script],env=env,capture_output=True,text=True,check=True)
+        data=json.loads(result.stdout)
+        self.assertEqual(data['scale'],50)
+        self.assertEqual(data['folder'],'VNGISDash_202407_202506_Districts_50m_PILOT')
+        self.assertTrue(data['profile'].endswith(':day-scale-50'));self.assertFalse(data['migrated'])
+
+    def test_large_pilot_samples_across_country(self):
+        rows=[{**ROW,'GID_1':f'VNM.{i+1}_1','GID_2':f'VNM.{i+1}.1_1'} for i in range(30)]
+        rows[1]['TYPE_2']='Thành phố'
+        with patch.object(v,'MODE','pilot'),patch.object(v,'PILOT_N',6):
+            selected=v.load_targets(pd.DataFrame(rows))
+        self.assertEqual(len(selected),6)
+        self.assertEqual(selected.iloc[-1].GID_1,'VNM.30_1')
+        self.assertIn('Thành phố',set(selected.TYPE_2))
 
     def test_pilot_samples_rural_and_urban_districts(self):
         with patch.multiple(v,MODE='pilot',PILOT_N=2):
@@ -343,6 +366,20 @@ class ProcessTests(LocalCase):
         self.assertEqual(restored['attempts'],1)
 
 
+class SpeedTests(LocalCase):
+    def test_speed_counts_only_fully_completed_districts(self):
+        done=complete_state();partial=complete_state(URBAN['GID_2'])
+        partial.update(status='partial');partial['t2']['2024-07']='no_data'
+        states={ROW['GID_2']:done,URBAN['GID_2']:partial}
+        jobs=[(row['GID_2'],row,'full') for row in (ROW,URBAN)]
+        with patch.object(v,'process_district',side_effect=lambda row,prev:states[row['GID_2']]), \
+             self.assertLogs(v.log,level='INFO') as logs:
+            self.assertEqual(v.run_round(jobs,{}),'ok')
+        summary=next(line for line in logs.output if '[speed]' in line)
+        self.assertIn('1 huyện done mới',summary)
+        self.assertIn('hàng đợi còn 1/2',summary)
+
+
 class MainTests(LocalCase):
     def setUp(self):
         super().setUp();self.states={};self.rounds=[]
@@ -384,6 +421,31 @@ class MainTests(LocalCase):
 
 
 class Int16UpgradeTests(LocalCase):
+    def test_fast_day_download_and_verifier_use_50m_while_csv_stays_original(self):
+        ctx=v.build_ctx(ROW);ctx.update(geom=object())
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        path.parent.mkdir(parents=True)
+        def download(img,region,scale,target,label,writer,force_tiles):
+            self.assertEqual(scale,50)
+            writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,50/111319.49,50/111319.49),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            return 1
+        with patch.object(v,'DAY_IMAGE_SCALE',50),patch.object(v,'download_tif',side_effect=download):
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+        self.assertEqual(verify.check_tif(path,10,50)[0],'PASS')
+        self.assertEqual(verify.check_tif(path,10,20)[0],'FAIL')
+
+    def test_next_month_reuses_tile_hint_without_repeating_oversize_probe(self):
+        ctx=v.build_ctx(ROW);ctx.update(geom=object())
+        def download(img,region,scale,target,label,writer,force_tiles):
+            Path(target).parent.mkdir(parents=True,exist_ok=True)
+            writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            return 4
+        with patch.object(v,'download_tif',side_effect=download) as get:
+            for period in [(2024,7),(2024,8)]:
+                v._download_month('day',ctx,period,None,v.L(ctx['rel_day_dir'],v.day_name(ctx,period)))
+        self.assertEqual(get.call_args_list[0].kwargs['force_tiles'],0)
+        self.assertEqual(get.call_args_list[1].kwargs['force_tiles'],2)
+
     def test_quantization_preserves_scale_nodata_and_csv_precision(self):
         arr=np.array([[[0.123456, -0.201234], [np.nan, 0.0]]]*10, dtype='float32')
         source=self.root/'source.tif'; target=self.root/'target.tif'
@@ -459,7 +521,7 @@ class Int16UpgradeTests(LocalCase):
     def test_missing_legacy_tiff_downloads_only_requested_month_from_ee(self):
         ctx=v.build_ctx(ROW);ctx.update(convert_day_months=['2024-07'],geom=object())
         path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
-        def download(img,region,scale,target,label,writer):
+        def download(img,region,scale,target,label,writer,force_tiles=0):
             self.assertEqual(scale,20);self.assertIn('2024-07',label)
             self.assertIs(writer,v.write_day_int16)
             writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
@@ -474,7 +536,7 @@ class Int16UpgradeTests(LocalCase):
         rel=str(path.relative_to(self.root));v.REMOTE_TIFS.add(rel)
         def missing(args,**kwargs):
             Path(args[2]).write_bytes(b'partial');self.assertTrue(kwargs['missing_ok']);return None
-        def download(img,region,scale,target,label,writer):
+        def download(img,region,scale,target,label,writer,force_tiles=0):
             writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
             return 1
         with patch.object(v,'_rclone',side_effect=missing),patch.object(v,'download_tif',side_effect=download) as get:

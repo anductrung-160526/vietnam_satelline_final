@@ -71,6 +71,45 @@ class EarthEngineRequestTests(unittest.TestCase):
         self.assertEqual(v.ee_getinfo(obj), {"ok": True})
         self.assertEqual(waits, [5, 10])
 
+    def test_adaptive_gate_can_run_four_requests_without_exceeding_limit(self):
+        gate=v.EERequestGate(4)
+        lock=threading.Lock();active=0;peak=0
+        def call():
+            nonlocal active,peak
+            with gate:
+                with lock:
+                    active+=1;peak=max(peak,active)
+                time.sleep(0.01)
+                with lock:active-=1
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            list(pool.map(lambda _:call(),range(24)))
+        self.assertEqual(peak,4);self.assertEqual(gate.active,0)
+
+    def test_restricted_mode_429_reduces_gate_to_one_and_retries(self):
+        waits=self.fake_clock();gate=v.EERequestGate(4)
+        obj=SimpleNamespace(getInfo=Mock(side_effect=[v.ee.EEException('HTTP 429 Restricted Mode concurrency limit'),{'ok':True}]))
+        with patch.object(v,'EE_SEM',gate):
+            self.assertEqual(v.ee_getinfo(obj),{'ok':True})
+        self.assertEqual(gate.limit,1);self.assertEqual(gate.active,0);self.assertEqual(waits,[5])
+
+    def test_generic_429_halves_gate_without_ever_reaching_zero(self):
+        self.fake_clock();gate=v.EERequestGate(4)
+        request=Mock(side_effect=[v.ee.EEException('HTTP 429'),v.ee.EEException('HTTP 429'),v.ee.EEException('HTTP 429'),'ok'])
+        with patch.object(v,'EE_SEM',gate):self.assertEqual(v._ee_call(request),'ok')
+        self.assertEqual(gate.limit,1)
+
+    def test_reduced_gate_blocks_new_request_until_inflight_request_finishes(self):
+        gate=v.EERequestGate(4);entered=threading.Event()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with gate:
+                gate.reduce(restricted=True)
+                def call():
+                    with gate:entered.set()
+                future=pool.submit(call)
+                self.assertFalse(entered.wait(0.05))
+            future.result(timeout=1)
+        self.assertTrue(entered.is_set());self.assertEqual(gate.active,0)
+
     def test_download_429_respects_retry_after(self):
         waits = self.fake_clock()
         image = SimpleNamespace(getDownloadURL=Mock(return_value="url"))
@@ -155,10 +194,12 @@ class EarthEngineRequestTests(unittest.TestCase):
                  patch.object(v, "EE_HIGH_VOLUME", False), \
                  patch.object(v.ee, "ServiceAccountCredentials", return_value="fake-credentials"), \
                  patch.object(v.ee, "Initialize") as initialize, \
-                 patch.object(v.ee.data, "setDeadline"), patch.object(v.ee, "FeatureCollection"), \
+                 patch.object(v.ee.data, "setDeadline"), patch.object(v.ee.data,"setMaxRetries") as retries, \
+                 patch.object(v.ee, "FeatureCollection"), \
                  self.assertLogs(v.log, level="INFO") as logs:
                 v.init_earth_engine()
         initialize.assert_called_once_with(credentials="fake-credentials", project="vngis-ee-2")
+        retries.assert_called_once_with(0)
         self.assertIn("project=vngis-ee-2", logs.output[0])
         self.assertIn("runner@other-project", logs.output[0])
 

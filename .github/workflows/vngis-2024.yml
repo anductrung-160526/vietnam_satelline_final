@@ -4,8 +4,8 @@ name: VNGISDash huyện 07/2024–06/2025
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot: chạy thử và ghi vào VNGISDash_202407_202506_Districts_PILOT.
-# full: chạy toàn bộ và ghi vào VNGISDash_202407_202506_Districts.
+# day_scale=50 (mặc định): thư mục Districts_50m / Districts_50m_PILOT.
+# day_scale=20: thư mục Districts / Districts_PILOT cũ.
 #
 # Dừng có trật tự:
 # - Tạo file STOP ở thư mục gốc repository; hoặc
@@ -32,7 +32,15 @@ on:
       workers:
         description: "Số huyện xử lý song song"
         required: false
-        default: "2"
+        default: "4"
+
+      day_scale:
+        description: "TIFF ngày: 50 m chạy nhanh; 20 m giữ chi tiết cao. CSV giữ phép tính gốc."
+        type: choice
+        options:
+          - "50"
+          - "20"
+        default: "50"
 
       stop_after_province:
         description: "Ô tương thích main; nhánh huyện luôn chạy toàn quốc, bỏ qua giá trị này"
@@ -51,7 +59,8 @@ permissions:
 env:
   VNGIS_MODE: ${{ inputs.mode }}
   VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_202407_202506_Districts' || 'VNGISDash_202407_202506_Districts_PILOT' }}
+  VNGIS_DAY_IMAGE_SCALE: ${{ inputs.day_scale || '50' }}
+  VNGIS_DRIVE_FOLDER: ${{ (inputs.day_scale || '50') == '50' && (inputs.mode == 'full' && 'VNGISDash_202407_202506_Districts_50m' || 'VNGISDash_202407_202506_Districts_50m_PILOT') || (inputs.mode == 'full' && 'VNGISDash_202407_202506_Districts' || 'VNGISDash_202407_202506_Districts_PILOT') }}
   VNGIS_RCLONE_REMOTE: gdrive
   VNGIS_START_MONTH: "2024-07"
   VNGIS_END_MONTH: "2025-06"
@@ -95,8 +104,8 @@ jobs:
       VNGIS_EE_HIGH_VOLUME: "false"
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
-      # Dùng 1 để kiểm tra ổn định trước khi tăng tốc.
-      VNGIS_EE_CONCURRENCY: ${{ vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '1' }}
+      # Thử tối đa 4; tự giảm khi có 429. Variable cấu hình trước vẫn được ưu tiên.
+      VNGIS_EE_CONCURRENCY: ${{ vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
@@ -104,6 +113,7 @@ jobs:
       VNGIS_DAY_FORMAT: "int16"
       VNGIS_DAY_BANDS: "10"
       VNGIS_DAY_SCALE: "10000"
+      VNGIS_TIFF_ZLEVEL: "6"
 
     steps:
       - name: Checkout repository
@@ -287,6 +297,7 @@ jobs:
           MODE_INPUT: ${{ inputs.mode }}
           PILOT_N_INPUT: ${{ inputs.pilot_n }}
           WORKERS_INPUT: ${{ inputs.workers }}
+          DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
@@ -298,7 +309,8 @@ jobs:
               --ref "$GITHUB_REF_NAME" \
               -f mode="$MODE_INPUT" \
               -f pilot_n="$PILOT_N_INPUT" \
-              -f workers="$WORKERS_INPUT"
+              -f workers="$WORKERS_INPUT" \
+              -f day_scale="$DAY_SCALE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

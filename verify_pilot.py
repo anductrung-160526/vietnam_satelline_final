@@ -56,7 +56,7 @@ def verify_district(root, gid, state, day_csv, night_csv):
             if not metadata.empty:
                 ctx = v.build_ctx(metadata.iloc[0].to_dict())
                 break
-    for label, sub, name, bands, scale in [('Ngày', 'Day', v.day_name, v.DAY_BANDS, 20),
+    for label, sub, name, bands, scale in [('Ngày', 'Day', v.day_name, v.DAY_BANDS, v.DAY_IMAGE_SCALE),
                                           ('Đêm', 'Night', v.night_name, 2, 500)]:
         failed = []
         for period in v.PERIODS:

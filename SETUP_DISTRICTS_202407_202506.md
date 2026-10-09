@@ -10,8 +10,9 @@ Branch: **`vngis-ee-districts-202407-202506`**. Dùng `vngis_2024.py`, `verify_p
 | Project EE mặc định | `vngis-ee-2`, tái sử dụng project hiện có |
 | Asset mặc định | `projects/vngis-ee-2/assets/districts_l2` |
 | Drive nhận kết quả | **`adt.wqiqc@gmail.com`**, remote `gdrive` |
-| Thư mục full | `VNGISDash_202407_202506_Districts` |
-| Thư mục pilot | `VNGISDash_202407_202506_Districts_PILOT` |
+| TIFF ngày mặc định trên Actions | **50 m**, Int16, 10 kênh; có tùy chọn 20 m |
+| Thư mục full 50 m | `VNGISDash_202407_202506_Districts_50m` |
+| Thư mục pilot 50 m | `VNGISDash_202407_202506_Districts_50m_PILOT` |
 | Secrets | `EE_SERVICE_ACCOUNT_JSON`, `RCLONE_CONF` |
 
 710 đơn vị gồm 543 huyện, 49 quận, 50 thị xã và 68 thành phố. Đây là ranh giới GADM 4.1 cố định, không phải danh mục hành chính sau sáp nhập. Asset xã `communes_l3` không thể thay bảng huyện chỉ bằng đổi tên.
@@ -53,7 +54,7 @@ python tools/prepare_district_gadm.py --archive /duong/dan/gadm41_VNM_shp.zip
    - **Earth Engine Resource Writer** (`roles/earthengine.writer`).
 4. Nếu cần khóa mới: **IAM & Admin → Service Accounts → chọn account → Keys → Add key → JSON**. Lưu file kín và đưa vào GitHub Secret, không upload vào mục Code của repo.
 
-Project quyết định quota thông qua `ee.Initialize(project=...)`; domain trong email service account không tự quyết định project chịu quota. Giới hạn EE mặc định là **1 yêu cầu đồng thời cho mỗi lượt chạy**, chung cho truy vấn, tạo URL và tải ảnh. Các workflow khác dùng cùng project vẫn chia sẻ quota với pipeline này; branch mới không làm tăng quota.
+Project quyết định quota thông qua `ee.Initialize(project=...)`; domain trong email service account không tự quyết định project chịu quota. Actions thử tối đa **4 yêu cầu đồng thời**, chung cho truy vấn, tạo URL và tải ảnh. Khi gặp 429, số slot giảm 4 → 2 → 1; nếu thông báo Restricted Mode thì giảm ngay về 1, vẫn chờ Retry-After/backoff. Không tự tăng lại trong lượt. Các workflow khác dùng cùng project vẫn chia sẻ quota; branch mới không tăng quota. Khi project còn bị giới hạn, có thể đặt variable về 1 ngay từ đầu.
 
 ## 3. Upload asset districts_l2
 
@@ -100,7 +101,7 @@ Kiểm tra:
 
 ```text
 rclone lsd gdrive:
-rclone mkdir "gdrive:VNGISDash_202407_202506_Districts"
+rclone mkdir "gdrive:VNGISDash_202407_202506_Districts_50m"
 rclone config show gdrive
 ```
 
@@ -123,21 +124,27 @@ Trong tab **Variables**, tùy chọn:
 |---|---|
 | `VNGIS_DISTRICTS_EE_PROJECT` | `vngis-ee-2`; project truyền vào `ee.Initialize` |
 | `VNGIS_DISTRICTS_EE_ASSET` | Trống → `projects/<project>/assets/districts_l2` |
-| `VNGIS_DISTRICTS_EE_CONCURRENCY` | `1`; không tăng khi đang có lỗi quota |
+| `VNGIS_DISTRICTS_EE_CONCURRENCY` | Mặc định `4`, tự giảm khi 429; đặt `1` nếu project đang Restricted Mode |
 
-Workflow cấp huyện dùng các variable riêng trên. Khi chạy Python trực tiếp, tên tương ứng là `VNGIS_EE_PROJECT`, `VNGIS_EE_ASSET`, `VNGIS_EE_CONCURRENCY`. Python cũng hỗ trợ `VNGIS_START_MONTH`/`VNGIS_END_MONTH`; workflow này cố định `2024-07`/`2025-06`. Đổi khoảng thời gian cần thư mục đầu ra riêng; manifest và profile ngăn dùng nhầm trạng thái của khoảng khác.
+Nếu đã tạo variable concurrency=`1` theo bản hướng dẫn cũ, nó vẫn được ưu tiên. Để thử chế độ nhanh, đặt `4`; theo dõi log `[quota]` tự hạ mức khi cần, không tiếp tục tăng khi lỗi quota.
+
+Khi chạy Python trực tiếp, tên tương ứng là `VNGIS_EE_PROJECT`, `VNGIS_EE_ASSET`, `VNGIS_EE_CONCURRENCY`; thêm `VNGIS_DAY_IMAGE_SCALE=50` cho TIFF 50 m. Python trực tiếp giữ mặc định 20 m/1 yêu cầu để tương thích bản cũ; Actions mặc định 50 m/4 yêu cầu. Khoảng tháng trên workflow cố định `2024-07`/`2025-06`. Manifest/profile chứa scale để không dùng nhầm trạng thái 20 m cho 50 m.
 
 Trong **Settings → Actions → General**, policy phải cho phép workflow tự dispatch (`actions: write`). YAML khai báo `contents: read` và `actions: write`.
 
 ## 6. Pilot rồi full
 
 1. **Actions → workflow `vngis-2024.yml` → Run workflow → Use workflow from `vngis-ee-districts-202407-202506`**. Tên trên trang Actions có thể vẫn lấy từ main.
-2. Chọn **`mode=pilot`, `pilot_n=2`, `workers=2`**. Pilot tự chọn huyện và đơn vị đô thị đầu tiên theo mã GADM, chạy đủ cả 12 tháng. Ô `stop_after_province` chỉ giữ tương thích giao diện main và bị bỏ qua trên branch này.
+2. Chọn **`mode=pilot`, `pilot_n=6`, `workers=4`, `day_scale=50`** để đo tốc độ. Pilot từ 6 huyện trở lên lấy cả huyện đầu tiên/đô thị và các huyện phân bố trên cả nước; mọi huyện chạy đủ 12 tháng. Pilot 2 vẫn lấy huyện/đô thị đầu tiên như trước. Ô `stop_after_province` chỉ giữ tương thích giao diện main và bị bỏ qua.
 3. Log phải ghi đúng project, asset, khoảng tháng và huyện thử; preflight kiểm tra Drive, ảnh ngày/đêm và ghép ô giữ pixel. `verify_pilot.py` kiểm tra file TIFF, độ phân giải, kiểu dữ liệu, năm/tháng và CSV. Thiếu dữ liệu sẽ báo FAIL, không coi là đủ.
-4. Kiểm tra thư mục **`VNGISDash_202407_202506_Districts_PILOT`** trên Drive. Khi pilot đạt, tạo lượt mới trên đúng branch với **`mode=full`, `workers=2`**.
+4. Kiểm tra **`VNGISDash_202407_202506_Districts_50m_PILOT`**. Khi pilot đạt, tạo lượt mới trên đúng branch với **`mode=full`, `workers=4`, `day_scale=50`**. Full lưu vào `VNGISDash_202407_202506_Districts_50m`. Pilot/full dùng thư mục riêng; full xử lý toàn quốc, không chỉ các huyện thí điểm.
 5. Full phải ghi **710 huyện, 63 tỉnh**. Khi hoàn tất đầy đủ, mỗi CSV có **8.520 dòng huyện–tháng**, có 12 TIFF ngày và 12 TIFF đêm mỗi huyện (tổng 8.520 file mỗi loại).
 
-Sentinel-2 ngày: median, 10 kênh BLUE/GREEN/RED/NIR/SWIR1/SWIR2/NDVI/NDBI/MNDWI/BSI; TIFF **Int16, 20 m, scale 0.0001, offset 0, NoData -32768**. Đọc giá trị thực bằng **DN × 0.0001**. Trong miền biểu diễn, sai số làm tròn tối đa 0.00005; giá trị vượt miền ±3.2767 gây lỗi rõ ràng, không bị tự cắt. TIFF đêm vẫn avg_rad/cf_cvg float64, 500 m.
+Sentinel-2 ngày: median, 10 kênh BLUE/GREEN/RED/NIR/SWIR1/SWIR2/NDVI/NDBI/MNDWI/BSI; TIFF **Int16, 50 m mặc định trên Actions, scale 0.0001, offset 0, NoData -32768**. Đọc giá trị thực bằng **DN × 0.0001**. Trong miền biểu diễn, sai số lượng tử hóa tối đa 0.00005; giá trị vượt miền ±3.2767 gây lỗi rõ ràng, không tự cắt. TIFF đêm vẫn avg_rad/cf_cvg float64, 500 m.
+
+TIFF 50 m có số pixel xấp xỉ **1/6,25** so với 20 m cho cùng vùng, giảm dữ liệu cần tải và số ô cần ghép; đây là giảm độ phân giải không gian theo lựa chọn của người dùng. Dùng scale của API Earth Engine, giữ CRS/công thức/band. CSV giữ phép tính gốc, không tính từ TIFF 50 m. Nén DEFLATE mức 6 vẫn không mất dữ liệu. Kích thước chia ô được dùng lại cho các tháng sau, tránh thử cả ảnh vượt giới hạn nhiều lần.
+
+Nếu chọn **`day_scale=20`**, dùng lại thư mục `VNGISDash_202407_202506_Districts` / `_PILOT` cũ và trạng thái 20 m. Không đổi manifest hay trộn hai độ phân giải trong cùng thư mục.
 
 CSV được tính **trên ảnh float gốc ở Earth Engine**, trước và độc lập với lượng tử hóa TIFF; Task 1 giữ mean/stdDev ở scale **50 m**. Trước tiên dùng cảnh có CLOUDY_PIXEL_PERCENTAGE < 85; nếu có kênh thiếu mean sau mask, thử toàn bộ cảnh **của đúng tháng đó**, vẫn giữ mask QA60, median và công thức chỉ số. Log ghi kênh thiếu, số cảnh và số pixel mỗi kênh. Nếu vẫn không có pixel hợp lệ, giữ null/no_data; không mở rộng tháng để lấp CSV. TIFF ngày giữ lựa chọn cửa sổ tháng, rồi ±15/±30 ngày khi không có cảnh. Ngày cuối tháng được bao gồm bằng end-exclusive là ngày đầu tháng tiếp theo.
 
@@ -170,7 +177,7 @@ _control/logs/
 
 ### Nâng cấp lượt float đã chạy trước bản sửa
 
-Tạo STOP trên branch, chờ lượt cũ đồng bộ và kết thúc, rồi xóa STOP và **Run workflow tạo lượt mới** trên branch này. Lượt đang chạy sử dụng code cũ; cập nhật branch không thay code của runner đang hoạt động. Không cần đổi thư mục Drive hoặc xóa kết quả cũ.
+Tạo STOP trên branch, chờ lượt cũ đồng bộ và kết thúc, rồi xóa STOP và **Run workflow tạo lượt mới**. Lượt đang chạy dùng code cũ. Để nâng cấp dữ liệu cũ giữ 20 m, chọn `day_scale=20`; không cần xóa kết quả. Chọn `50` sẽ dùng thư mục 50 m riêng và không lấy trạng thái 20 m để báo hoàn tất.
 
 Pipeline tự nhận manifest float cũ của đúng kỳ/cấp: giữ TIFF đêm và CSV đêm, tính lại CSV ngày theo chính sách bổ sung ở trên. TIFF ngày đã có được lấy từ Drive và chuyển Int16 cục bộ, không tải lại ảnh đó từ Earth Engine. Nếu file thực sự mất, pipeline tải lại tháng tương ứng. `_control/int16_uploaded.json` chỉ đánh dấu TIFF Int16 đã upload; file float còn trên Drive không được nhầm là đã hoàn tất nâng cấp.
 
@@ -184,7 +191,7 @@ Uploader và đối chiếu trạng thái dùng cùng khóa; chuyển file lên 
 |---|---|
 | 403/permission | Project ID, đăng ký EE, hai role cho đúng email service account, quyền đọc asset |
 | Asset không có GID_2 / nhiều bản ghi | Đúng bảng level 2, GID_2 duy nhất, 710 bản ghi; không dùng communes_l3 |
-| 429 / Restricted Mode | Quota và trạng thái project; giữ concurrency 1, hạn chế workflow khác cùng project, xem retry/backoff |
+| 429 / Restricted Mode | Xem log tự hạ concurrency; đặt variable 1 nếu còn bị giới hạn, hạn chế workflow khác cùng project |
 | TIFF quá lớn | Giữ scale; pipeline chia ô tối đa 32×32; kiểm tra RAM/disk/timeout nếu vẫn lỗi |
 | Lệch lưới/chồng lấn | Dừng báo lỗi; không ghép bằng nội suy để che lỗi |
 | Drive đầy/token hết hạn | Dung lượng tài khoản nhận; reconnect remote đúng email, cập nhật secret nếu cần |
@@ -204,3 +211,16 @@ python -m venv /tmp/vngis-districts-venv
 ```
 
 Kiểm thử offline dùng EE giả lập và TIFF thật nhỏ để xác minh date graph, schema, pixel, resume và lỗi. Không chứng minh quyền/quota hoặc tốc độ xử lý EE thực tế. Pilot thật cần project/asset và hai secrets; workspace hiện chưa có cấu hình rclone để chạy Drive trực tiếp.
+
+## 10. Chạy nhanh để ưu tiên mốc trưa 10/10/2026
+
+Đã thống nhất giảm TIFF ngày từ 20 m xuống **50 m**, giữ 10 kênh và CSV gốc. Dùng project/asset/Secrets hiện có; dừng lượt code cũ bằng STOP, chờ đồng bộ, xóa STOP rồi tạo lượt mới.
+
+1. Kiểm tra variable `VNGIS_DISTRICTS_EE_CONCURRENCY`: đặt `4` để thử mức nhanh; giá trị `1` cũ sẽ ghi đè mặc định. Tạm dừng các workflow khác đang dùng cùng project `vngis-ee-2` để tránh tranh quota.
+2. Chạy `pilot`, `pilot_n=6`, `workers=4`, `day_scale=50`. Log đầu phải ghi **50 m**, tối đa 4 yêu cầu. Preflight đọc dung lượng Drive còn trống, kiểm tra chia ô; sau đó xem file/report trong folder `_50m_PILOT`.
+3. Khi pilot PASS, chạy `full`, `workers=4`, `day_scale=50`. Đích là `VNGISDash_202407_202506_Districts_50m` trên tài khoản nhận cũ.
+4. Theo dõi log **`[speed]`**: chỉ đếm huyện `done`, báo huyện/giờ và ETA tham khảo theo giờ Việt Nam. Log `[quota]` cho biết nếu số yêu cầu đã bị hạ. `partial` không được cộng vào tốc độ hoàn tất.
+
+710 huyện × 12 tháng tương ứng 8.520 TIFF ngày + 8.520 TIFF đêm và 8.520 dòng cho mỗi CSV khi đủ dữ liệu. Nếu chưa có huyện full nào xong, 60 huyện/giờ cần khoảng **11 giờ 50 phút**, 90 huyện/giờ cần khoảng **7 giờ 53 phút**, 30 huyện/giờ cần khoảng **23 giờ 40 phút**. Cộng thêm thời gian pilot, khởi động các lượt và đồng bộ cuối. Tốc độ không nhất thiết tăng 6,25 lần khi số pixel giảm 6,25 lần: truy vấn CSV, tính composite, hạn mức compute, network và Drive vẫn ảnh hưởng.
+
+Sau 30–60 phút full, so sánh `(710 - số huyện done) / tốc độ thực tế` với thời gian còn lại tới **12:00 10/10/2026, UTC+7**. ETA ban đầu có thể lạc quan vì huyện lớn/mây nhiều xử lý lâu hơn. Nếu project tiếp tục Restricted Mode và tự giảm về 1, hoặc tốc độ thấp hơn mức cần đạt, không có căn cứ cam kết kịp mốc này chỉ bằng chỉnh code. Không tăng số project/tài khoản để né quota; không đổi CSV thiếu thành số 0/done.

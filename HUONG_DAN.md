@@ -1,6 +1,6 @@
 # VNGIS dữ liệu cấp huyện 07/2024–06/2025
 
-Branch `vngis-ee-districts-202407-202506` chạy GADM cấp 2: **710 huyện, 63 tỉnh/thành**, 12 tháng từ 07/2024 đến 06/2025, gồm TIFF ngày/đêm và CSV.
+Branch `vngis-ee-districts-202407-202506` chạy GADM cấp 2: **710 huyện, 63 tỉnh/thành**, 12 tháng từ 07/2024 đến 06/2025, gồm TIFF ngày/đêm và CSV. Actions mặc định TIFF ngày 50 m, 10 kênh Int16; CSV giữ phép tính gốc, ảnh đêm 500 m. Có tùy chọn 20 m dùng lại thư mục cũ.
 
 Đọc [SETUP_DISTRICTS_202407_202506.md](SETUP_DISTRICTS_202407_202506.md) để upload asset `districts_l2`, cấu hình project/Drive/secrets, chạy pilot rồi full và theo dõi trạng thái.
 
