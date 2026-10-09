@@ -1472,11 +1472,15 @@ def rclone_sync_once(final=False):
         return True
     success = True
     with _sync_lock:
-        age = [] if final else ["--min-age", "2m"]
+        # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
+        # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
+        cutoff = None if final else time.time() - 120
         for d in (D_DAY, D_NIGHT):
             src = L(d)
             if os.path.isdir(src):
                 candidates = list(glob.glob(os.path.join(src, "**", "*.tif"), recursive=True))
+                if cutoff is not None:
+                    candidates = [p for p in candidates if os.path.getmtime(p) <= cutoff]
                 int16_candidates = []
                 if d == D_DAY and DAY_FORMAT == "int16":
                     import rasterio
@@ -1489,7 +1493,7 @@ def rclone_sync_once(final=False):
                     snapshot.write("\n".join(os.path.relpath(p, src).replace(os.sep, "/") for p in candidates))
                     snapshot.flush()
                     ok = _rclone(["move", src, f"{REMOTE_BASE}/{d}", "--files-from", snapshot.name,
-                                  *age, *RCLONE_COMMON]) if candidates else True
+                                  *RCLONE_COMMON]) if candidates else True
                 success = ok and success
                 # rclone move chỉ xóa file đã upload thành công, kể cả khi một file khác lỗi.
                 REMOTE_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")

@@ -189,6 +189,7 @@ Uploader và đối chiếu trạng thái dùng cùng khóa; chuyển file lên 
 | Lệch lưới/chồng lấn | Dừng báo lỗi; không ghép bằng nội suy để che lỗi |
 | Drive đầy/token hết hạn | Dung lượng tài khoản nhận; reconnect remote đúng email, cập nhật secret nếu cần |
 | copyto directory not found khi nâng cấp | Dùng bản sửa mới; đối chiếu nguồn thật, file mất được tải lại từ EE; không đổi secret chỉ vì thiếu file |
+| files-from overrides all other filters | Dùng bản sửa chọn file đủ 2 phút trong Python; lệnh move chỉ dùng files-from, không kết hợp min-age/filter; final sync lấy mọi TIFF hoàn chỉnh |
 | Manifest khác khoảng/cấp | Chọn thư mục kết quả khác cho cấu hình mới |
 | Skipped vì STOP | Xóa STOP trên đúng branch, Run workflow tạo lượt mới |
 

@@ -566,7 +566,7 @@ class Int16UpgradeTests(LocalCase):
                 path.unlink();return False
             return True
         with patch.object(v,'_rclone',side_effect=move):
-            self.assertFalse(v.rclone_sync_once())
+            self.assertFalse(v.rclone_sync_once(final=True))
         self.assertIn(rel,v.REMOTE_TIFS)
         state=complete_state();state['attempts']=2
         for period in v.PERIODS:
@@ -576,6 +576,45 @@ class Int16UpgradeTests(LocalCase):
         restored=v.reconcile_status(state)
         self.assertEqual(restored['attempts'],2)
         self.assertEqual(restored['t2']['2024-07'],'ok')
+
+    def test_periodic_upload_filters_age_before_files_from_without_conflicting_flags(self):
+        ctx=v.build_ctx(ROW)
+        paths=[]
+        for period in [(2024,7),(2024,8)]:
+            path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,period)))
+            path.parent.mkdir(parents=True,exist_ok=True)
+            v.write_day_int16(str(path),np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            paths.append(path)
+        old,recent=paths
+        timestamp=v.time.time()-180;os.utime(old,(timestamp,timestamp))
+        moves=[]
+        def upload(args,**kwargs):
+            if args[0]=='move':
+                moves.append(args)
+                self.assertNotIn('--min-age',args);self.assertNotIn('--filter',args)
+                listed=Path(args[args.index('--files-from')+1]).read_text().splitlines()
+                self.assertEqual(listed,[str(old.relative_to(self.root/'Day'))])
+                old.unlink()
+            return True
+        with patch.object(v,'_rclone',side_effect=upload):
+            self.assertTrue(v.rclone_sync_once())
+        self.assertEqual(len(moves),1);self.assertTrue(recent.is_file())
+        self.assertIn(str(old.relative_to(self.root)),v.REMOTE_INT16_TIFS)
+
+    def test_final_upload_includes_recent_files_without_conflicting_flags(self):
+        ctx=v.build_ctx(ROW);path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        path.parent.mkdir(parents=True)
+        v.write_day_int16(str(path),np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+        moves=[]
+        def upload(args,**kwargs):
+            if args[0]=='move':
+                self.assertNotIn('--min-age',args);self.assertNotIn('--filter',args)
+                self.assertIn(path.name,Path(args[args.index('--files-from')+1]).read_text())
+                moves.append(args);path.unlink()
+            return True
+        with patch.object(v,'_rclone',side_effect=upload):
+            self.assertTrue(v.rclone_sync_once(final=True))
+        self.assertEqual(len(moves),1);self.assertFalse(path.exists())
 
     def test_status_reconciliation_shares_upload_lock(self):
         v.write_status(complete_state())
