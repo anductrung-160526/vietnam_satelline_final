@@ -1,6 +1,6 @@
-# Hướng dẫn cho nhánh Cao Bằng–Hà Nội
+# Hướng dẫn cho nhánh Sóc Trăng–Yên Bái
 
-**Nhánh này dùng [SETUP_CAO_BANG_HA_NOI.md](SETUP_CAO_BANG_HA_NOI.md)**: project `vngis-ee-cao-bang-hanoi`, phạm vi 11 tỉnh từ Cao Bằng đến Hà Nội theo alphabet, đầu ra `VNGISDash_2024_Cao Bang_Ha Noi` trên Drive `adt.wqiqc@gmail.com`, hai secrets riêng. Các mục bên dưới là tài liệu phiên bản cũ; không áp dụng project, secrets, phạm vi hoặc thư mục đầu ra cũ cho nhánh này.
+**Nhánh này dùng [SETUP_SOC_TRANG_YEN_BAI.md](SETUP_SOC_TRANG_YEN_BAI.md)**: project `vngis-ee-soc-trang-yen-bai`, phạm vi 13 tỉnh từ Sóc Trăng đến Yên Bái theo alphabet, đầu ra `VNGISDash_2024_Soc Trang_Yen Bai` trên Drive `adt.wqiqc@gmail.com`, hai secrets riêng. Các mục bên dưới là tài liệu phiên bản cũ; không áp dụng project, secrets, phạm vi hoặc thư mục đầu ra cũ cho nhánh này.
 
 # Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions (bản cũ)
 
