@@ -1,11 +1,11 @@
-name: VNGISDash 2024 (Cao Bằng–Hà Nội)
+name: VNGISDash 2024 (Lâm Đồng–Quảng Trị)
 
 # Mỗi lượt chạy tối đa 5 giờ 15 phút.
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot và full đều chỉ chọn xã trong phạm vi alphabet Cao Bằng–Hà Nội.
-# full: ghi vào VNGISDash_2024_Cao Bang_Ha Noi trên Drive adt.wqiqc@gmail.com.
+# pilot và full đều chỉ chọn xã trong phạm vi alphabet Lâm Đồng–Quảng Trị.
+# full: ghi vào VNGISDash_2024_Lam Dong_Quang Tri trên Drive adt.wqiqc@gmail.com.
 #
 # Dừng có trật tự:
 # - Tạo file STOP ở thư mục gốc repository; hoặc
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thí điểm | full = 11 tỉnh từ Cao Bằng đến Hà Nội"
+        description: "pilot = thí điểm | full = 15 tỉnh từ Lâm Đồng đến Quảng Trị"
         type: choice
         options:
           - pilot
@@ -35,10 +35,10 @@ on:
         default: "2"
 
       stop_after_province:
-        description: "Nhánh này cố định dừng ở Hà Nội; ô này giữ tương thích với giao diện main"
+        description: "Nhánh này cố định dừng ở Quảng Trị; ô này giữ tương thích với giao diện main"
         required: false
         type: string
-        default: "Hà Nội"
+        default: "Quảng Trị"
 
 concurrency:
   group: vngis-2024-${{ github.ref_name }}
@@ -51,10 +51,10 @@ permissions:
 env:
   VNGIS_MODE: ${{ inputs.mode }}
   VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024_Cao Bang_Ha Noi' || 'VNGISDash_2024_Cao Bang_Ha Noi_PILOT' }}
+  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024_Lam Dong_Quang Tri' || 'VNGISDash_2024_Lam Dong_Quang Tri_PILOT' }}
   VNGIS_RCLONE_REMOTE: gdrive
-  VNGIS_START_FROM_PROVINCE: "Cao Bằng"
-  VNGIS_STOP_AFTER_PROVINCE: "Hà Nội"
+  VNGIS_START_FROM_PROVINCE: "Lâm Đồng"
+  VNGIS_STOP_AFTER_PROVINCE: "Quảng Trị"
   VNGIS_PROVINCE_ORDER: "alphabet"
 
 jobs:
@@ -91,8 +91,8 @@ jobs:
       VNGIS_MAX_RUNTIME_SEC: "18900"
 
       # Project được truyền vào ee.Initialize(project=...).
-      VNGIS_EE_PROJECT: "vngis-ee-cao-bang-hanoi"
-      VNGIS_EE_ASSET: ${{ vars.VNGIS_CAO_BANG_HANOI_EE_ASSET || 'projects/vngis-ee-cao-bang-hanoi/assets/communes_l3' }}
+      VNGIS_EE_PROJECT: "vngis-ee-lam-dong-quang-tri"
+      VNGIS_EE_ASSET: ${{ vars.VNGIS_LAM_DONG_QUANG_TRI_EE_ASSET || 'projects/vngis-ee-lam-dong-quang-tri/assets/communes_l3' }}
       VNGIS_EE_HIGH_VOLUME: "false"
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
@@ -155,16 +155,16 @@ jobs:
 
       - name: Ghi khóa truy cập từ Secrets
         env:
-          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF_CAO_BANG_HANOI }}
-          EE_KEY_DATA: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_CAO_BANG_HANOI }}
+          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF_LAM_DONG_QUANG_TRI }}
+          EE_KEY_DATA: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_LAM_DONG_QUANG_TRI }}
         run: |
           [ -n "$RCLONE_CONF_DATA" ] || {
-            echo "::error::Thiếu secret RCLONE_CONF_CAO_BANG_HANOI"
+            echo "::error::Thiếu secret RCLONE_CONF_LAM_DONG_QUANG_TRI"
             exit 1
           }
 
           [ -n "$EE_KEY_DATA" ] || {
-            echo "::error::Thiếu secret EE_SERVICE_ACCOUNT_JSON_CAO_BANG_HANOI"
+            echo "::error::Thiếu secret EE_SERVICE_ACCOUNT_JSON_LAM_DONG_QUANG_TRI"
             exit 1
           }
 
@@ -310,7 +310,7 @@ jobs:
               -f mode="${{ inputs.mode }}" \
               -f pilot_n="${{ inputs.pilot_n }}" \
               -f workers="${{ inputs.workers }}" \
-              -f stop_after_province="Hà Nội"
+              -f stop_after_province="Quảng Trị"
 
             echo "Đã gọi lượt kế tiếp."
           fi

@@ -5,12 +5,12 @@ VNGISDash 2024: pipeline tự động cấp xã chạy trên GitHub Actions.
 Nguồn khoa học: VNGISDash_Task123_Merged_final.ipynb. Pipeline chỉ giữ 3 chức năng:
   (1) trích xuất chỉ số từ ảnh ngày (Task 1) và ảnh đêm (Task 3.2), (2) lấy ảnh tif ngày (Task 2),
   (3) lấy ảnh tif đêm (Task 3.1). Không có bước chọn tỉnh, xã: VNGIS_MODE=pilot tự lấy VNGIS_PILOT_N xã,
-  VNGIS_MODE=full chạy mọi xã.
+  VNGIS_MODE=full chạy mọi xã trong phạm vi cấu hình.
 
 Cấu trúc đầu ra (cấp 1 = thư mục trên Drive):
   Day/<GID_1>_<tỉnh>/<GID_3>_<xã>/<GID_3>_day_2024MM.tif
   Night/<GID_1>_<tỉnh>/<GID_3>_<xã>/<GID_3>_night_2024MM.tif
-  CSV/day_indices.csv, CSV/night_indices.csv         (gộp toàn quốc)
+  CSV/day_indices.csv, CSV/night_indices.csv         (gộp phạm vi cấu hình)
   _control/                                         (trạng thái, log, báo cáo)
 
 Tăng tốc so với notebook (không đổi công thức, tham số): Task 1 và Task 3.2 gom 12 tháng thành 1 lần gọi
@@ -52,7 +52,7 @@ def _env(name, default, cast=str):
 YEAR = 2024
 MONTHS = list(range(1, 13))
 
-PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-cao-bang-hanoi")
+PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-lam-dong-quang-tri")
 ASSET_ID = _env("VNGIS_EE_ASSET", f"projects/{PROJECT_ID}/assets/communes_l3")
 
 MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
@@ -61,8 +61,8 @@ if MODE not in ("pilot", "full"):
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
-START_FROM_PROVINCE = _env("VNGIS_START_FROM_PROVINCE", "Cao Bằng")
-STOP_AFTER_PROVINCE = _env("VNGIS_STOP_AFTER_PROVINCE", "Hà Nội")
+START_FROM_PROVINCE = _env("VNGIS_START_FROM_PROVINCE", "Lâm Đồng")
+STOP_AFTER_PROVINCE = _env("VNGIS_STOP_AFTER_PROVINCE", "Quảng Trị")
 PROVINCE_ORDER = _env("VNGIS_PROVINCE_ORDER", "alphabet")
 if PROVINCE_ORDER not in ("alphabet", "gadm"):
     raise SystemExit("VNGIS_PROVINCE_ORDER phải là alphabet hoặc gadm")
@@ -105,8 +105,8 @@ EE_SEM = threading.BoundedSemaphore(EE_CONCURRENCY)
 _ee_cooldown_lock = threading.Lock()
 _ee_cooldown_until = 0.0
 
-DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", "VNGISDash_2024_Cao Bang_Ha Noi_PILOT" if MODE == "pilot"
-                   else "VNGISDash_2024_Cao Bang_Ha Noi")
+DRIVE_FOLDER = _env("VNGIS_DRIVE_FOLDER", "VNGISDash_2024_Lam Dong_Quang Tri_PILOT" if MODE == "pilot"
+                   else "VNGISDash_2024_Lam Dong_Quang Tri")
 RCLONE_REMOTE = _env("VNGIS_RCLONE_REMOTE", "gdrive")
 REMOTE_BASE = f"{RCLONE_REMOTE}:{DRIVE_FOLDER}"
 LOCAL_ROOT = _env("VNGIS_LOCAL_ROOT", os.path.expanduser(f"~/vngis_2024/{DRIVE_FOLDER}"))
@@ -1292,7 +1292,7 @@ def province_boundary(admin, requested):
 
 
 def load_targets(admin):
-    """Lọc phạm vi trước khi chọn xã; pilot và full đều nằm trong Cao Bằng–Hà Nội."""
+    """Lọc phạm vi trước khi chọn xã; pilot và full đều nằm trong Lâm Đồng–Quảng Trị."""
     scoped = admin
     if START_FROM_PROVINCE or (MODE == "full" and STOP_AFTER_PROVINCE):
         allowed = province_boundary(admin, STOP_AFTER_PROVINCE)
