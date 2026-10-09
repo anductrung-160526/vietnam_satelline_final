@@ -4,7 +4,7 @@ name: VNGISDash huyện 07/2024–06/2025
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot: chạy thử và ghi vào VNGISDash_202407_202506_Districts07_202506_Districts_PILOT.
+# pilot: chạy thử và ghi vào VNGISDash_202407_202506_Districts_PILOT.
 # full: chạy toàn bộ và ghi vào VNGISDash_202407_202506_Districts.
 #
 # Dừng có trật tự:

@@ -272,6 +272,16 @@ class ProcessTests(LocalCase):
         v.process_district(ROW,restored)
         self.assertEqual(self.downloads[24:],[('day',(2025,1))])
 
+    def test_verifier_uses_canonical_output_when_legacy_folder_copy_remains(self):
+        state=v.process_district(ROW,None);v.write_status(state);v.build_national_csv()
+        ctx=v.build_ctx(ROW)
+        original=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        legacy=self.root/'Day'/'legacy_province'/f"{ROW['GID_2']}_legacy"/original.name
+        legacy.parent.mkdir(parents=True);legacy.write_bytes(original.read_bytes())
+        checks=verify.verify_district(str(self.root),ROW['GID_2'],state,
+            pd.read_csv(self.root/'CSV/day_indices.csv'),pd.read_csv(self.root/'CSV/night_indices.csv'))
+        self.assertTrue(all(level=='PASS' for _,level,_ in checks),checks)
+
     def test_no_source_month_stays_partial_and_csv_has_nulls(self):
         props=day_props()[1:]
         v.task1_all_months.return_value=props
@@ -436,6 +446,7 @@ class Int16UpgradeTests(LocalCase):
     def test_remote_conversion_uses_rclone_and_cleans_temporary_files(self):
         ctx=v.build_ctx(ROW);ctx['convert_day_months']=['2024-07']
         path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        v.REMOTE_TIFS.add(str(path.relative_to(self.root)))
         data=tif_bytes(np.full((10,2,2),0.2,'float32'),from_origin(105,22,20/111319.49,20/111319.49))
         def copy(args,**kwargs):
             self.assertEqual(args[0],'copyto');Path(args[2]).write_bytes(data);return True
@@ -444,6 +455,103 @@ class Int16UpgradeTests(LocalCase):
             download.assert_not_called()
         self.assertFalse(Path(str(path)+'.source.part').exists())
         self.assertEqual(verify.check_tif(path,10,20)[0],'PASS')
+
+    def test_missing_legacy_tiff_downloads_only_requested_month_from_ee(self):
+        ctx=v.build_ctx(ROW);ctx.update(convert_day_months=['2024-07'],geom=object())
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        def download(img,region,scale,target,label,writer):
+            self.assertEqual(scale,20);self.assertIn('2024-07',label)
+            self.assertIs(writer,v.write_day_int16)
+            writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            return 1
+        with patch.object(v,'_rclone') as copy,patch.object(v,'download_tif',side_effect=download) as get:
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+            copy.assert_not_called();self.assertEqual(get.call_count,1)
+
+    def test_file_disappearing_after_listing_falls_back_and_removes_partial_copy(self):
+        ctx=v.build_ctx(ROW);ctx.update(convert_day_months=['2024-07'],geom=object())
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        rel=str(path.relative_to(self.root));v.REMOTE_TIFS.add(rel)
+        def missing(args,**kwargs):
+            Path(args[2]).write_bytes(b'partial');self.assertTrue(kwargs['missing_ok']);return None
+        def download(img,region,scale,target,label,writer):
+            writer(target,np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            return 1
+        with patch.object(v,'_rclone',side_effect=missing),patch.object(v,'download_tif',side_effect=download) as get:
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+            self.assertEqual(get.call_count,1)
+        self.assertNotIn(rel,v.REMOTE_TIFS)
+        self.assertFalse(Path(str(path)+'.source.part').exists())
+
+    def test_copy_permission_failure_does_not_trigger_ee_redownload(self):
+        ctx=v.build_ctx(ROW);ctx.update(convert_day_months=['2024-07'],geom=object())
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        v.REMOTE_TIFS.add(str(path.relative_to(self.root)))
+        with patch.object(v,'_rclone',return_value=False),patch.object(v,'download_tif') as get:
+            with self.assertRaisesRegex(RuntimeError,'quyền/token/kết nối'):
+                v._download_month('day',ctx,(2024,7),None,str(path))
+            get.assert_not_called()
+
+    def test_existing_source_uses_actual_legacy_folder_and_filename(self):
+        ctx=v.build_ctx(ROW);ctx['convert_day_months']=['2024-07']
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        legacy=f"Day/old_province/old_district/{ctx['safe_gid2']}_day_202407.tif"
+        v.REMOTE_TIFS.add(legacy)
+        data=tif_bytes(np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001))
+        def copy(args,**kwargs):
+            self.assertEqual(args[1],v.REMOTE_BASE+'/'+legacy)
+            Path(args[2]).write_bytes(data);return True
+        with patch.object(v,'_rclone',side_effect=copy),patch.object(v,'download_tif') as get:
+            self.assertEqual(v._download_month('day',ctx,(2024,7),None,str(path)),(1,False))
+            get.assert_not_called()
+
+    def test_ambiguous_legacy_sources_are_not_guessed(self):
+        ctx=v.build_ctx(ROW)
+        for folder in ['old_a','old_b']:
+            v.REMOTE_TIFS.add(f"Day/{folder}/{v.day_name(ctx,(2024,7))}")
+        with self.assertRaisesRegex(RuntimeError,'Nhiều TIFF'):
+            v.existing_day_source(ctx,(2024,7))
+
+    def test_missing_conversion_is_cleared_and_exhausted_old_copy_errors_recover_once(self):
+        state=complete_state();state.update(attempts=3,status='partial',convert_day_months=['2024-07'])
+        state['t2']['2024-07']='fail'
+        ctx=v.build_ctx(ROW)
+        for period in v.PERIODS:
+            if period != (2024,7):
+                rel=ctx['rel_day_dir']+'/'+v.day_name(ctx,period)
+                v.REMOTE_TIFS.add(rel);v.REMOTE_INT16_TIFS.add(rel)
+            v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+        restored=v.reconcile_status(state)
+        self.assertEqual(restored['convert_day_months'],[])
+        self.assertEqual(restored['t2']['2024-07'],'pending')
+        self.assertEqual(restored['attempts'],0)
+        restored['attempts']=3
+        again=v.reconcile_status(restored)
+        self.assertEqual(again['attempts'],3);self.assertTrue(v.core_finished(again))
+
+    def test_rclone_distinguishes_missing_object_from_other_failures(self):
+        for code,error,expected in [(3,'directory not found',None),(4,'object not found',None),
+                                    (1,"Source doesn't exist or is a directory and destination is a file",None),
+                                    (1,'HTTP 401 token invalid',False),(0,'',True)]:
+            with self.subTest(code=code),patch.object(v.subprocess,'run',return_value=SimpleNamespace(returncode=code,stderr=error)):
+                self.assertIs(v._rclone(['copyto','source','target'],missing_ok=True,quiet=True),expected)
+
+    def test_exhausted_old_path_errors_recover_when_actual_legacy_source_exists(self):
+        state=complete_state();state.update(attempts=3,status='partial',convert_day_months=['2024-07'],
+            errors=['day 2024-07: RuntimeError: Không tải được TIFF đã có để chuyển Int16: old'])
+        state['t2']['2024-07']='fail'
+        ctx=v.build_ctx(ROW)
+        for period in v.PERIODS:
+            if period != (2024,7):
+                rel=ctx['rel_day_dir']+'/'+v.day_name(ctx,period)
+                v.REMOTE_TIFS.add(rel);v.REMOTE_INT16_TIFS.add(rel)
+            v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+        v.REMOTE_TIFS.add('Day/legacy/'+v.day_name(ctx,(2024,7)))
+        restored=v.reconcile_status(state)
+        self.assertEqual(restored['attempts'],0)
+        self.assertEqual(restored['convert_day_months'],['2024-07'])
+        restored['attempts']=3
+        self.assertEqual(v.reconcile_status(restored)['attempts'],3)
 
     def test_partial_rclone_move_still_remembers_successfully_uploaded_file(self):
         ctx=v.build_ctx(ROW);path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))

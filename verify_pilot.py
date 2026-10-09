@@ -49,12 +49,24 @@ def check_tif(path, bands, scale, night=False):
 def verify_district(root, gid, state, day_csv, night_csv):
     checks = [('Trạng thái', 'PASS' if v.district_complete(state) and state.get('status') == 'done' else 'FAIL',
                state.get('status', 'không có trạng thái'))]
+    ctx = None
+    for frame in (day_csv, night_csv):
+        if frame is not None and all(col in frame for col in v.ADM_COLS):
+            metadata = frame[frame.GID_2 == gid]
+            if not metadata.empty:
+                ctx = v.build_ctx(metadata.iloc[0].to_dict())
+                break
     for label, sub, name, bands, scale in [('Ngày', 'Day', v.day_name, v.DAY_BANDS, 20),
                                           ('Đêm', 'Night', v.night_name, 2, 500)]:
         failed = []
         for period in v.PERIODS:
             filename = name({'gid2': gid}, period)
-            files = list(Path(root, sub).glob(f'*/{gid}_*/{filename}'))
+            if ctx is not None:
+                folder = ctx['rel_day_dir' if sub == 'Day' else 'rel_night_dir']
+                expected = Path(root, folder, filename)
+                files = [expected] if expected.is_file() else []
+            else:
+                files = list(Path(root, sub).glob(f'*/{gid}_*/{filename}'))
             if len(files) != 1:
                 failed.append(v.month_key(period) + ': thiếu hoặc trùng TIFF')
                 continue

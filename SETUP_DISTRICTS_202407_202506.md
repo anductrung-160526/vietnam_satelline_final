@@ -174,6 +174,8 @@ Tạo STOP trên branch, chờ lượt cũ đồng bộ và kết thúc, rồi x
 
 Pipeline tự nhận manifest float cũ của đúng kỳ/cấp: giữ TIFF đêm và CSV đêm, tính lại CSV ngày theo chính sách bổ sung ở trên. TIFF ngày đã có được lấy từ Drive và chuyển Int16 cục bộ, không tải lại ảnh đó từ Earth Engine. Nếu file thực sự mất, pipeline tải lại tháng tương ứng. `_control/int16_uploaded.json` chỉ đánh dấu TIFF Int16 đã upload; file float còn trên Drive không được nhầm là đã hoàn tất nâng cấp.
 
+Nếu trước đây gặp `rclone copyto ... directory not found`, bản sửa đối chiếu file với danh sách Drive trước khi chuyển đổi. File có tên GID cũ/thư mục cũ được nhận diện khi chỉ có một nguồn phù hợp. Nếu không tìm thấy file, hoặc file mất sau lúc liệt kê, tải lại đúng tháng từ EE thay vì lặp copyto. Lỗi quyền/token/kết nối vẫn được báo riêng. Các trạng thái đã hết lần thử do nguồn chuyển đổi bị thiếu được mở lại một lần; lỗi dữ liệu thật sau đó vẫn bị giới hạn số lần thử. Không cần xóa `_control` để phục hồi.
+
 Uploader và đối chiếu trạng thái dùng cùng khóa; chuyển file lên Drive không làm reset số lần thử. Kể cả một lượt rclone chỉ chuyển được một phần, những file chuyển thành công vẫn được ghi nhận. Dữ liệu thực sự thiếu chỉ thử đến giới hạn `VNGIS_MAX_ATTEMPTS`, rồi báo lỗi. Nếu log vẫn ghi CSV ngày 07/2024 no_data, xem chẩn đoán số cảnh/pixel thay vì chạy lặp vô hạn.
 
 ## 8. Xử lý lỗi
@@ -186,6 +188,7 @@ Uploader và đối chiếu trạng thái dùng cùng khóa; chuyển file lên 
 | TIFF quá lớn | Giữ scale; pipeline chia ô tối đa 32×32; kiểm tra RAM/disk/timeout nếu vẫn lỗi |
 | Lệch lưới/chồng lấn | Dừng báo lỗi; không ghép bằng nội suy để che lỗi |
 | Drive đầy/token hết hạn | Dung lượng tài khoản nhận; reconnect remote đúng email, cập nhật secret nếu cần |
+| copyto directory not found khi nâng cấp | Dùng bản sửa mới; đối chiếu nguồn thật, file mất được tải lại từ EE; không đổi secret chỉ vì thiếu file |
 | Manifest khác khoảng/cấp | Chọn thư mục kết quả khác cho cấu hình mới |
 | Skipped vì STOP | Xóa STOP trên đúng branch, Run workflow tạo lượt mới |
 

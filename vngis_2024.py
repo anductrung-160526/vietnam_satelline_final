@@ -1066,39 +1066,70 @@ def _clean(v):
     return v
 
 
+def existing_day_source(ctx, period):
+    """Đường dẫn thật trên Drive; hỗ trợ thư mục/tên GID đã chuẩn hóa của bản cũ."""
+    canonical = f"{ctx['rel_day_dir']}/{day_name(ctx, period)}"
+    if canonical in REMOTE_TIFS:
+        return canonical
+    year, month = period
+    names = {day_name(ctx, period), f"{ctx['safe_gid2']}_day_{year}{month:02d}.tif"}
+    candidates = sorted(rel for rel in REMOTE_TIFS
+                        if rel.startswith(D_DAY + "/") and rel.rsplit("/", 1)[-1] in names)
+    if len(candidates) > 1:
+        raise RuntimeError(f"Nhiều TIFF cũ cùng huyện/tháng, không tự chọn: {candidates}")
+    return candidates[0] if candidates else None
+
+
+def reuse_day_tif(ctx, period, path, label):
+    """Trả kết quả chuyển file có thật; None nghĩa là cần tải lại ảnh từ EE."""
+    with _sync_lock:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        source = path
+        try:
+            if not os.path.isfile(path):
+                rel = existing_day_source(ctx, period)
+                if rel is None:
+                    log.warning(f"{label}: trạng thái cũ có TIFF nhưng không thấy file trên Drive; tải lại tháng này từ EE")
+                    return None
+                source = path + ".source.part"
+                copied = _rclone(["copyto", f"{REMOTE_BASE}/{rel}", source,
+                                   "--retries", "1", "--low-level-retries", "2"],
+                                  timeout=1800, missing_ok=True)
+                if copied is None:
+                    REMOTE_TIFS.discard(rel)
+                    REMOTE_INT16_TIFS.discard(rel)
+                    log.warning(f"{label}: TIFF cũ đã mất sau lúc liệt kê Drive; tải lại tháng này từ EE")
+                    return None
+                if not copied:
+                    raise RuntimeError(f"Không đọc được TIFF trên Drive (quyền/token/kết nối): {rel}")
+            import rasterio
+            with rasterio.open(source) as src:
+                already = all(d == "int16" for d in src.dtypes) and all(
+                    abs(s - 1.0 / DAY_SCALE_INV) < 1e-12 for s in src.scales)
+            if already:
+                if source != path:
+                    os.replace(source, path)
+            else:
+                convert_day_file(source, path + ".part")
+                os.replace(path + ".part", path)
+            ok, empty, note = inspect_tif(path, DAY_BANDS)
+            if not ok:
+                raise RuntimeError(note)
+            log.info(f"{label}: dùng TIFF đã có, chuyển Int16; không tải lại từ EE")
+            return 1, empty
+        finally:
+            for leftover in (path + ".source.part", path + ".part"):
+                if os.path.isfile(leftover):
+                    os.remove(leftover)
+
+
 def _download_month(kind, ctx, period, img, path):
     label = f"[{ctx['gid2']}] {kind} {month_key(period)}"
     if kind == "day":
         if DAY_FORMAT == "int16" and month_key(period) in ctx.get("convert_day_months", []):
-            with _sync_lock:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                rel = os.path.relpath(path, LOCAL_ROOT).replace(os.sep, "/")
-                if not os.path.isfile(path):
-                    if not _rclone(["copyto", f"{REMOTE_BASE}/{rel}", path + ".source.part"], timeout=1800):
-                        raise RuntimeError(f"Không tải được TIFF đã có để chuyển Int16: {rel}")
-                    source = path + ".source.part"
-                else:
-                    source = path
-                try:
-                    import rasterio
-                    with rasterio.open(source) as src:
-                        already = all(d == "int16" for d in src.dtypes) and all(
-                            abs(s - 1.0 / DAY_SCALE_INV) < 1e-12 for s in src.scales)
-                    if already:
-                        if source != path:
-                            os.replace(source, path)
-                    else:
-                        convert_day_file(source, path + ".part")
-                        os.replace(path + ".part", path)
-                    ok, empty, note = inspect_tif(path, DAY_BANDS)
-                    if not ok:
-                        raise RuntimeError(note)
-                    log.info(f"{label}: dùng TIFF đã có, chuyển Int16; không tải lại từ EE")
-                    return 1, empty
-                finally:
-                    for leftover in (path + ".source.part", path + ".part"):
-                        if os.path.isfile(leftover):
-                            os.remove(leftover)
+            reused = reuse_day_tif(ctx, period, path, label)
+            if reused is not None:
+                return reused
         n = download_tif(img, img_region(ctx), 20, path, label,
                          writer=write_day_int16 if DAY_FORMAT == "int16" else write_tif)
         ok, empty, note = inspect_tif(path, DAY_BANDS)
@@ -1169,6 +1200,8 @@ def process_district(row, prev):
             "empty_months_t2": list(prev.get("empty_months_t2") or []),
             "tiles_used": dict(prev.get("tiles_used") or {}), "day_bands": DAY_BANDS, "errors": []}
     info["convert_day_months"] = list(ctx["convert_day_months"])
+    if prev.get("recovery_revision"):
+        info["recovery_revision"] = prev["recovery_revision"]
     fc = districts_fc.filter(ee.Filter.eq("GID_2", gid2))
     geom = fc.geometry()
     ctx["geom"] = geom
@@ -1363,19 +1396,32 @@ def reconcile_status(st, part_keys=None):
         return st
     st = {**st, "t2": dict(st.get("t2") or {}), "t3img": dict(st.get("t3img") or {})}
     ctx = build_ctx(row)
+    conversions = set(st.get("convert_day_months", []))
+    missing_conversion = False
     for period in PERIODS:
         key = month_key(period)
         for slot, folder, name in (("t2", "rel_day_dir", day_name), ("t3img", "rel_night_dir", night_name)):
             rel = f"{ctx[folder]}/{name(ctx, period)}"
+            if slot == "t2" and key in conversions and not os.path.isfile(L(rel)) and existing_day_source(ctx, period) is None:
+                conversions.remove(key)
+                st[slot][key] = "pending"
+                missing_conversion = True
             if (slot == "t2" and DAY_FORMAT == "int16" and st[slot].get(key) == "ok"
                     and not os.path.isfile(L(rel)) and rel in REMOTE_TIFS and rel not in REMOTE_INT16_TIFS):
                 st[slot][key] = "pending"
-                st["convert_day_months"] = list(set(st.get("convert_day_months", [])) | {key})
+                conversions.add(key)
                 st["attempts"] = 0
             if st[slot].get(key) == "ok" and rel not in REMOTE_TIFS and not os.path.isfile(L(rel)):
                 st[slot][key] = "pending"
                 # Mất file chưa đồng bộ không tiêu tốn thêm số lần thử dữ liệu.
                 st["attempts"] = 0
+    st["convert_day_months"] = sorted(conversions)
+    legacy_copy_error = bool(conversions) and any(
+        "Không tải được TIFF đã có để chuyển Int16" in error for error in st.get("errors", []))
+    if (missing_conversion or legacy_copy_error) and st.get("recovery_revision") != "missing-source-v1":
+        # Một lần phục hồi cho lỗi copyto cũ; lỗi dữ liệu sau đó vẫn chịu MAX_ATTEMPTS.
+        st["attempts"] = 0
+        st["recovery_revision"] = "missing-source-v1"
     if part_keys is not None:
         for kind, slot, label in (("day", "t1_by_month", "t1"), ("night", "t3csv_by_month", "t3csv")):
             st[slot] = dict(st.get(slot) or {})
@@ -1401,12 +1447,16 @@ RCLONE_COMMON = ["--transfers", "4", "--checkers", "8", "--tpslimit", "8",
                  "--retries", "5", "--low-level-retries", "20", "--stats-log-level", "NOTICE"]
 
 
-def _rclone(args, timeout=6 * 3600, quiet=False):
+def _rclone(args, timeout=6 * 3600, quiet=False, missing_ok=False):
     try:
         res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
     except Exception as exc:
         log.warning(f"rclone {' '.join(args[:2])} lỗi: {exc}")
         return False
+    if res.returncode != 0 and missing_ok and (res.returncode in (3, 4) or any(
+            msg in res.stderr.lower() for msg in ("directory not found", "object not found", "file not found",
+                                                   "source doesn't exist"))):
+        return None
     if res.returncode != 0 and not quiet:
         log.warning(f"rclone {' '.join(args[:3])} lỗi: {res.stderr.strip()[-400:]}")
     return res.returncode == 0
@@ -1839,7 +1889,7 @@ def main():
     rows = {r["GID_2"]: r for r in targets.to_dict("records")}
     gids = list(rows)
     log.info(f"Danh sách: {len(gids):,} huyện, {targets['GID_1'].nunique()} tỉnh"
-             + (f" (thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
+             + (f" (pilot_n={PILOT_N}; thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
 
     statuses = load_all_status()
     if PREFLIGHT:
