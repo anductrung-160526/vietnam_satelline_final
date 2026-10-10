@@ -1300,12 +1300,96 @@ class RecoveryTests(LocalCase):
 
     def test_recovery_periodic_sync_builds_csv_before_upload_even_when_no_new_images(self):
         self.parts()
+        Path(v.L('.recovery_csv_ready.json')).write_text(json.dumps({'period':v.PERIOD_ID,'profile':v.OUTPUT_PROFILE}))
         with patch.object(v,'_copy_stable_directory',return_value=True) as copy,patch.object(v,'_rclone',return_value=True):
             self.assertTrue(v.rclone_sync_once())
         self.assertEqual([call.args[0] for call in copy.call_args_list],
                          [v.D_CONTROL,v.D_CSV,v.D_CSV,v.D_CONTROL])
         self.assertEqual(len(pd.read_csv(v.L(v.DAY_CSV))),12)
         self.assertEqual(len(pd.read_csv(v.L(v.NIGHT_CSV))),12)
+
+    def test_missing_manifest_can_be_recovered_from_remote_checkpoints_before_csv_import(self):
+        day=pd.DataFrame(v.day_records(ROW,day_props()),columns=v.DAY_COLUMNS)
+        night=night_records().fillna(0)
+        Path(v.L('.recovery_csv_ready.json')).write_text(json.dumps({'period':v.PERIOD_ID,'profile':v.OUTPUT_PROFILE}))
+        def command(args,**kwargs):
+            if args[0]=='cat':
+                if args[1].endswith('pipeline.json'):
+                    return SimpleNamespace(returncode=3,stdout='',stderr='object not found')
+                return SimpleNamespace(returncode=0,stdout='[]',stderr='')
+            if args[0]=='copy':
+                if args[1].endswith(v.D_STATUS):v.write_status(complete_state())
+                else:self.parts()
+            if args[0]=='lsjson':
+                return SimpleNamespace(returncode=0,stdout=json.dumps([{'Path':'Day/existing.tif','Size':50}]),stderr='')
+            return SimpleNamespace(returncode=0,stdout='',stderr='')
+        def copy(args,**kwargs):
+            if args[0]=='copyto':
+                (day if '/day_indices.csv' in args[1] else night).to_csv(args[2],index=False)
+            return True
+        with patch.multiple(v,DAY_IMAGE_SCALE=50,CACHE_DIR=str(self.root/'cache')), \
+             patch.object(v.shutil,'which',return_value='/bin/rclone'), \
+             patch.object(v,'_run_rclone',side_effect=command),patch.object(v,'_rclone',side_effect=copy):
+            v.init_storage()
+            self.assertTrue(v.REMOTE_MANIFEST_MATCHED)
+            self.assertTrue(v.RESTORE_INT16_MARKER)
+            self.assertFalse(v.recovery_csv_ready())
+            v.import_recovery_csv()
+            self.assertTrue(v.recovery_csv_ready())
+        self.assertEqual(len(v._read_parts('day')),12)
+        self.assertFalse(v.district_complete(v.reconcile_status(complete_state())))
+
+    def test_missing_manifest_without_checkpoint_does_not_create_profile_proof(self):
+        with self.assertRaisesRegex(RuntimeError,'không có checkpoint'):
+            v.recover_manifest_from_checkpoint()
+        self.assertFalse(v.recovery_csv_ready())
+
+    def test_missing_manifest_rejects_conflicting_profile_period_and_damaged_checkpoint(self):
+        for change in ({'profile':'20m-foreign-profile'},{'period':'202401-202412'},
+                       {'schema':'communes-l3-v1'},{'gid_2':'VNM.1.1.1_1'}):
+            with self.subTest(change=change):
+                Path(v.STATUS_FILE).write_text(json.dumps({**complete_state(),**change})+'\n')
+                with self.assertRaisesRegex(RuntimeError,'không xác minh'):
+                    v.recover_manifest_from_checkpoint()
+        Path(v.STATUS_FILE).write_text(json.dumps(complete_state())+'\n{damaged\n')
+        with self.assertRaisesRegex(RuntimeError,'không xác minh'):
+            v.recover_manifest_from_checkpoint()
+
+    def test_existing_wrong_manifest_and_read_permission_error_never_use_checkpoint_fallback(self):
+        self.parts();v.write_status(complete_state())
+        wrong={'schema':v.SCHEMA_ID,'period':v.PERIOD_ID,'profile':'foreign-profile','level':2,'months':v.MONTH_KEYS}
+        for result in (SimpleNamespace(returncode=0,stdout=json.dumps(wrong),stderr=''),
+                       SimpleNamespace(returncode=3,stdout='',stderr='HTTP 403 permission denied: not found')):
+            with self.subTest(result=result),patch.object(v,'CACHE_DIR',str(self.root/'cache')), \
+                 patch.object(v.shutil,'which',return_value='/bin/rclone'), \
+                 patch.object(v,'_rclone',return_value=True),patch.object(v,'_run_rclone',return_value=result), \
+                 patch.object(v,'recover_manifest_from_checkpoint') as fallback:
+                with self.assertRaises(RuntimeError):v.init_storage()
+                fallback.assert_not_called()
+
+    def test_failed_second_csv_read_never_rebuilds_or_uploads_partial_aggregate(self):
+        day=pd.DataFrame(v.day_records(ROW,day_props()),columns=v.DAY_COLUMNS)
+        Path(v.L('CSV')).mkdir()
+        original=Path(v.L(v.DAY_CSV));original.write_text('original aggregate from Drive')
+        def copy(args,**kwargs):
+            if '/night_indices.csv' in args[1]:return False
+            day.to_csv(args[2],index=False);return True
+        with patch.object(v,'_rclone',side_effect=copy):
+            with self.assertRaisesRegex(RuntimeError,'API'):v.import_recovery_csv()
+        self.assertEqual(len(v._read_parts('day')),12)
+        self.assertFalse(v.recovery_csv_ready())
+        with patch.object(v,'_rclone') as upload,patch.object(v,'build_national_csv') as build:
+            self.assertFalse(v.rclone_sync_once(final=True))
+            upload.assert_not_called();build.assert_not_called()
+        self.assertEqual(original.read_text(),'original aggregate from Drive')
+
+    def test_receipt_is_local_only_and_bound_to_profile(self):
+        self.parts()
+        with patch.object(v,'_rclone',return_value=None):v.import_recovery_csv()
+        self.assertTrue(v.recovery_csv_ready())
+        self.assertFalse(Path(v.L(v.D_CONTROL,'.recovery_csv_ready.json')).exists())
+        with patch.object(v,'OUTPUT_PROFILE','foreign-profile'):
+            self.assertFalse(v.recovery_csv_ready())
 
 
 if __name__=='__main__':

@@ -417,3 +417,11 @@ File `.github/recovery/drive-recovery-request.txt` cũng kích hoạt lượt ph
 - Đọc `_control/progress_recovery.csv` và log `[recovery]`, `[upload]`. Sau lượt có artifact `drive-recovery-audit-<run_id>` kiểm kê file thực có trên Drive. Chưa kiểm kê đủ 8.520 TIFF mỗi loại và CSV đủ 12 tháng/710 huyện thì chưa xác nhận hoàn tất toàn quốc.
 
 Python trực tiếp: `VNGIS_MODE=full`, `VNGIS_RECOVER_DRIVE=true`, `VNGIS_DAY_IMAGE_SCALE=50`, cùng thư mục Drive 50 m, EE project/credentials hiện có. Cờ phục hồi ưu tiên hơn cờ sửa riêng CSV; không cần `VNGIS_ALLOW_FULL_RESTART=true` và không dùng log để tạo checkpoint done giả.
+
+### Nếu phục hồi dừng vì thiếu manifest
+
+Lượt #26 đọc được 7.435 TIFF và checkpoint, nhưng dừng ở `Phục hồi yêu cầu manifest Drive khớp kỳ/profile`. Bản sửa xác minh `_control/status` và `_control/parts` đã kéo từ cùng thư mục Drive khi `pipeline.json` bị thiếu: metadata phải đúng cấp huyện, kỳ 07/2024–06/2025 và profile 50 m hiện tại. Khi đủ bằng chứng, khôi phục manifest và tiếp tục nhập CSV. Manifest đã tồn tại nhưng khác cấu hình, lỗi quyền/quota hoặc checkpoint khác profile vẫn làm pipeline dừng; không sửa chúng thành dữ liệu hợp lệ.
+
+Việc xác minh manifest không xác nhận đã đủ ảnh. Pipeline vẫn đối chiếu CSV từng tháng và TIFF thực có. Biên nhận `.recovery_csv_ready.json` chỉ lưu trên runner sau khi đã đọc xong cả hai CSV; không upload biên nhận này lên Drive. Nếu khởi tạo hoặc đọc CSV thất bại, bước `--sync-only` không dựng/ghi đè CSV tổng hợp từ parts chưa đủ.
+
+Nếu lượt mới thất bại, **Summary** hiện 40 dòng cuối của pipeline và annotation lỗi gốc. Tải artifact **`vngis-logs-<run_id>`** để xem `pipeline.log`, `sync.log`, `audit.log`, kể cả khi chưa tạo được báo cáo kiểm kê. Artifact chỉ ghi đầu ra của các lệnh Python, không thu thập file cấu hình rclone hoặc JSON khóa EE.

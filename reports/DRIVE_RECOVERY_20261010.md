@@ -45,3 +45,11 @@ Request trong `.github/recovery/drive-recovery-request.txt` kích hoạt workflo
 Không thể upload ảnh chỉ từ log hoặc từ CSV chỉ số. Nếu runner cũ đã bị hủy trước khi upload, ảnh cục bộ chưa lưu sẽ không có trên runner mới và phải tải bù. Nếu chạy phục hồi trên máy vẫn còn TIFF cục bộ, chúng được đồng bộ trước khi tính phần thiếu.
 
 Progress phục hồi: `_control/progress_recovery.csv`. CSV tổng hợp được dựng lại trước mỗi đợt đồng bộ, từ mọi parts thuộc profile/kỳ chạy. Sau lượt phục hồi có báo cáo kiểm kê thực tế trong Summary và artifact `drive-recovery-audit-<run_id>`; việc workflow được kích hoạt chưa chứng minh upload hoàn tất.
+
+## Sửa lỗi khởi tạo ở lượt #26
+
+Log lượt `38035466846` xác nhận Earth Engine khởi tạo thành công, đã đọc 2 file trạng thái, 8 file parts và thấy 7.435 TIFF có dung lượng trên Drive. Lượt dừng trước khi import CSV vì không có manifest được xác nhận khớp. Trong đường chạy này, manifest không được đọc thành công; cấu hình khác đã bị chặn ở `init_storage`, nên nguyên nhân là thiếu manifest, không phải lỗi quota EE. Các lần Drive API giới hạn lệnh `cat` đã được backoff và vượt qua.
+
+Bản sửa dùng metadata checkpoint cùng remote để khôi phục manifest bị thiếu khi toàn bộ checkpoint đọc được khớp kỳ/profile/cấp huyện. Không dùng log hay progress để xác nhận đã upload. CSV vẫn kiểm tra schema/metadata/tháng/chỉ số, TIFF vẫn kiểm tra bằng chứng thực có. Nếu thiếu bằng chứng hoặc manifest có cấu hình khác thì dừng.
+
+Đồng bộ phục hồi chỉ được phép sau khi đã đọc xong cả hai CSV. Bước đồng bộ cuối của lượt lỗi khởi tạo không được dựng/ghi đè CSV từ phần parts đọc được. Workflow lưu log độc lập với audit để lỗi khởi tạo vẫn có artifact và Summary.

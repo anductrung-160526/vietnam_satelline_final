@@ -1618,6 +1618,51 @@ RESTORE_INT16_MARKER = False
 REMOTE_MANIFEST_MATCHED = False
 
 
+def recovery_csv_ready():
+    """Chỉ cùng workspace đã đọc xong cả hai CSV mới được đồng bộ phục hồi."""
+    try:
+        with open(L(".recovery_csv_ready.json"), encoding="utf-8") as handle:
+            return json.load(handle) == {"period": PERIOD_ID, "profile": OUTPUT_PROFILE}
+    except (OSError, ValueError):
+        return False
+
+
+def recover_manifest_from_checkpoint():
+    """Manifest bị mất: dùng metadata checkpoint đã kéo từ chính remote, không dùng log."""
+    counts = {"status": 0, "day": 0, "night": 0}
+    for kind, pattern in (("status", L(D_STATUS, "status_*.jsonl")),
+                          ("day", L(D_PARTS, "day_*.jsonl")),
+                          ("night", L(D_PARTS, "night_*.jsonl"))):
+        for path in sorted(glob.glob(pattern)):
+            with open(path, encoding="utf-8") as handle:
+                for number, line in enumerate(handle, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                        if not isinstance(record, dict):
+                            raise ValueError("checkpoint không phải object")
+                        gid = record.get("gid_2" if kind == "status" else "GID_2", "")
+                        profile = record.get("profile" if kind == "status" else "_profile")
+                        if kind == "status":
+                            period_ok = record.get("period") == PERIOD_ID and record.get("schema", SCHEMA_ID) == SCHEMA_ID
+                        else:
+                            period_ok = (int(record.get("YEAR", 0)), int(record.get("MONTH", 0))) in PERIODS
+                        if (profile != OUTPUT_PROFILE or not period_ok
+                                or not re.fullmatch(r"VNM\.\d+\.\d+_\d+", str(gid))):
+                            raise ValueError("cấp huyện/kỳ/profile không khớp")
+                    except (ValueError, TypeError) as exc:
+                        raise RuntimeError(f"Thiếu manifest và checkpoint {os.path.basename(path)}:{number} "
+                                           f"không xác minh được: {exc}. Không tự nhận dữ liệu khác cấu hình.") from exc
+                    counts[kind] += 1
+    if not sum(counts.values()):
+        raise RuntimeError("Thiếu manifest và không có checkpoint cùng kỳ/profile để phục hồi cấu hình Drive.")
+    log.warning(f"[recovery] Manifest pipeline.json bị thiếu; xác minh cấu hình từ checkpoint Drive "
+                f"cùng kỳ/profile: {counts['status']} trạng thái, {counts['day']} parts ngày, "
+                f"{counts['night']} parts đêm. CSV/TIFF vẫn phải đối chiếu từng tháng.")
+    return True
+
+
 def reconcile_status(st, part_keys=None):
     """Không bỏ qua TIFF đã ghi trạng thái nhưng chưa được lưu bền vững trên Drive."""
     row = ADMIN_BY_GID.get(st["gid_2"])
@@ -1796,6 +1841,10 @@ def rclone_sync_once(final=False):
     if not os.path.isdir(LOCAL_ROOT):
         return True
     if RECOVER_DRIVE:
+        if not recovery_csv_ready():
+            log.error("[recovery] Chưa đọc/xác minh xong cả hai CSV Drive; không đồng bộ parts/CSV "
+                      "hoặc manifest để tránh ghi đè dữ liệu bằng checkpoint chưa đủ.")
+            return False
         # Giữ CSV tổng hợp cập nhật trong lúc phục hồi, không chờ hết 710 huyện.
         with _parts_lock:
             build_national_csv()
@@ -1899,6 +1948,11 @@ def init_storage():
     global REMOTE_TIFS, REMOTE_INT16_TIFS, RESTORE_INT16_MARKER, REMOTE_MANIFEST_MATCHED
     for d in (LOCAL_ROOT, L(D_STATUS), L(D_PARTS), L(D_LOGS), CACHE_DIR):
         os.makedirs(d, exist_ok=True)
+    if RECOVER_DRIVE:
+        # Biên nhận chỉ có hiệu lực sau import thành công trong lượt hiện tại.
+        ready = L(".recovery_csv_ready.json")
+        if os.path.isfile(ready):
+            os.remove(ready)
     if shutil.which("rclone") is None:
         raise RuntimeError("Chưa cài rclone.")
     if not _rclone(["mkdir", f"{REMOTE_BASE}/{D_STATUS}"], timeout=180):
@@ -1907,20 +1961,28 @@ def init_storage():
                 "level": 2, "months": MONTH_KEYS}
     old_manifest = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"], timeout=180)
     matched_manifest = old_manifest.returncode == 0 and json.loads(old_manifest.stdout) == manifest
-    REMOTE_MANIFEST_MATCHED = matched_manifest
+    REMOTE_MANIFEST_MATCHED = False
     if old_manifest.returncode == 0 and not matched_manifest:
         old = json.loads(old_manifest.stdout)
         if DAY_IMAGE_SCALE != 20 or DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
             raise RuntimeError("Thư mục Drive có cấu hình cấp hành chính/thời gian khác. Chọn thư mục đầu ra mới.")
         log.info("Nâng cấp thư mục float cũ: giữ TIFF đêm/CSV đêm, chuyển TIFF ngày đã có sang Int16, tính lại CSV ngày.")
-    if old_manifest.returncode != 0 and not any(s in old_manifest.stderr.lower() for s in ("not found", "doesn't exist")):
+    missing_manifest = (old_manifest.returncode != 0 and not _drive_rate_limited(old_manifest.stderr)
+                        and not any(s in old_manifest.stderr.lower() for s in
+                                    ("permission", "invalid_grant", "unauthorized", "http 403", "http 401"))
+                        and (old_manifest.returncode in (3, 4) or any(s in old_manifest.stderr.lower()
+                             for s in ("not found", "doesn't exist"))))
+    if old_manifest.returncode != 0 and not missing_manifest:
         raise RuntimeError("Không kiểm tra được manifest Drive: " + old_manifest.stderr[-200:])
-    with open(L(D_CONTROL, "pipeline.json"), "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False)
     for d in (D_STATUS, D_PARTS):        # vài file nhỏ: trạng thái và chỉ số của các lượt trước
         res = _run_rclone(["copy", f"{REMOTE_BASE}/{d}", L(d), "--update"], timeout=3600)
         if res.returncode != 0 and "directory not found" not in res.stderr:
             raise RuntimeError(f"Không kéo được {d} từ Drive: {res.stderr.strip()[-300:]}")
+    if RECOVER_DRIVE and missing_manifest:
+        matched_manifest = recover_manifest_from_checkpoint()
+    REMOTE_MANIFEST_MATCHED = matched_manifest
+    with open(L(D_CONTROL, "pipeline.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False)
     listing = _run_rclone(["lsjson" if RECOVER_DRIVE else "lsf", REMOTE_BASE,
                           "--recursive", "--files-only", "--include", "*.tif"], timeout=3600)
     if listing.returncode != 0:
@@ -2267,6 +2329,12 @@ def import_recovery_csv():
                 append_parts(kind, records)
             log.info(f"[recovery] Giữ CSV {kind} trên Drive: bổ sung {len(records)} dòng hợp lệ vào parts; "
                      "không ghi đè parts đã có, không nhận no_data/tháng trùng.")
+    # Lưu ngoài _control: biên nhận cục bộ cho --sync-only của cùng runner,
+    # không upload lên Drive hoặc dùng từ runner trước để bỏ qua bước import.
+    ready = L(".recovery_csv_ready.json")
+    with open(ready + ".part", "w", encoding="utf-8") as handle:
+        json.dump({"period": PERIOD_ID, "profile": OUTPUT_PROFILE}, handle)
+    os.replace(ready + ".part", ready)
 
 
 def restore_recovery_statuses(statuses):
@@ -2625,6 +2693,10 @@ def main():
 if __name__ == "__main__" and os.environ.get("VNGIS_SKIP_MAIN") != "1":
     if "--sync-only" in sys.argv:
         setup_logging()
+        if RECOVER_DRIVE and not recovery_csv_ready():
+            log.error("[recovery] Không đồng bộ nốt: lượt phục hồi chưa xác minh xong CSV Drive. "
+                      "Giữ nguyên dữ liệu Drive; xem lỗi gốc trong Chạy pipeline.")
+            sys.exit(1)
         if DAY_FORMAT == "int16" and not os.path.isfile(L(D_CONTROL, "int16_uploaded.json")):
             res = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"], timeout=180)
             if res.returncode == 0:
