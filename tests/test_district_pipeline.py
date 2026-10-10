@@ -369,6 +369,36 @@ class ProcessTests(LocalCase):
 
 
 class DriveResumeTests(LocalCase):
+    def test_partial_marker_and_pending_overwrite_recover_from_verified_history(self):
+        rows={r['GID_2']:r for r in (ROW,URBAN)};parts={'day':[],'night':[]}
+        for gid,row in rows.items():
+            v.write_status(complete_state(gid));ctx=v.build_ctx(row)
+            for period in v.PERIODS:
+                v.REMOTE_TIFS.add(ctx['rel_day_dir']+'/'+v.day_name(ctx,period))
+                v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+                for kind in parts:
+                    parts[kind].append({'GID_2':gid,'YEAR':period[0],'MONTH':period[1],
+                                        '_profile':v.OUTPUT_PROFILE,'DATA_STATUS':'ok'})
+        v.REMOTE_INT16_TIFS.add(v.build_ctx(ROW)['rel_day_dir']+'/'+v.day_name(v.build_ctx(ROW),v.PERIODS[0]))
+        damaged=complete_state();damaged.update(status='partial',convert_day_months=['2024-08'])
+        damaged['t2']['2024-08']='pending';damaged['t3img']['2024-08']='pending';v.write_status(damaged)
+        with patch.multiple(v,ADMIN_BY_GID=rows,RESTORE_INT16_MARKER=True), \
+             patch.object(v,'_read_parts',side_effect=lambda kind:parts[kind]):
+            states=v.load_all_status()
+        self.assertEqual(len(v.REMOTE_INT16_TIFS),24)
+        self.assertTrue(all(v.district_complete(st) for st in states.values()))
+        self.assertEqual(states[ROW['GID_2']]['convert_day_months'],[])
+
+    def test_history_recovery_does_not_override_explicit_no_data_or_missing_tiff(self):
+        v.write_status(complete_state());state=complete_state()
+        state.update(status='partial');state['t2']['2024-07']='no_data';v.write_status(state)
+        ctx=v.build_ctx(ROW)
+        for period in v.PERIODS[:-1]:v.REMOTE_TIFS.add(ctx['rel_day_dir']+'/'+v.day_name(ctx,period))
+        with patch.object(v,'RESTORE_INT16_MARKER',True):states=v.load_all_status()
+        self.assertEqual(states[ROW['GID_2']]['t2']['2024-07'],'no_data')
+        self.assertEqual(states[ROW['GID_2']]['t2']['2025-06'],'pending')
+        self.assertEqual(len(v.REMOTE_INT16_TIFS),11)
+
     def test_resume_610_done_districts_keeps_only_100_jobs(self):
         rows={f'VNM.1.{i}_1':{**ROW,'GID_2':f'VNM.1.{i}_1'} for i in range(1,711)}
         parts={'day':[],'night':[]}
@@ -447,6 +477,58 @@ class DriveResumeTests(LocalCase):
                      patch.object(v,'_rclone',return_value=True),patch.object(v.subprocess,'run',side_effect=command):
                     v.init_storage()
                 self.assertEqual(v.RESTORE_INT16_MARKER,expected)
+
+
+class DriveRequestTests(LocalCase):
+    def test_quota_error_with_missing_exit_code_never_triggers_ee_download(self):
+        ctx=v.build_ctx(ROW);ctx.update(convert_day_months=['2024-07'],geom=object())
+        path=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        rel=str(path.relative_to(self.root));v.REMOTE_TIFS.add(rel)
+        quota=SimpleNamespace(returncode=3,stdout='',stderr='directory not found: drive.googleapis.com RATE_LIMIT_EXCEEDED rateLimitExceeded')
+        with patch.object(v.subprocess,'run',return_value=quota) as command, \
+             patch.object(v,'DRIVE_MAX_RETRIES',2),patch.object(v.time,'sleep'), \
+             patch.object(v,'download_tif') as download:
+            with self.assertRaisesRegex(RuntimeError,'quota'):
+                v._download_month('day',ctx,v.PERIODS[0],None,str(path))
+        self.assertEqual(command.call_count,2);download.assert_not_called()
+        self.assertIn(rel,v.REMOTE_TIFS)
+
+    def test_drive_quota_retries_with_exponential_backoff(self):
+        limited=SimpleNamespace(returncode=1,stdout='',stderr='rateLimitExceeded')
+        ok=SimpleNamespace(returncode=0,stdout='data',stderr='')
+        with patch.object(v.subprocess,'run',side_effect=[limited,limited,ok]), \
+             patch.object(v.random,'uniform',return_value=0),patch.object(v.time,'sleep') as sleep:
+            result=v._run_rclone(['cat','gdrive:file'])
+        self.assertIs(result,ok);self.assertEqual([c.args[0] for c in sleep.call_args_list],[5,10])
+
+    def test_read_and_write_commands_all_receive_drive_rate_limits(self):
+        ok=SimpleNamespace(returncode=0,stdout='',stderr='')
+        with patch.object(v.subprocess,'run',return_value=ok) as command:
+            for name in ('cat','copyto','lsf','about','move'):
+                v._run_rclone([name,'gdrive:folder'])
+        for call in command.call_args_list:
+            args=call.args[0]
+            self.assertEqual(args[args.index('--tpslimit')+1],str(v.DRIVE_TPS_LIMIT))
+            self.assertEqual(args[args.index('--tpslimit-burst')+1],'1')
+            self.assertEqual(args[args.index('--transfers')+1],str(v.DRIVE_TRANSFERS))
+
+    def test_only_one_rclone_process_runs_at_a_time(self):
+        active=0;peak=0;lock=threading.Lock()
+        def command(*args,**kwargs):
+            nonlocal active,peak
+            with lock:active+=1;peak=max(peak,active)
+            v.time.sleep(0.005)
+            with lock:active-=1
+            return SimpleNamespace(returncode=0,stdout='',stderr='')
+        with patch.object(v.subprocess,'run',side_effect=command),v.ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(lambda _:v._run_rclone(['lsf','gdrive:folder']),range(12)))
+        self.assertEqual(peak,1);self.assertEqual(active,0)
+
+    def test_permission_error_does_not_retry_or_become_missing_file(self):
+        denied=SimpleNamespace(returncode=3,stdout='',stderr='HTTP 403 permission denied')
+        with patch.object(v.subprocess,'run',return_value=denied) as command,patch.object(v.time,'sleep') as sleep:
+            self.assertIs(v._rclone(['copyto','gdrive:file','local'],missing_ok=True),False)
+        command.assert_called_once();sleep.assert_not_called()
 
 
 class SpeedTests(LocalCase):

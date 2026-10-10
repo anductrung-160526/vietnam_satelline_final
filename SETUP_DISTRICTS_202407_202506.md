@@ -259,7 +259,7 @@ Các tham số dưới đây là giá trị mặc định trên **workflow của
 | `VNGIS_REST_EVERY_N` / `VNGIS_REST_AFTER_PROVINCE` / `VNGIS_REST_SEC` | `10` / `true` / `30` s | Mốc và thời gian nghỉ chủ động; chỉnh ba Variables ở mục 5 |
 | `VNGIS_EE_MAX_RETRIES` | `8` | Số lần thử mỗi thao tác EE; thời gian backoff gốc tăng 5 → 10 → 20 → 40 → 60 giây, cộng jitter và tuân theo Retry-After |
 | `VNGIS_MAX_RUNTIME_SEC` | `18900` s | Thời lượng một lượt 5 giờ 15 phút; hết giờ thì đồng bộ và nối lượt, không phải tốc độ mỗi huyện |
-| `RCLONE_COMMON` trong `vngis_2024.py` | `--transfers 4`, `--checkers 8`, `--tpslimit 8` | Song song và giới hạn tốc độ API khi tải lên Drive; cấu hình trong code, độc lập với giới hạn EE |
+| `RCLONE_COMMON` trong `vngis_2024.py` | `--transfers 2`, `--checkers 4`, `--tpslimit 2` | Song song và giới hạn tốc độ API khi tải lên Drive; cấu hình trong code, độc lập với giới hạn EE |
 
 `workers=4` × `MONTH_THREADS=2` có thể tạo 8 tác vụ tải ảnh, nhưng **tối đa 4 yêu cầu EE đang chạy** do giới hạn chung; nếu bị hạ về 1 thì tăng workers không vượt qua được giới hạn này. TIFF đêm giữ 500 m. Huyện lớn phải chia nhiều ô và project Restricted Mode vẫn có thể chậm dù có nghỉ chủ động. Xem `[speed]`, `[quota]`, `[rest]` để đo tốc độ và các khoảng nghỉ thực tế.
 
@@ -271,8 +271,27 @@ Bản sửa chỉ áp dụng cho lượt mới: chờ lượt cũ kết thúc, h
 
 Bản cũ có lỗi ở `--sync-only`: Python mới bắt đầu với danh sách TIFF Int16 trong RAM rỗng, rồi ghi đè `_control/int16_uploaded.json` thành rỗng. Do đó ảnh ngày đã tải có thể bị đưa lại vào hàng đợi nâng cấp và huyện mất trạng thái hoàn tất. Bản sửa nạp marker đã lưu trước khi ghi, và nếu không có bản local thì đọc marker từ Drive; lỗi đọc/quyền không được coi là marker rỗng để ghi đè.
 
-Để phục hồi marker bị xóa bởi lỗi cũ, chỉ với **thư mục 50 m có manifest khớp**, code dùng checkpoint cùng profile Int16, các tháng ảnh ngày đã xác nhận `ok` và TIFF đúng đường dẫn thực có trên Drive. Không dùng trạng thái khác kỳ/profile hoặc dữ liệu float 20 m để đánh dấu xong. CSV vẫn phải có các bản ghi parts hợp lệ; ảnh thiếu vẫn bị đưa vào hàng đợi. Không suy ra `done` chỉ từ số lượng hoặc tên TIFF.
+Để phục hồi marker bị xóa hoặc thiếu một phần bởi lỗi cũ, chỉ với **thư mục 50 m có manifest khớp**, code dùng checkpoint cùng profile Int16, các tháng ảnh ngày đã xác nhận `ok` và TIFF đúng đường dẫn thực có trên Drive. Không dùng trạng thái khác kỳ/profile hoặc dữ liệu float 20 m để đánh dấu xong. CSV vẫn phải có các bản ghi parts hợp lệ; ảnh thiếu vẫn bị đưa vào hàng đợi. Không suy ra `done` chỉ từ số lượng hoặc tên TIFF.
 
 Log `[resume]` ghi đích/profile, số file checkpoint được kéo về, số huyện có trạng thái/đã hoàn tất, số TIFF/marker và số bản ghi CSV parts ngày/đêm. Nếu đã có TIFF mà không có trạng thái hợp lệ, hoặc tất cả huyện từng có checkpoint hoàn tất đều bị mất bằng chứng, pipeline dừng trước preflight để tránh chạy lại toàn bộ âm thầm. Kiểm tra đúng tài khoản OAuth Drive, đúng folder full/pilot/20m/50m, `_control/status`, `_control/parts`, marker và lỗi đồng bộ của lượt cũ. **Không xóa `_control` hoặc đổi folder khi muốn nối lượt.**
 
 Chỉ khi chủ động muốn tải lại toàn bộ mới đặt repository variable **`VNGIS_DISTRICTS_ALLOW_FULL_RESTART=true`** (Python trực tiếp: `VNGIS_ALLOW_FULL_RESTART=true`). Không bật để che lỗi checkpoint. Kiểm thử offline mô phỏng 610 huyện hoàn tất với marker rỗng chứng minh chỉ còn 100 huyện trong hàng đợi sau phục hồi; quyền và dữ liệu Drive thật cần kiểm tra qua log của lượt mới.
+
+
+## 13. Google Drive API rateLimitExceeded
+
+Log chứa `drive.googleapis.com`, `RATE_LIMIT_EXCEEDED`, `rateLimitExceeded` là hạn mức **Drive API**. Preflight ghi Drive OK và còn dung lượng không có nghĩa là đủ quota API cho cả lượt. Hạn mức EE và giới hạn số file/byte của Drive là các cơ chế khác nhau.
+
+Bản sửa cho mọi lệnh rclone (đọc, liệt kê, kéo checkpoint, copyto và upload) dùng một tiến trình mỗi lúc trong lượt, mặc định **2 yêu cầu API/giây**, burst 1, 2 transfers và 4 checkers. Thêm fast-list để giảm lượt liệt kê thư mục. Khi Drive báo quota, chờ tăng dần 5 → 10 → 20 → 40 → 60 giây cộng jitter, tối đa 6 lần. Nghỉ áp dụng cả đồng bộ cuối khi STOP đã đặt. Hết lần thử thì báo lỗi và giữ file/checkpoint; quota hoặc lỗi quyền không được coi là file mất để tải lại ảnh từ EE. Những workflow khác vẫn có thể dùng chung quota OAuth project/tài khoản Drive.
+
+Repository Variables tùy chọn: `VNGIS_DISTRICTS_DRIVE_TPS_LIMIT=2`, `VNGIS_DISTRICTS_DRIVE_TRANSFERS=2`, `VNGIS_DISTRICTS_DRIVE_MAX_RETRIES=6`. Python trực tiếp dùng `VNGIS_DRIVE_TPS_LIMIT`, `VNGIS_DRIVE_TRANSFERS`, `VNGIS_DRIVE_MAX_RETRIES`. Nếu vẫn gặp quota thì giảm TPS về 1 và tạm dừng các workflow khác cùng dùng Drive này; không tăng khi còn lỗi. Nếu quota theo ngày hoặc theo file đã hết, backoff không tạo thêm quota.
+
+Để kiểm tra client ID trên Windows CMD **chỉ in dòng client_id**, không in token/client_secret:
+
+```text
+rclone config show gdrive | findstr /B /C:"client_id"
+```
+
+Nếu không có dòng này hoặc giá trị trống, remote thường đang dùng client chung của rclone (trừ khi đã ghi đè qua biến môi trường/cờ dòng lệnh). Nếu đã có ID thì kiểm tra trong project OAuth tương ứng. Làm theo [hướng dẫn tạo Client ID riêng chính thức](https://rclone.org/drive/#making-your-own-client-id): bật Google Drive API, cấu hình OAuth consent, tạo OAuth client Desktop app, điền client_id/client_secret và reconnect bằng đúng `adt.wqiqc@gmail.com`. Giữ tên remote `gdrive` và thư mục dữ liệu; cập nhật `RCLONE_CONF` sau khi xác thực. Không gửi config/token lên chat. Client riêng tách quota project khỏi client dùng chung, nhưng không loại bỏ hạn mức tài khoản/file.
+
+Ví dụ log có **5.275 TIFF** thì đó là số file workflow thực sự nhìn thấy trong thư mục Drive. **610 huyện đủ 12 TIFF ngày và 12 TIFF đêm cần 14.640 TIFF**. Huyện done trên runner chưa chứng minh tất cả file đã upload; Cancel khi uploader còn lỗi có thể làm mất phần chưa đồng bộ trên runner. Không thể khôi phục phần này chỉ bằng sửa marker; code cần xử lý các tháng thật sự thiếu. Giữ nguyên thư mục và `_control`, dùng STOP và đợi đồng bộ thay vì Cancel nếu muốn giữ tiến độ tốt nhất.

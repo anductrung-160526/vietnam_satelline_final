@@ -1173,7 +1173,7 @@ def reuse_day_tif(ctx, period, path, label):
                     log.warning(f"{label}: TIFF cũ đã mất sau lúc liệt kê Drive; tải lại tháng này từ EE")
                     return None
                 if not copied:
-                    raise RuntimeError(f"Không đọc được TIFF trên Drive (quyền/token/kết nối): {rel}")
+                    raise RuntimeError(f"Không đọc được TIFF trên Drive (quyền/token/kết nối/quota): {rel}")
             import rasterio
             with rasterio.open(source) as src:
                 already = all(d == "int16" for d in src.dtypes) and all(
@@ -1433,6 +1433,8 @@ def load_all_status():
     out = {}
     files = sorted(glob.glob(L(D_STATUS, "status_*.jsonl")))
     ignored = 0
+    verified_day = {}
+    verified_night = {}
     for p in files:
         try:
             with open(p, encoding="utf-8") as f:
@@ -1445,6 +1447,13 @@ def load_all_status():
                         d = migrate_float_status(d)
                     if isinstance(d, dict) and "gid_2" in d and current_status(d):
                         out[d["gid_2"]] = d
+                        if RESTORE_INT16_MARKER:
+                            verified_day.setdefault(d["gid_2"], set()).update(
+                                key for key, value in (d.get("t2") or {}).items()
+                                if value == "ok" and key in MONTH_KEYS and key not in d.get("convert_day_months", []))
+                            verified_night.setdefault(d["gid_2"], set()).update(
+                                key for key, value in (d.get("t3img") or {}).items()
+                                if value == "ok" and key in MONTH_KEYS)
                     elif isinstance(d, dict) and "gid_2" in d:
                         ignored += 1
         except OSError:
@@ -1466,11 +1475,20 @@ def load_all_status():
                 ctx = build_ctx(row)
                 for period in PERIODS:
                     key = month_key(period)
-                    if (st.get("t2") or {}).get(key) != "ok" or key in st.get("convert_day_months", []):
+                    night_rel = f"{ctx['rel_night_dir']}/{night_name(ctx, period)}"
+                    if (key in verified_night.get(gid, set()) and night_rel in REMOTE_TIFS
+                            and (st.get("t3img") or {}).get(key) in (None, "pending", "fail", "ok")):
+                        st.setdefault("t3img", {})[key] = "ok"
+                    if key not in verified_day.get(gid, set()):
                         continue
                     rel = f"{ctx['rel_day_dir']}/{day_name(ctx, period)}"
                     if rel in REMOTE_TIFS and rel not in REMOTE_INT16_TIFS:
                         recovered.add(rel)
+                    if rel in REMOTE_TIFS and (st.get("t2") or {}).get(key) in (None, "pending", "fail", "ok"):
+                        # Một lượt lỗi marker có thể ghi pending đè checkpoint ok cũ.
+                        # Giữ bằng chứng tháng đã kiểm tra + file còn thật, không nhận no_data.
+                        st.setdefault("t2", {})[key] = "ok"
+                        st["convert_day_months"] = [m for m in st.get("convert_day_months", []) if m != key]
             if recovered:
                 REMOTE_INT16_TIFS.update(recovered)
                 log.warning(f"[resume] Khôi phục marker cho {len(recovered)} TIFF ngày 50m từ checkpoint "
@@ -1577,17 +1595,60 @@ def core_finished(st):
 # =====================================================================================
 # 9. RCLONE
 # =====================================================================================
-RCLONE_COMMON = ["--transfers", "4", "--checkers", "8", "--tpslimit", "8",
-                 "--retries", "5", "--low-level-retries", "20", "--stats-log-level", "NOTICE"]
+DRIVE_TPS_LIMIT = _env("VNGIS_DRIVE_TPS_LIMIT", 2, float)
+DRIVE_TRANSFERS = _env("VNGIS_DRIVE_TRANSFERS", 2, int)
+DRIVE_MAX_RETRIES = _env("VNGIS_DRIVE_MAX_RETRIES", 6, int)
+if DRIVE_TPS_LIMIT <= 0 or min(DRIVE_TRANSFERS, DRIVE_MAX_RETRIES) < 1:
+    raise SystemExit("Giới hạn Drive TPS/transfers/retries phải > 0")
+RCLONE_COMMON = ["--transfers", str(DRIVE_TRANSFERS), "--checkers", "4", "--tpslimit", str(DRIVE_TPS_LIMIT),
+                 "--tpslimit-burst", "1", "--retries", "2", "--low-level-retries", "3", "--stats-log-level", "NOTICE"]
+_drive_api_lock = threading.Lock()
+
+
+def _drive_rate_limited(message):
+    low = message.lower()
+    return any(s in low for s in ("ratelimitexceeded", "rate_limit_exceeded", "too many requests",
+                                  "downloadquotaexceeded", "quota exceeded", "http 429"))
+
+
+class DriveRateLimitError(RuntimeError):
+    pass
+
+
+def _run_rclone(args, timeout=6 * 3600):
+    """Một tiến trình Drive trong lượt; mọi lệnh có TPS và backoff khi quota."""
+    args = list(args)
+    if "--fast-list" not in args:
+        args.append("--fast-list")
+    for flag, value in [("--tpslimit", str(DRIVE_TPS_LIMIT)), ("--tpslimit-burst", "1"),
+                        ("--transfers", str(DRIVE_TRANSFERS)), ("--checkers", "4"),
+                        ("--retries", "2"), ("--low-level-retries", "3")]:
+        if flag not in args:
+            args.extend([flag, value])
+    with _drive_api_lock:
+        for attempt in range(DRIVE_MAX_RETRIES):
+            res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
+            if res.returncode == 0 or not _drive_rate_limited(res.stderr):
+                return res
+            if attempt + 1 < DRIVE_MAX_RETRIES:
+                delay = min(60, 5 * 2 ** attempt) + random.uniform(0, 3)
+                log.warning(f"[drive-quota] Google Drive API giới hạn {args[0]}: "
+                            f"chờ {delay:.1f}s, thử lại {attempt+2}/{DRIVE_MAX_RETRIES}; giữ file/checkpoint.")
+                # STOP đã đặt vẫn phải chờ backoff khi đồng bộ cuối, không thử dồn dập.
+                time.sleep(delay)
+        raise DriveRateLimitError(f"Drive API rateLimitExceeded: {args[0]} thất bại sau "
+                                  f"{DRIVE_MAX_RETRIES} lần; giữ file/checkpoint, không coi file là đã mất.")
 
 
 def _rclone(args, timeout=6 * 3600, quiet=False, missing_ok=False):
     try:
-        res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
+        res = _run_rclone(args, timeout=timeout)
     except Exception as exc:
         log.warning(f"rclone {' '.join(args[:2])} lỗi: {exc}")
         return False
-    if res.returncode != 0 and missing_ok and (res.returncode in (3, 4) or any(
+    quota = _drive_rate_limited(res.stderr)
+    denied = any(s in res.stderr.lower() for s in ("permission", "invalid_grant", "unauthorized", "http 403", "http 401"))
+    if res.returncode != 0 and missing_ok and not quota and not denied and (res.returncode in (3, 4) or any(
             msg in res.stderr.lower() for msg in ("directory not found", "object not found", "file not found",
                                                    "source doesn't exist"))):
         return None
@@ -1682,8 +1743,7 @@ class Uploader(threading.Thread):
 
 def drive_stop_exists():
     try:
-        res = subprocess.run(["rclone", "lsf", f"{REMOTE_BASE}/{D_CONTROL}", "--files-only"],
-                             capture_output=True, text=True, timeout=120)
+        res = _run_rclone(["lsf", f"{REMOTE_BASE}/{D_CONTROL}", "--files-only"], timeout=120)
         return res.returncode == 0 and "STOP" in [x.strip() for x in res.stdout.splitlines()]
     except Exception:
         return False
@@ -1699,8 +1759,7 @@ def init_storage():
         raise RuntimeError(f"rclone không ghi được vào '{REMOTE_BASE}'. Kiểm tra secret RCLONE_CONF.")
     manifest = {"schema": SCHEMA_ID, "period": PERIOD_ID, "profile": OUTPUT_PROFILE,
                 "level": 2, "months": MONTH_KEYS}
-    old_manifest = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"],
-                                  capture_output=True, text=True, timeout=180)
+    old_manifest = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"], timeout=180)
     matched_manifest = old_manifest.returncode == 0 and json.loads(old_manifest.stdout) == manifest
     if old_manifest.returncode == 0 and not matched_manifest:
         old = json.loads(old_manifest.stdout)
@@ -1712,12 +1771,10 @@ def init_storage():
     with open(L(D_CONTROL, "pipeline.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False)
     for d in (D_STATUS, D_PARTS):        # vài file nhỏ: trạng thái và chỉ số của các lượt trước
-        res = subprocess.run(["rclone", "copy", f"{REMOTE_BASE}/{d}", L(d), "--update"],
-                             capture_output=True, text=True, timeout=3600)
+        res = _run_rclone(["copy", f"{REMOTE_BASE}/{d}", L(d), "--update"], timeout=3600)
         if res.returncode != 0 and "directory not found" not in res.stderr:
             raise RuntimeError(f"Không kéo được {d} từ Drive: {res.stderr.strip()[-300:]}")
-    listing = subprocess.run(["rclone", "lsf", REMOTE_BASE, "--recursive", "--files-only", "--include", "*.tif"],
-                             capture_output=True, text=True, timeout=3600)
+    listing = _run_rclone(["lsf", REMOTE_BASE, "--recursive", "--files-only", "--include", "*.tif"], timeout=3600)
     if listing.returncode != 0:
         raise RuntimeError("Không kiểm tra được TIFF trên Drive: " + listing.stderr[-200:])
     REMOTE_TIFS = set(listing.stdout.splitlines())
@@ -1725,20 +1782,19 @@ def init_storage():
              f"{len(glob.glob(L(D_STATUS, 'status_*.jsonl')))} file trạng thái, "
              f"{len(glob.glob(L(D_PARTS, '*.jsonl')))} file CSV parts, {len(REMOTE_TIFS)} TIFF trên Drive.")
     if DAY_FORMAT == "int16":
-        marker = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"],
-                                capture_output=True, text=True, timeout=180)
+        marker = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"], timeout=180)
         if marker.returncode == 0:
             REMOTE_INT16_TIFS = set(json.loads(marker.stdout)) & REMOTE_TIFS
         elif any(s in marker.stderr.lower() for s in ("not found", "doesn't exist")):
             REMOTE_INT16_TIFS = set()
         else:
             raise RuntimeError("Không kiểm tra được trạng thái TIFF Int16 trên Drive: " + marker.stderr[-200:])
-        RESTORE_INT16_MARKER = matched_manifest and DAY_IMAGE_SCALE == 50 and not REMOTE_INT16_TIFS
+        RESTORE_INT16_MARKER = matched_manifest and DAY_IMAGE_SCALE == 50
         if RESTORE_INT16_MARKER:
-            log.warning("[resume] Marker Int16 rỗng/thiếu trong thư mục 50m có manifest khớp; "
-                        "sẽ đối chiếu checkpoint cùng profile và TIFF trên Drive để phục hồi.")
+            log.info("[resume] Đối chiếu phần marker Int16 còn thiếu trong thư mục 50m có manifest khớp "
+                     "với checkpoint cùng profile và TIFF thực có trên Drive.")
     # Cảnh báo nếu đích còn cấu trúc của bản pipeline cũ
-    old = subprocess.run(["rclone", "lsf", REMOTE_BASE, "--dirs-only"], capture_output=True, text=True, timeout=120)
+    old = _run_rclone(["lsf", REMOTE_BASE, "--dirs-only"], timeout=120)
     if any(x.strip("/") in ("03_Provinces", "04_Status", "1_Task1_Spectral_Indices", "2_Task2_Day_S2")
            for x in old.stdout.splitlines()):
         log.warning(f"Thư mục '{DRIVE_FOLDER}' trên Drive còn dữ liệu của bản pipeline cũ. "
@@ -1854,12 +1910,10 @@ def _probe_drive():
         f.write(stamp)
     if not _rclone(["copyto", probe, f"{REMOTE_BASE}/{D_CONTROL}/preflight_probe.txt"], timeout=300):
         raise PreflightError("rclone không ghi được lên Drive.")
-    res = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/preflight_probe.txt"],
-                         capture_output=True, text=True, timeout=300)
+    res = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/preflight_probe.txt"], timeout=300)
     if res.returncode != 0 or res.stdout.strip() != stamp:
         raise PreflightError(f"Đọc lại file thử trên Drive không khớp: {res.stderr.strip()[-200:]}")
-    about = subprocess.run(["rclone", "about", RCLONE_REMOTE + ":", "--json"],
-                           capture_output=True, text=True, timeout=120)
+    about = _run_rclone(["about", RCLONE_REMOTE + ":", "--json"], timeout=120)
     if about.returncode == 0:
         try:
             quota = json.loads(about.stdout)
@@ -2214,8 +2268,7 @@ if __name__ == "__main__" and os.environ.get("VNGIS_SKIP_MAIN") != "1":
     if "--sync-only" in sys.argv:
         setup_logging()
         if DAY_FORMAT == "int16" and not os.path.isfile(L(D_CONTROL, "int16_uploaded.json")):
-            res = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"],
-                                 capture_output=True, text=True, timeout=180)
+            res = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"], timeout=180)
             if res.returncode == 0:
                 saved = json.loads(res.stdout)
                 if not isinstance(saved, list) or not all(isinstance(p, str) for p in saved):
