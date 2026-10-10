@@ -1,11 +1,11 @@
-name: VNGISDash 2024 (chạy nối lượt)
+name: VNGISDash huyện 07/2024–06/2025
 
 # Mỗi lượt chạy tối đa 5 giờ 15 phút.
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot: chạy thử và ghi vào VNGISDash_2024_PILOT.
-# full: chạy toàn bộ và ghi vào VNGISDash_2024.
+# day_scale=50 (mặc định): thư mục Districts_50m / Districts_50m_PILOT.
+# day_scale=20: thư mục Districts / Districts_PILOT cũ.
 #
 # Dừng có trật tự:
 # - Tạo file STOP ở thư mục gốc repository; hoặc
@@ -14,50 +14,140 @@ name: VNGISDash 2024 (chạy nối lượt)
 # Sau khi cập nhật mã, dùng Run workflow để chạy lượt mới.
 
 on:
+  push:
+    branches:
+      - vngis-ee-districts-202407-202506
+    paths:
+      - .github/recovery/drive-recovery-request.txt
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thí điểm | full = toàn bộ xã"
+        description: "pilot = thí điểm | full = phạm vi theo scope (mặc định sửa 5 huyện)"
         type: choice
         options:
           - pilot
           - full
         default: pilot
 
+      scope:
+        description: "repair_csv sửa CSV; range lấy cả TIFF; audit_drive kiểm kê Drive, không chạy EE."
+        type: choice
+        options:
+          - repair_csv
+          - range
+          - audit_drive
+          - recover_drive
+        default: repair_csv
+
       pilot_n:
-        description: "Số xã thí điểm, chỉ dùng khi mode = pilot"
+        description: "Số huyện thí điểm, chỉ dùng khi mode = pilot"
         required: false
         default: "2"
 
       workers:
-        description: "Số xã xử lý song song"
+        description: "Số huyện xử lý song song"
         required: false
-        default: "2"
+        default: "4"
 
-      stop_after_province:
-        description: "Chế độ full: chạy đến hết tỉnh này rồi dừng; để trống để chạy toàn quốc"
+      day_scale:
+        description: "TIFF ngày: 50 m chạy nhanh; 20 m giữ chi tiết cao. CSV giữ phép tính gốc."
+        type: choice
+        options:
+          - "50"
+          - "20"
+        default: "50"
+
+      start_gid:
+        description: "Full scope=range: mã bắt đầu. Scope=repair_csv bỏ qua ô này."
         required: false
         type: string
-        default: "Cần Thơ"
+        default: "VNM.55.8_1"
 
-concurrency:
-  group: vngis-2024
-  cancel-in-progress: false
+      repair_gids:
+        description: "Mã huyện sửa CSV, cách nhau dấu phẩy. Scope=range: bổ sung sau phần đuôi; none để tắt."
+        required: false
+        type: string
+        default: "VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1"
+
+      stop_after_province:
+        description: "UI main: AUDIT_DRIVE để kiểm kê; RECOVER_DRIVE để tải bù toàn quốc, ưu tiên tỉnh 34–54."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   actions: write
   contents: read
 
 env:
-  VNGIS_MODE: ${{ inputs.mode }}
-  VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024' || 'VNGISDash_2024_PILOT' }}
+  VNGIS_MODE: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'full' || inputs.mode }}
+  VNGIS_PILOT_N: ${{ inputs.pilot_n || '2' }}
+  VNGIS_DAY_IMAGE_SCALE: ${{ inputs.day_scale || '50' }}
+  VNGIS_DRIVE_FOLDER: ${{ (inputs.day_scale || '50') == '50' && ((github.event_name == 'push' || inputs.mode == 'full' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'VNGISDash_202407_202506_Districts_50m' || 'VNGISDash_202407_202506_Districts_50m_PILOT') || ((inputs.mode == 'full' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'VNGISDash_202407_202506_Districts' || 'VNGISDash_202407_202506_Districts_PILOT') }}
   VNGIS_RCLONE_REMOTE: gdrive
-  VNGIS_STOP_AFTER_PROVINCE: ${{ inputs.stop_after_province }}
+  VNGIS_START_MONTH: "2024-07"
+  VNGIS_END_MONTH: "2025-06"
+  # Nhánh hiện mặc định chỉ sửa CSV của 5 huyện. UI cũ không có scope vẫn dùng mặc định này.
+  VNGIS_CSV_REPAIR_ONLY: ${{ github.event_name != 'push' && inputs.scope != 'recover_drive' && inputs.stop_after_province != 'RECOVER_DRIVE' && (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && 'true' || 'false' }}
+  VNGIS_RECOVER_DRIVE: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'true' || 'false' }}
+  VNGIS_START_GID: ${{ inputs.start_gid || vars.VNGIS_DISTRICTS_START_GID || 'VNM.55.8_1' }}
+  VNGIS_REPAIR_GIDS: ${{ inputs.repair_gids || vars.VNGIS_DISTRICTS_REPAIR_GIDS || 'VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1' }}
 
 jobs:
+  audit:
+    name: Kiểm kê file thực có trên Drive
+    if: inputs.scope == 'audit_drive' || inputs.stop_after_province == 'AUDIT_DRIVE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: vngis-drive-audit-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      VNGIS_DRIVE_TPS_LIMIT: "1"
+      VNGIS_DRIVE_TRANSFERS: "1"
+      VNGIS_DRIVE_MAX_RETRIES: "6"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cài công cụ kiểm kê
+        run: |
+          pip install -q -r requirements.txt
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$RUNNER_TEMP/rclone.zip" https://downloads.rclone.org/rclone-current-linux-amd64.zip
+          unzip -q "$RUNNER_TEMP/rclone.zip" -d "$RUNNER_TEMP/rclone-audit"
+          cp "$RUNNER_TEMP"/rclone-audit/rclone-*-linux-amd64/rclone "$HOME/bin/rclone"
+          chmod +x "$HOME/bin/rclone"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Cấu hình Drive
+        env:
+          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF }}
+        run: |
+          [ -n "$RCLONE_CONF_DATA" ] || { echo "::error::Thiếu secret RCLONE_CONF"; exit 1; }
+          mkdir -p "$HOME/.config/rclone"
+          printf '%s' "$RCLONE_CONF_DATA" > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+      - name: Cache danh sách GADM
+        uses: actions/cache@v4
+        with:
+          path: ~/vngis_2024/_cache
+          key: gadm41-vnm-level2-v1
+      - name: Đối chiếu 710 huyện với Drive
+        run: |
+          python -u audit_drive.py --output "$RUNNER_TEMP/drive-audit"
+          cat "$RUNNER_TEMP/drive-audit/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Lưu báo cáo để tải xuống
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/drive-audit
+          if-no-files-found: error
+          retention-days: 30
+
   gate:
     name: Kiểm tra file STOP
+    if: inputs.scope != 'audit_drive' && inputs.stop_after_province != 'AUDIT_DRIVE'
     runs-on: ubuntu-latest
 
     outputs:
@@ -80,28 +170,43 @@ jobs:
   run:
     name: Chạy một lượt
     needs: gate
-    if: needs.gate.outputs.stop != 'true'
+    if: inputs.scope != 'audit_drive' && inputs.stop_after_province != 'AUDIT_DRIVE' && needs.gate.outputs.stop != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    concurrency:
+      group: vngis-districts-202407-202506-${{ github.ref_name }}
+      cancel-in-progress: false
 
     env:
       VNGIS_UPLOAD_EVERY_SEC: "300"
       VNGIS_MAX_RUNTIME_SEC: "18900"
 
       # Project được truyền vào ee.Initialize(project=...).
-      VNGIS_EE_PROJECT: "vngis-ee-2"
+      VNGIS_EE_PROJECT: ${{ vars.VNGIS_DISTRICTS_EE_PROJECT || 'vngis-ee-2' }}
+      VNGIS_EE_ASSET: ${{ vars.VNGIS_DISTRICTS_EE_ASSET }}
       VNGIS_EE_HIGH_VOLUME: "false"
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
-      # Dùng 1 để kiểm tra ổn định trước khi tăng tốc.
-      VNGIS_EE_CONCURRENCY: "1"
+      # Sửa CSV giữ 1 yêu cầu để giảm lỗi aggregation; phạm vi range dùng variable hoặc 4.
+      VNGIS_EE_CONCURRENCY: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && '2' || (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && inputs.mode == 'full' && '1' || vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
+      # Nghỉ chung cho EE sau mỗi 10 huyện done hoặc khi hoàn tất một tỉnh.
+      VNGIS_REST_EVERY_N: ${{ vars.VNGIS_DISTRICTS_REST_EVERY_N || '10' }}
+      VNGIS_REST_AFTER_PROVINCE: ${{ vars.VNGIS_DISTRICTS_REST_AFTER_PROVINCE || 'true' }}
+      VNGIS_REST_SEC: ${{ vars.VNGIS_DISTRICTS_REST_SEC || '30' }}
+      VNGIS_ALLOW_FULL_RESTART: ${{ vars.VNGIS_DISTRICTS_ALLOW_FULL_RESTART || 'false' }}
+      # Một tiến trình rclone mỗi lúc; giới hạn API áp dụng cả upload, đọc và liệt kê.
+      VNGIS_DRIVE_TPS_LIMIT: ${{ vars.VNGIS_DISTRICTS_DRIVE_TPS_LIMIT || '2' }}
+      VNGIS_DRIVE_TRANSFERS: ${{ vars.VNGIS_DISTRICTS_DRIVE_TRANSFERS || '2' }}
+      VNGIS_DRIVE_MAX_RETRIES: ${{ vars.VNGIS_DISTRICTS_DRIVE_MAX_RETRIES || '6' }}
+
       # Định dạng ảnh ngày.
-      VNGIS_DAY_FORMAT: "float"
+      VNGIS_DAY_FORMAT: "int16"
       VNGIS_DAY_BANDS: "10"
       VNGIS_DAY_SCALE: "10000"
+      VNGIS_TIFF_ZLEVEL: "6"
 
     steps:
       - name: Checkout repository
@@ -148,7 +253,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/vngis_2024/_cache
-          key: gadm41-vnm-v1
+          key: gadm41-vnm-level2-v1
 
       - name: Ghi khóa truy cập từ Secrets
         env:
@@ -187,15 +292,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VNGIS_EE_KEY_FILE: ${{ runner.temp }}/ee-key.json
           VNGIS_RUN_ID: ${{ github.run_id }}
-          VNGIS_WORKERS: ${{ inputs.workers }}
+          VNGIS_WORKERS: ${{ inputs.workers || '2' }}
           STOP_POLL_SEC: "300"
         run: |
           set +e
 
-          python -u vngis_2024.py &
+          mkdir -p "$RUNNER_TEMP/vngis-logs"
+          # Giữ PID của Python để STOP vẫn gửi TERM đúng tiến trình.
+          # tee chỉ ghi stdout/stderr; không thu thập cấu hình hoặc Secrets.
+          exec 3> >(tee "$RUNNER_TEMP/vngis-logs/pipeline.log")
+          LOGGER=$!
+          python -u vngis_2024.py >&3 2>&1 &
           PID=$!
 
           (
+            exec 3>&-
             while kill -0 "$PID" 2>/dev/null; do
               for _ in $(seq 1 "$STOP_POLL_SEC"); do
                 sleep 1
@@ -203,7 +314,7 @@ jobs:
               done
 
               if gh api \
-                "repos/${GITHUB_REPOSITORY}/contents/STOP" \
+                "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
                 > /dev/null 2>&1; then
 
                 echo "::notice::Phát hiện file STOP: dừng trật tự."
@@ -220,6 +331,8 @@ jobs:
 
           kill "$WATCH" 2>/dev/null
           wait "$WATCH" 2>/dev/null
+          exec 3>&-
+          wait "$LOGGER"
 
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "Script thoát với mã $code"
@@ -229,11 +342,13 @@ jobs:
       - name: Đồng bộ nốt lên Drive
         if: always()
         continue-on-error: true
-        run: python vngis_2024.py --sync-only
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/vngis-logs"
+          python -u vngis_2024.py --sync-only 2>&1 | tee "$RUNNER_TEMP/vngis-logs/sync.log"
 
       - name: Kiểm tra kết quả thí điểm
         if: always() && inputs.mode == 'pilot' && steps.pipeline.outputs.code == '0'
-        continue-on-error: true
         run: |
           python verify_pilot.py \
             --remote "${VNGIS_RCLONE_REMOTE}:${VNGIS_DRIVE_FOLDER}" \
@@ -248,55 +363,93 @@ jobs:
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import os
           import pandas as pd
+          import vngis_2024 as pipeline
 
           folder = os.environ["VNGIS_DRIVE_FOLDER"]
 
-          p = os.path.expanduser(
-              f"~/vngis_2024/{folder}/_control/progress.csv"
-          )
+          p = pipeline.L(pipeline.D_CONTROL, pipeline.progress_filename())
 
           if os.path.isfile(p):
               d = pd.read_csv(p)
 
               print(f"### Tiến độ ({folder})\n")
               print(
-                  f"Tổng {len(d):,} xã: "
+                  f"Tổng {len(d):,} huyện: "
                   f"{d['status'].value_counts().to_dict()}\n"
               )
 
-              bad = d[d["status"] != "done"].head(15)
+              if pipeline.csv_repair_mode():
+                  print(f"CSV đủ dữ liệu: {int(d['csv_complete'].sum())}/{len(d)} huyện.\n")
+                  bad = d[~d['csv_complete']].head(15)
+              else:
+                  bad = d[d["status"] != "done"].head(15)
 
               if len(bad):
                   print(
-                      "| GID_3 | trạng thái | lỗi |\n"
+                  "| GID_2 | trạng thái | lỗi |\n"
                       "|---|---|---|"
                   )
 
                   for r in bad.itertuples():
                       error = str(r.errors)[:150]
                       print(
-                          f"| {r.GID_3} | {r.status} | {error} |"
+                      f"| {r.GID_2} | {r.status} | {error} |"
                       )
           PY
+
+      - name: Kiểm kê Drive sau lượt phục hồi
+        if: always() && env.VNGIS_RECOVER_DRIVE == 'true' && steps.pipeline.outputs.code != ''
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/vngis-logs"
+          python -u audit_drive.py --output "$RUNNER_TEMP/drive-recovery-audit" 2>&1 | tee "$RUNNER_TEMP/vngis-logs/audit.log"
+          cat "$RUNNER_TEMP/drive-recovery-audit/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lưu báo cáo phục hồi
+        if: always() && env.VNGIS_RECOVER_DRIVE == 'true' && steps.pipeline.outputs.code != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-recovery-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/drive-recovery-audit
+          if-no-files-found: warn
+
+      - name: Lưu log để chẩn đoán lỗi
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vngis-logs-${{ github.run_id }}
+          path: ${{ runner.temp }}/vngis-logs
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Nối lượt kế tiếp
         if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
         env:
           GH_TOKEN: ${{ github.token }}
-          STOP_AFTER_PROVINCE_INPUT: ${{ inputs.stop_after_province }}
+          MODE_INPUT: ${{ env.VNGIS_MODE }}
+          PILOT_N_INPUT: ${{ inputs.pilot_n }}
+          WORKERS_INPUT: ${{ inputs.workers }}
+          DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
+          START_GID_INPUT: ${{ env.VNGIS_START_GID }}
+          REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
+          SCOPE_INPUT: ${{ env.VNGIS_RECOVER_DRIVE == 'true' && 'recover_drive' || env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
         run: |
           if gh api \
-            "repos/${GITHUB_REPOSITORY}/contents/STOP" \
+            "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
             > /dev/null 2>&1; then
 
             echo "::notice::Có file STOP: dừng chuỗi, không nối lượt."
           else
             gh workflow run vngis-2024.yml \
               --ref "$GITHUB_REF_NAME" \
-              -f mode="${{ inputs.mode }}" \
-              -f pilot_n="${{ inputs.pilot_n }}" \
-              -f workers="${{ inputs.workers }}" \
-              -f stop_after_province="$STOP_AFTER_PROVINCE_INPUT"
+              -f mode="$MODE_INPUT" \
+              -f pilot_n="$PILOT_N_INPUT" \
+              -f workers="$WORKERS_INPUT" \
+              -f day_scale="$DAY_SCALE_INPUT" \
+              -f start_gid="$START_GID_INPUT" \
+              -f repair_gids="$REPAIR_GIDS_INPUT" \
+              -f scope="$SCOPE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi
@@ -309,5 +462,21 @@ jobs:
           steps.pipeline.outputs.code != '3' &&
           steps.pipeline.outputs.code != '130'
         run: |
-          echo "::error::Script thoát với mã ${{ steps.pipeline.outputs.code }}. Mở bước 'Chạy pipeline', tìm các dòng [preflight] hoặc ERROR."
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "vngis-logs" / "pipeline.log"
+          lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
+          errors = [line for line in lines if re.search(r"\bE \[|ERROR|Traceback|[A-Za-z]+Error:", line)
+                    and "Gợi ý:" not in line]
+          message = errors[-1][:1000] if errors else "Chưa thu được lỗi gốc. Xem bước Chạy pipeline và artifact vngis-logs."
+          escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Lỗi gốc pipeline::{escaped}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n### Pipeline thất bại: log cuối\n\n")
+              summary.write("Tải artifact **vngis-logs** để xem pipeline.log, sync.log và audit.log.\n\n")
+              summary.write("````text\n" + message + "\n\n" + "\n".join(lines[-40:]) + "\n````\n")
+          PY
           exit 1
