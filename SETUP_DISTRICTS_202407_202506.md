@@ -347,3 +347,56 @@ Tùy chọn đối soát toàn quốc: **`scope=range`, `start_gid=VNM.1.1_1`**.
 - Nếu một tháng vẫn không có pixel hợp lệ, giữ no_data/partial và báo lỗi; không bù số 0 hay lấy tháng khác. Tùy chọn scope/danh sách sửa được giữ khi nối lượt.
 
 Python trực tiếp: đặt `VNGIS_MODE=full`, `VNGIS_CSV_REPAIR_ONLY=true`, `VNGIS_REPAIR_GIDS` theo danh sách 5 mã, `VNGIS_DAY_IMAGE_SCALE=50`, cùng thư mục Drive 50 m và project/credentials hiện có. Python mặc định vẫn giữ chế độ đầy đủ khi không đặt cờ sửa CSV.
+
+## 17. Kiểm soát dữ liệu đã upload lên Drive
+
+Thư mục tỉnh xuất hiện, hoặc log `full -> done`, **không chứng minh dữ liệu đã upload đủ**. Một huyện cần 12 TIFF ngày, 12 TIFF đêm và 12 dòng hợp lệ trong mỗi CSV ngày/đêm của kỳ 2024-07–2025-06. Toàn quốc cần **8.520 TIFF mỗi loại**, tổng 17.040 TIFF.
+
+### Kiểm kê ngay khi lượt upload cũ vẫn chạy
+
+1. **Actions → workflow VNGIS → Run workflow**. Chọn branch **`vngis-ee-districts-202407-202506`**.
+2. Chọn **`mode=full`, `scope=audit_drive`, `day_scale=50`**. Nếu giao diện theo main chưa có ô `scope`, nhập **`AUDIT_DRIVE`** vào ô **`stop_after_province`**, chọn `mode=full`. Nhánh huyện nhận giá trị này là yêu cầu kiểm kê, không chạy pipeline. Khi không có `day_scale`, mặc định là 50 m.
+3. Lượt này chỉ chạy job **“Kiểm kê file thực có trên Drive”**. Không yêu cầu khóa Earth Engine, không tải TIFF, không xóa/sửa file Drive, không tự nối lượt. STOP không chặn kiểm kê.
+4. Mở **Summary** của lượt này để xem bảng 63 tỉnh. Ở cuối trang, mục **Artifacts**, tải **`drive-audit-<run_id>`**.
+
+Job audit dùng nhóm concurrency riêng nên không phải đợi lượt upload cùng nhánh hoàn tất; vẫn có thể phải chờ runner GitHub nếu hết slot. Quét một lần dùng Drive TPS=1; không bấm chạy lặp liên tục khi Google Drive đang báo quota. Có thể kiểm kê lại sau 15–30 phút để so sánh số file tăng lên.
+
+Trong artifact:
+
+| File | Dùng để làm gì |
+|---|---|
+| `provinces_on_drive.csv` | Đủ cả 63 tỉnh, số huyện đủ theo kiểm kê, số TIFF ngày/đêm so với số cần có |
+| `districts_on_drive.csv` | Đủ cả 710 huyện; `day_tiff_on_drive`/`night_tiff_on_drive` cần bằng 12; cột `*_missing_months` nêu tháng TIFF thiếu; `*_csv_missing_or_invalid_months` nêu tháng CSV chưa xác nhận |
+| `files_on_drive.csv` | Đường dẫn từng TIFF thực thấy trên Drive, dung lượng byte, ID Drive, `observed_at_utc` và `drive_modtime` |
+| `summary.md` | Bảng tổng hợp, đích Drive và thời điểm quét, gồm giờ Việt Nam |
+
+`inventory_complete=true` chỉ khi thấy đúng một TIFF có dung lượng >0 cho từng tháng ở đúng đường dẫn, cùng các dòng CSV hợp lệ. File trùng đường dẫn, TIFF 0 byte, CSV trùng tháng/no_data/thiếu chỉ số không được tính là đủ. CSV dùng hai file tổng hợp `CSV/day_indices.csv` và `CSV/night_indices.csv`: nếu chỉ có parts mà CSV tổng hợp chưa cập nhật, báo cáo vẫn ghi chưa xác nhận. Lỗi API/quota/quyền đọc làm audit thất bại, không được biến thành kết luận “Drive trống”. Báo cáo này **chưa kiểm tra pixel, độ phân giải hay kiểu dữ liệu TIFF**; dùng `verify_pilot.py` khi cần kiểm tra sâu một nhóm huyện.
+
+Lượt upload vẫn ghi file trong khi audit đọc nên số liệu là quan sát trong khoảng thời gian quét, không phải snapshot nguyên tử. `observed_at_utc` là lúc kiểm tra thấy file; **không phải giờ upload**. `drive_modtime` có thể là giờ file ở runner mà rclone giữ lại. Không thể suy ra chính xác giờ upload của các lượt cũ từ hai cột này.
+
+Chạy bằng GitHub CLI nếu đã đăng nhập:
+
+```bash
+gh workflow run vngis-2024.yml --repo anductrung-160526/vietnam_satelline_final --ref vngis-ee-districts-202407-202506 -f mode=full -f scope=audit_drive -f day_scale=50
+```
+
+Trên máy có Python, đã cài `requirements.txt`, rclone remote `gdrive` hoạt động, mở terminal ở thư mục repo nhánh huyện:
+
+```bash
+python audit_drive.py --remote "gdrive:VNGISDash_202407_202506_Districts_50m" --output artifacts/drive_audit
+```
+
+Không cần EE JSON cho lệnh này. Script tự dùng danh sách GADM cấp 2; nếu đã có bảng huyện, thêm `--admin artifacts/gadm41_VNM_2/districts_l2_admin.csv`.
+
+### Theo dõi upload ở lượt mới
+
+Các lượt dùng mã mới ghi `[upload] Bắt đầu move -> .../Day` hoặc `.../Night`. Trong lúc chuyển, mỗi 30 giây sẽ có log số TIFF trong danh sách được rclone chuyển và xóa bản local. Cuối đợt có số đã chuyển, số còn chờ và kết quả OK/chưa hoàn tất. Log copy CSV/control ghi đang chạy bao nhiêu giây. Đây là tiến độ của **đợt/lượt hiện tại**, không thay thế kiểm kê toàn bộ Drive. Nhóm file tuổi <2 phút có thể được để lại tới đợt kế tiếp; đồng bộ cuối không áp dụng điều kiện tuổi này.
+
+Mã mới không thay đổi tiến trình đang chạy. Để giữ file chưa upload, không Cancel lượt cũ chỉ vì thiếu log. Có thể kiểm tra nhanh số file thực có bằng rclone trên Windows CMD (số này chưa xác nhận đủ từng huyện hay tính hợp lệ):
+
+```bat
+rclone size "gdrive:VNGISDash_202407_202506_Districts_50m/Day" --include "*.tif" --fast-list --tpslimit 1
+rclone size "gdrive:VNGISDash_202407_202506_Districts_50m/Night" --include "*.tif" --fast-list --tpslimit 1
+```
+
+Nếu số file không tăng và lượt upload đã kết thúc/lỗi, chờ không tự khôi phục file chưa upload của runner đã bị hủy. Khi đó dùng báo cáo tháng thiếu để chọn bước tải bù; không gán done theo log cũ.

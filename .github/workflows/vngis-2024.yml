@@ -25,11 +25,12 @@ on:
         default: pilot
 
       scope:
-        description: "Full: repair_csv chỉ sửa CSV các mã repair_gids; range dùng start_gid và lấy cả TIFF."
+        description: "repair_csv sửa CSV; range lấy cả TIFF; audit_drive kiểm kê Drive, không chạy EE."
         type: choice
         options:
           - repair_csv
           - range
+          - audit_drive
         default: repair_csv
 
       pilot_n:
@@ -63,14 +64,10 @@ on:
         default: "VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1"
 
       stop_after_province:
-        description: "Ô tương thích main; nhánh huyện dùng start_gid, bỏ qua giá trị này"
+        description: "Tương thích UI main: nhập AUDIT_DRIVE để kiểm kê Drive; giá trị tỉnh bị bỏ qua."
         required: false
         type: string
         default: ""
-
-concurrency:
-  group: vngis-districts-202407-202506-${{ github.ref_name }}
-  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -90,8 +87,60 @@ env:
   VNGIS_REPAIR_GIDS: ${{ inputs.repair_gids || vars.VNGIS_DISTRICTS_REPAIR_GIDS || 'VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1' }}
 
 jobs:
+  audit:
+    name: Kiểm kê file thực có trên Drive
+    if: inputs.scope == 'audit_drive' || inputs.stop_after_province == 'AUDIT_DRIVE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: vngis-drive-audit-${{ github.ref_name }}
+      cancel-in-progress: false
+    env:
+      VNGIS_DRIVE_TPS_LIMIT: "1"
+      VNGIS_DRIVE_TRANSFERS: "1"
+      VNGIS_DRIVE_MAX_RETRIES: "6"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cài công cụ kiểm kê
+        run: |
+          pip install -q -r requirements.txt
+          mkdir -p "$HOME/bin"
+          curl -fsSL -o "$RUNNER_TEMP/rclone.zip" https://downloads.rclone.org/rclone-current-linux-amd64.zip
+          unzip -q "$RUNNER_TEMP/rclone.zip" -d "$RUNNER_TEMP/rclone-audit"
+          cp "$RUNNER_TEMP"/rclone-audit/rclone-*-linux-amd64/rclone "$HOME/bin/rclone"
+          chmod +x "$HOME/bin/rclone"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Cấu hình Drive
+        env:
+          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF }}
+        run: |
+          [ -n "$RCLONE_CONF_DATA" ] || { echo "::error::Thiếu secret RCLONE_CONF"; exit 1; }
+          mkdir -p "$HOME/.config/rclone"
+          printf '%s' "$RCLONE_CONF_DATA" > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+      - name: Cache danh sách GADM
+        uses: actions/cache@v4
+        with:
+          path: ~/vngis_2024/_cache
+          key: gadm41-vnm-level2-v1
+      - name: Đối chiếu 710 huyện với Drive
+        run: |
+          python -u audit_drive.py --output "$RUNNER_TEMP/drive-audit"
+          cat "$RUNNER_TEMP/drive-audit/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Lưu báo cáo để tải xuống
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/drive-audit
+          if-no-files-found: error
+          retention-days: 30
+
   gate:
     name: Kiểm tra file STOP
+    if: inputs.scope != 'audit_drive' && inputs.stop_after_province != 'AUDIT_DRIVE'
     runs-on: ubuntu-latest
 
     outputs:
@@ -114,9 +163,12 @@ jobs:
   run:
     name: Chạy một lượt
     needs: gate
-    if: needs.gate.outputs.stop != 'true'
+    if: inputs.scope != 'audit_drive' && inputs.stop_after_province != 'AUDIT_DRIVE' && needs.gate.outputs.stop != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    concurrency:
+      group: vngis-districts-202407-202506-${{ github.ref_name }}
+      cancel-in-progress: false
 
     env:
       VNGIS_UPLOAD_EVERY_SEC: "300"

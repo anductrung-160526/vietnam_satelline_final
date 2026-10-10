@@ -29,6 +29,7 @@ import threading, subprocess, unicodedata, warnings, random, tempfile
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 
 import numpy as np
 import pandas as pd
@@ -1652,6 +1653,39 @@ class DriveRateLimitError(RuntimeError):
     pass
 
 
+@contextmanager
+def upload_heartbeat(args):
+    """Progress while subprocess output is captured; only inspect local files, no extra Drive API."""
+    if args[0] not in ("move", "copy", "copyto"):
+        yield
+        return
+    stopped = threading.Event()
+    started = time.monotonic()
+    candidates = []
+    if args[0] == "move" and "--files-from" in args:
+        listing = args[args.index("--files-from") + 1]
+        with open(listing, encoding="utf-8") as handle:
+            candidates = [os.path.join(args[1], name.strip()) for name in handle if name.strip()]
+    label = f"{args[0]} -> {args[2] if len(args) > 2 else args[1]}"
+
+    def report():
+        while not stopped.wait(30):
+            moved = sum(not os.path.isfile(path) for path in candidates)
+            count = (f" | rclone đã chuyển và xóa bản local {moved}/{len(candidates)} TIFF"
+                     if candidates else "")
+            log.info(f"[upload] {label}: đang chạy {time.monotonic()-started:.0f}s{count}")
+
+    log.info(f"[upload] Bắt đầu {label}" + (f" | {len(candidates)} TIFF" if candidates else ""))
+    monitor = threading.Thread(target=report, name="upload-progress", daemon=True)
+    monitor.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        monitor.join()
+        log.info(f"[upload] Lệnh {label} kết thúc sau {time.monotonic()-started:.0f}s; xem kết quả đồng bộ.")
+
+
 def _run_rclone(args, timeout=6 * 3600):
     """Một tiến trình Drive trong lượt; mọi lệnh có TPS và backoff khi quota."""
     args = list(args)
@@ -1664,7 +1698,8 @@ def _run_rclone(args, timeout=6 * 3600):
             args.extend([flag, value])
     with _drive_api_lock:
         for attempt in range(DRIVE_MAX_RETRIES):
-            res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
+            with upload_heartbeat(args):
+                res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
             if res.returncode == 0 or not _drive_rate_limited(res.stderr):
                 return res
             if attempt + 1 < DRIVE_MAX_RETRIES:
@@ -1764,6 +1799,10 @@ def rclone_sync_once(final=False):
                                    for p in candidates if not os.path.isfile(p))
                 REMOTE_INT16_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
                                          for p in int16_candidates if not os.path.isfile(p))
+                moved = sum(not os.path.isfile(p) for p in candidates)
+                log.info(f"[upload] {d}: xác nhận đã chuyển {moved}/{len(candidates)} TIFF của đợt; "
+                         f"còn {len(candidates)-moved} TIFF trong danh sách chờ đợt này; "
+                         f"kết quả={'OK' if ok else 'chưa hoàn tất'}.")
         if DAY_FORMAT == "int16":
             os.makedirs(L(D_CONTROL), exist_ok=True)
             marker = L(D_CONTROL, "int16_uploaded.json")
