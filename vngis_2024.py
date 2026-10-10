@@ -82,7 +82,8 @@ if MODE not in ("pilot", "full"):
     raise SystemExit(f"VNGIS_MODE phải là 'pilot' hoặc 'full', đang là '{MODE}'")
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 START_GID = _env("VNGIS_START_GID", "")                         # full: mã huyện bắt đầu, bao gồm mã này
-REPAIR_GIDS = _env("VNGIS_REPAIR_GIDS", "")                     # full: mã cần sửa riêng, xử lý sau phần đuôi
+REPAIR_GIDS = _env("VNGIS_REPAIR_GIDS", "")                     # mã sửa CSV, hoặc bổ sung sau phần đuôi trong range
+CSV_REPAIR_ONLY = _env("VNGIS_CSV_REPAIR_ONLY", False, bool)    # full: chỉ sửa CSV cho REPAIR_GIDS
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
 
@@ -562,8 +563,20 @@ def task3_all_months(district_geom, row):
         "cf": cf_cvg.reduceRegion(reducer=ee.Reducer.mean(), **kw),
     })
     per_month.append(ee.Algorithms.If(col.size().gt(0), d, ee.Dictionary({"n": 0})))
-  out = ee_getinfo(ee.Dictionary({"area_ha": district_geom.area(maxError=1).divide(10000),
-                                  "months": ee.List(per_month)}))
+  area = district_geom.area(maxError=1).divide(10000)
+  if csv_repair_mode():
+    # Chỉ sửa CSV: tránh gộp 12 x nhiều reduceRegion trong cùng một query.
+    # Giữ nguyên phép tính; ghép lại đủ năm trước khi tính rolling/growth ở dưới.
+    out = {"months": []}
+    for period, stats in zip(PERIODS, per_month):
+      log.info(f"[csv-repair] {row['GID_2']} CSV night {month_key(period)}: tính riêng tháng")
+      result = ee_getinfo(ee.Dictionary({"area_ha": area, "months": ee.List([stats])}))
+      if len(result.get("months", [])) != 1:
+        raise RuntimeError(f"CSV night {month_key(period)} không trả đúng một tháng")
+      out["area_ha"] = result["area_ha"]
+      out["months"].extend(result["months"])
+  else:
+    out = ee_getinfo(ee.Dictionary({"area_ha": area, "months": ee.List(per_month)}))
   district_area_ha = out["area_ha"]
 
   # Phần tính chỉ số dưới đây chép nguyên văn notebook cell 38
@@ -1237,6 +1250,21 @@ def district_complete(st):
     )
 
 
+def csv_repair_mode():
+    return MODE == "full" and CSV_REPAIR_ONLY
+
+
+def csv_complete(st):
+    return current_status(st) and all(
+        all((st.get(slot) or {}).get(key) == "ok" for key in MONTH_KEYS)
+        for slot in ("t1_by_month", "t3csv_by_month")
+    )
+
+
+def processing_complete(st):
+    return csv_complete(st) if csv_repair_mode() else district_complete(st)
+
+
 def day_records(row, props):
     indexed = {}
     for p in props:
@@ -1291,15 +1319,15 @@ def process_district(row, prev):
     ctx["geom"] = geom
     _checkpoint(info)
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix=f"{gid2}-q") as qp:
-        f_plan = qp.submit(fetch_plan, fc, geom)
+        f_plan = qp.submit(fetch_plan, fc, geom) if not csv_repair_mode() else None
         f_t1 = qp.submit(task1_all_months, fc) if info["t1"] != "ok" else None
         f_t3 = qp.submit(task3_all_months, geom, row) if info["t3csv"] != "ok" else None
-        n_fc, plan = f_plan.result()
+        n_fc, plan = f_plan.result() if f_plan else (ee_getinfo(fc.size()), None)
         if n_fc != 1:
             raise NotInAsset(f"GID_2 {gid2} khớp {n_fc} bản ghi trong asset {ASSET_ID}; cần đúng một huyện")
 
         jobs = []
-        for period in PERIODS:
+        for period in (() if csv_repair_mode() else PERIODS):
             key = month_key(period)
             for kind, slot, choice in (("day", "t2", plan[period]["s2_window"]),
                                        ("night", "t3img", plan[period]["viirs"])):
@@ -1508,7 +1536,7 @@ def check_resume(targets, statuses):
     """Báo bằng chứng khôi phục; không âm thầm làm lại toàn bộ khi mất checkpoint."""
     gids = set(targets["GID_2"])
     known = sum(gid in statuses for gid in gids)
-    done = sum(district_complete(statuses.get(gid)) for gid in gids)
+    done = sum(processing_complete(statuses.get(gid)) for gid in gids)
     diag = RESUME_DIAGNOSTICS
     log.info(f"[resume] Đích {REMOTE_BASE} | profile={OUTPUT_PROFILE}")
     log.info(f"[resume] {diag.get('files', 0)} file checkpoint; {known}/{len(gids)} huyện có trạng thái; "
@@ -1518,11 +1546,11 @@ def check_resume(targets, statuses):
              f"bản ghi khác profile/kỳ bị bỏ qua={diag.get('ignored', 0)}.")
     # Người dùng chủ động chọn phần đuôi: checkpoint/file của phần đầu không chứng minh
     # rằng phần đuôi từng hoàn tất. Vẫn kiểm tra bằng chứng done trong phạm vi được chọn.
-    partial_range = MODE == "full" and bool(START_GID) and len(gids) < len(ADMIN_BY_GID)
+    partial_range = MODE == "full" and (bool(START_GID) or csv_repair_mode()) and len(gids) < len(ADMIN_BY_GID)
     claimed = (len(gids & set(diag["claimed_done_gids"])) if "claimed_done_gids" in diag
                else diag.get("claimed_done", 0))
     lost_checkpoint = bool(REMOTE_TIFS) and known == 0 and not partial_range
-    lost_evidence = claimed > 0 and done == 0 and MODE == "full"
+    lost_evidence = claimed > 0 and done == 0 and MODE == "full" and not csv_repair_mode()
     if lost_checkpoint or lost_evidence:
         message = ("Drive đã có dữ liệu/checkpoint nhưng không khôi phục được huyện hoàn tất. "
                    "Dừng để tránh tự tải lại toàn bộ. Kiểm tra đúng tài khoản Drive, thư mục 20m/50m/pilot, "
@@ -1596,7 +1624,7 @@ def reconcile_status(st, part_keys=None):
 
 
 def core_finished(st):
-    return current_status(st) and (district_complete(st) or st.get("status") == "not_in_asset"
+    return current_status(st) and (processing_complete(st) or st.get("status") == "not_in_asset"
                          or int(st.get("attempts", 0)) >= MAX_ATTEMPTS)
 
 
@@ -1711,7 +1739,7 @@ def rclone_sync_once(final=False):
         # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
         # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
         cutoff = None if final else time.time() - 120
-        for d in (D_DAY, D_NIGHT):
+        for d in (() if csv_repair_mode() else (D_DAY, D_NIGHT)):
             src = L(d)
             if os.path.isdir(src):
                 candidates = list(glob.glob(os.path.join(src, "**", "*.tif"), recursive=True))
@@ -1912,6 +1940,18 @@ def load_targets(admin):
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_2"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
+        if csv_repair_mode():
+            gids = repair_gid_list()
+            if not gids:
+                raise ValueError("Chỉ sửa CSV cần ít nhất một mã huyện trong VNGIS_REPAIR_GIDS")
+            picks = []
+            for gid in gids:
+                matches = df.index[df["GID_2"] == gid].tolist()
+                if len(matches) != 1:
+                    raise ValueError(f"Mã sửa CSV {gid} phải khớp đúng một huyện trong GADM cấp 2")
+                picks.append(matches[0])
+            log.info(f"[csv-repair] Chỉ sửa CSV cho {len(gids)} huyện: " + ", ".join(gids))
+            return df.loc[picks].reset_index(drop=True)
         all_df = df
         start = normalize_start_gid(START_GID)
         if start:
@@ -1999,6 +2039,11 @@ def _probe_ee(row):
     gid2 = row["GID_2"]
     fc = districts_fc.filter(ee.Filter.eq("GID_2", gid2))
     geom = fc.geometry()
+    if csv_repair_mode():
+        n_fc = ee_getinfo(fc.size())
+        if n_fc != 1:
+            raise PreflightError(f"Asset khớp {n_fc} bản ghi cho {gid2}, cần đúng một huyện")
+        return "Earth Engine đọc được huyện để tính CSV"
     n_fc, plan = fetch_plan(fc, geom)
     if n_fc != 1:
         raise PreflightError(f"Asset khớp {n_fc} bản ghi cho {gid2}, cần đúng một huyện. Kiểm tra GID_2.")
@@ -2046,6 +2091,8 @@ def preflight(row):
 # 12. TIẾN ĐỘ
 # =====================================================================================
 def progress_filename():
+    if csv_repair_mode():
+        return "progress_csv_repair.csv"
     start = normalize_start_gid(START_GID) if MODE == "full" else ""
     return f"progress_from_{start}.csv" if start else "progress.csv"
 
@@ -2056,7 +2103,7 @@ def reopen_requested_repairs(statuses):
         return
     for gid in repair_gid_list():
         st = statuses.get(gid)
-        if (not current_status(st) or district_complete(st) or st.get("status") == "not_in_asset"
+        if (not current_status(st) or processing_complete(st) or st.get("status") == "not_in_asset"
                 or int(st.get("attempts", 0)) < MAX_ATTEMPTS):
             continue
         st = {**st, "attempts": 0, "status": "partial"}
@@ -2074,6 +2121,7 @@ def write_progress(targets, statuses):
         rows.append({"GID_1": r.GID_1, "NAME_1": r.NAME_1, "GID_2": r.GID_2, "NAME_2": r.NAME_2,
                      "TYPE_2": r.TYPE_2, "period": PERIOD_ID,
                      "status": st.get("status", "pending"), "attempts": st.get("attempts", 0),
+                     "csv_complete": csv_complete(st),
                      "t1": st.get("t1"), "t2_ok": sum(v == "ok" for v in t2.values()),
                      "t2_no_data": sum(v == "no_data" for v in t2.values()),
                      "t3img_ok": sum(v == "ok" for v in t3.values()), "t3csv": st.get("t3csv"),
@@ -2095,7 +2143,8 @@ MAX_OUTAGES = 8
 
 
 def next_round_jobs(gids, rows, statuses):
-    return [(g, rows[g], "full") for g in gids if not core_finished(statuses.get(g))]
+    return [(g, rows[g], "csv-repair" if csv_repair_mode() else "full")
+            for g in gids if not core_finished(statuses.get(g))]
 
 
 class DistrictRestPolicy:
@@ -2181,7 +2230,7 @@ def run_round(jobs, statuses, rest_policy=None):
         statuses[gid] = info
         write_status(info)
         done_now += 1
-        completed_now += info.get("status") == "done"
+        completed_now += processing_complete(info)
         errs = f" | lỗi: {info['errors'][:2]}" if info.get("errors") else ""
         t2 = info.get("t2") or {}
         log.info(f"[{gid}] {kind} -> {info.get('status')} | T1={info.get('t1')} "
@@ -2190,7 +2239,7 @@ def run_round(jobs, statuses, rest_policy=None):
         if done_now % 5 == 0 or done_now == len(jobs):
             elapsed = max(time.time() - t0, 1)
             rate = completed_now / elapsed * 3600
-            remaining = sum(not district_complete(statuses.get(g)) for g, _, _ in jobs)
+            remaining = sum(not processing_complete(statuses.get(g)) for g, _, _ in jobs)
             eta = (datetime.now(timezone.utc) + timedelta(hours=remaining / rate)).astimezone(
                 timezone(timedelta(hours=7))).strftime("%d/%m %H:%M") if rate > 0 else "chưa đủ dữ liệu"
             log.info(f"[speed] {completed_now} huyện done mới trong {elapsed/60:.1f} phút | "
@@ -2338,11 +2387,14 @@ def main():
         return 1
 
     if not unfinished and not STOP_EVENT.is_set():
-        failed = progress[progress["status"] != "done"]
+        failed = progress[~progress["csv_complete"]] if csv_repair_mode() else progress[progress["status"] != "done"]
         log.info(f"Kết thúc hàng đợi: {progress['status'].value_counts().to_dict()}")
+        if csv_repair_mode():
+            log.info(f"[csv-repair] CSV đủ tháng: {len(progress)-len(failed)}/{len(progress)} huyện; "
+                     "xem _control/progress_csv_repair.csv")
         if len(failed):
             log.warning(f"{len(failed)} huyện không đạt sau {MAX_ATTEMPTS} lần, xem _control/{progress_filename()}")
-        if MODE == "full" and START_GID:
+        if MODE == "full" and START_GID and not csv_repair_mode():
             log.info(f"[range] Kết quả chỉ áp dụng phạm vi từ {normalize_start_gid(START_GID)} "
                      f"và các mã sửa được chỉ định ({', '.join(repair_gid_list()) or 'không có'}); "
                      "không xác nhận dữ liệu toàn quốc đã đồng bộ đầy đủ.")

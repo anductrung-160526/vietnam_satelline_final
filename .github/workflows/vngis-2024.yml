@@ -17,12 +17,20 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thí điểm | full = toàn bộ huyện"
+        description: "pilot = thí điểm | full = phạm vi theo scope (mặc định sửa 5 huyện)"
         type: choice
         options:
           - pilot
           - full
         default: pilot
+
+      scope:
+        description: "Full: repair_csv chỉ sửa CSV các mã repair_gids; range dùng start_gid và lấy cả TIFF."
+        type: choice
+        options:
+          - repair_csv
+          - range
+        default: repair_csv
 
       pilot_n:
         description: "Số huyện thí điểm, chỉ dùng khi mode = pilot"
@@ -43,13 +51,13 @@ on:
         default: "50"
 
       start_gid:
-        description: "Full: bắt đầu từ huyện này trở đi; VNM.1.1_1 để xét toàn quốc. Pilot bỏ qua."
+        description: "Full scope=range: mã bắt đầu. Scope=repair_csv bỏ qua ô này."
         required: false
         type: string
         default: "VNM.55.8_1"
 
       repair_gids:
-        description: "Full: mã huyện cần sửa thêm, cách nhau dấu phẩy; none để tắt. Xử lý sau phần đuôi."
+        description: "Mã huyện sửa CSV, cách nhau dấu phẩy. Scope=range: bổ sung sau phần đuôi; none để tắt."
         required: false
         type: string
         default: "VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1"
@@ -76,7 +84,8 @@ env:
   VNGIS_RCLONE_REMOTE: gdrive
   VNGIS_START_MONTH: "2024-07"
   VNGIS_END_MONTH: "2025-06"
-  # Nhánh hiện được cấu hình chạy tiếp từ Vũ Thư. Variable dùng khi UI lấy inputs từ main.
+  # Nhánh hiện mặc định chỉ sửa CSV của 5 huyện. UI cũ không có scope vẫn dùng mặc định này.
+  VNGIS_CSV_REPAIR_ONLY: ${{ (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && 'true' || 'false' }}
   VNGIS_START_GID: ${{ inputs.start_gid || vars.VNGIS_DISTRICTS_START_GID || 'VNM.55.8_1' }}
   VNGIS_REPAIR_GIDS: ${{ inputs.repair_gids || vars.VNGIS_DISTRICTS_REPAIR_GIDS || 'VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1' }}
 
@@ -119,8 +128,8 @@ jobs:
       VNGIS_EE_HIGH_VOLUME: "false"
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
-      # Thử tối đa 4; tự giảm khi có 429. Variable cấu hình trước vẫn được ưu tiên.
-      VNGIS_EE_CONCURRENCY: ${{ vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
+      # Sửa CSV giữ 1 yêu cầu để giảm lỗi aggregation; phạm vi range dùng variable hoặc 4.
+      VNGIS_EE_CONCURRENCY: ${{ (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && inputs.mode == 'full' && '1' || vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
@@ -299,7 +308,11 @@ jobs:
                   f"{d['status'].value_counts().to_dict()}\n"
               )
 
-              bad = d[d["status"] != "done"].head(15)
+              if pipeline.csv_repair_mode():
+                  print(f"CSV đủ dữ liệu: {int(d['csv_complete'].sum())}/{len(d)} huyện.\n")
+                  bad = d[~d['csv_complete']].head(15)
+              else:
+                  bad = d[d["status"] != "done"].head(15)
 
               if len(bad):
                   print(
@@ -324,6 +337,7 @@ jobs:
           DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
           START_GID_INPUT: ${{ env.VNGIS_START_GID }}
           REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
+          SCOPE_INPUT: ${{ env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
@@ -338,7 +352,8 @@ jobs:
               -f workers="$WORKERS_INPUT" \
               -f day_scale="$DAY_SCALE_INPUT" \
               -f start_gid="$START_GID_INPUT" \
-              -f repair_gids="$REPAIR_GIDS_INPUT"
+              -f repair_gids="$REPAIR_GIDS_INPUT" \
+              -f scope="$SCOPE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

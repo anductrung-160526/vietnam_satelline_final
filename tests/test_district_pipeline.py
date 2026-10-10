@@ -51,7 +51,7 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
-                           START_GID='', REPAIR_GIDS='',
+                           START_GID='', REPAIR_GIDS='', CSV_REPAIR_ONLY=False,
                            STOP_EVENT=threading.Event(), STOP_REASON=[None], REST_SEC=0, ALLOW_FULL_RESTART=False,
                            RESUME_DIAGNOSTICS={}, RESTORE_INT16_MARKER=False, DAY_IMAGE_SCALE=20,
                            REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
@@ -218,6 +218,28 @@ class StartDistrictTests(LocalCase):
                     v.reopen_requested_repairs({ROW['GID_2']: state})
                     save.assert_not_called()
 
+    def test_csv_only_scope_selects_exact_repairs_and_ignores_start(self):
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True, START_GID='invalid start',
+                            REPAIR_GIDS='55.7,55.6'):
+            targets = v.load_targets(self.range_admin())
+            self.assertEqual(list(targets.GID_2), ['VNM.55.7_1', 'VNM.55.6_1'])
+            self.assertEqual(v.progress_filename(), 'progress_csv_repair.csv')
+        for ids in ['none', '', '55.9']:
+            with self.subTest(ids=ids), patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True, REPAIR_GIDS=ids):
+                with self.assertRaises(ValueError):
+                    v.load_targets(self.range_admin())
+
+    def test_csv_complete_does_not_claim_tiffs_complete_and_is_not_queued_again(self):
+        st = complete_state()
+        st.update(t2={}, t3img={}, status='partial', attempts=1)
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True):
+            self.assertTrue(v.csv_complete(st))
+            self.assertFalse(v.district_complete(st))
+            self.assertTrue(v.core_finished(st))
+            self.assertEqual(v.next_round_jobs([ROW['GID_2']], {ROW['GID_2']: ROW}, {ROW['GID_2']: st}), [])
+            st['t1_by_month']['2024-07'] = 'no_data'
+            self.assertFalse(v.core_finished(st))
+
 
 class StableUploadTests(LocalCase):
     def test_live_status_parts_and_log_append_do_not_change_upload_source(self):
@@ -268,6 +290,14 @@ class StableUploadTests(LocalCase):
         self.assertEqual(calls[0], ('copy', f'{v.REMOTE_BASE}/_control'))
         self.assertEqual(calls[1], ('move', f'{v.REMOTE_BASE}/Day'))
         self.assertEqual(calls[-1], ('copy', f'{v.REMOTE_BASE}/_control'))
+
+    def test_csv_repair_does_not_upload_or_remove_existing_local_tiff(self):
+        day = self.root / 'Day/old.tif';day.parent.mkdir()
+        day.write_bytes(b'existing TIFF is untouched')
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True), patch.object(v, '_rclone', return_value=True) as upload:
+            self.assertTrue(v.rclone_sync_once(final=True))
+        self.assertTrue(day.exists())
+        self.assertFalse(any(c.args[0][0] == 'move' for c in upload.call_args_list))
 
 
 class Node:
@@ -344,6 +374,17 @@ class QueryTests(unittest.TestCase):
         frame=self.night_frame({'area_ha':10,'months':[{'n':0}]*12})
         self.assertTrue(frame.DATA_STATUS.eq('no_data').all())
         self.assertTrue(frame.TNL.isna().all())
+
+    def test_night_csv_repair_monthly_queries_preserve_rolling_and_growth(self):
+        data = self.night_data(missing=5)
+        expected = self.night_frame(data)
+        calls = []
+        monthly = [{'area_ha': data['area_ha'], 'months': [mo]} for mo in data['months']]
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True), \
+             patch.object(v, 'ee', fake_ee(calls)), patch.object(v, 'ee_getinfo', side_effect=monthly) as query:
+            actual = v.task3_all_months(Node(calls), ROW)
+        self.assertEqual(query.call_count, 12)
+        pd.testing.assert_frame_equal(actual, expected)
 
 
 def tif_bytes(array,transform,nodata=np.nan,crs='EPSG:4326'):
@@ -442,6 +483,36 @@ class ProcessTests(LocalCase):
         self.assertTrue(all(level=='PASS' for _,level,_ in checks),checks)
         v.process_district(ROW,state)
         self.assertEqual(len(self.downloads),24)
+
+    def test_csv_only_repairs_day_and_preserves_complete_night_without_tiffs(self):
+        previous = complete_state()
+        previous.update(t1='missing', t2={}, t3img={}, status='partial')
+        previous['t1_by_month']['2024-07'] = 'no_data'
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True), patch.object(v, 'ee_getinfo', return_value=1):
+            state = v.process_district(ROW, previous)
+            self.assertTrue(v.csv_complete(state))
+            self.assertFalse(v.district_complete(state))
+        v.task1_all_months.assert_called_once();v.task3_all_months.assert_not_called()
+        v.fetch_plan.assert_not_called();v._download_month.assert_not_called()
+        self.assertEqual(state['t2'], {});self.assertEqual(state['t3img'], {})
+        v.build_national_csv()
+        self.assertEqual(len(pd.read_csv(self.root/'CSV/day_indices.csv')), 12)
+
+    def test_csv_only_repairs_night_and_preserves_day(self):
+        previous = complete_state()
+        previous.update(t3csv='fail', t3csv_by_month={}, status='partial')
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True), patch.object(v, 'ee_getinfo', return_value=1):
+            state = v.process_district(ROW, previous)
+            self.assertTrue(v.csv_complete(state))
+        v.task3_all_months.assert_called_once();v.task1_all_months.assert_not_called()
+        v.fetch_plan.assert_not_called();v._download_month.assert_not_called()
+        self.assertEqual(state['t2'], previous['t2'])
+
+    def test_csv_only_preflight_does_not_download_sample_images(self):
+        with patch.multiple(v, MODE='full', CSV_REPAIR_ONLY=True), \
+             patch.object(v, 'ee_getinfo', return_value=1), patch.object(v, 'fetch_geotiff_bytes') as download:
+            self.assertIn('CSV', v._probe_ee(ROW))
+        v.fetch_plan.assert_not_called();download.assert_not_called()
 
     def test_resume_redownloads_only_missing_january_file(self):
         state=v.process_district(ROW,None);v.write_status(state)
@@ -800,6 +871,29 @@ class MainTests(LocalCase):
         state=complete_state();state['t2']['2025-01']='no_data';state.update(status='partial',attempts=3)
         self.states={ROW['GID_2']:state,URBAN['GID_2']:complete_state(URBAN['GID_2'])}
         self.assertEqual(v.main(),1);v.run_round.assert_not_called()
+
+    def test_csv_repair_returns_success_for_valid_csv_without_claiming_tiffs_complete(self):
+        state = complete_state()
+        state.update(t2={}, t3img={}, status='partial')
+        self.states = {ROW['GID_2']: state}
+        with patch.multiple(v, CSV_REPAIR_ONLY=True, START_GID='55.8', REPAIR_GIDS=ROW['GID_2']):
+            self.assertEqual(v.main(), 0)
+        v.run_round.assert_not_called()
+        report = pd.read_csv(self.root/'_control/progress_csv_repair.csv')
+        self.assertEqual(list(report.GID_2), [ROW['GID_2']])
+        self.assertTrue(report.iloc[0].csv_complete)
+        self.assertEqual(report.iloc[0].status, 'partial')
+
+    def test_csv_repair_missing_data_at_retry_limit_is_failure(self):
+        state = complete_state()
+        state.update(t1='missing', status='partial', attempts=v.MAX_ATTEMPTS)
+        state['t1_by_month']['2024-07'] = 'no_data'
+        with patch.multiple(v, CSV_REPAIR_ONLY=True, REPAIR_GIDS=ROW['GID_2']), patch.object(v, 'run_round') as run:
+            def exhausted(jobs, statuses, rest_policy=None):
+                self.states = {ROW['GID_2']: state}
+                return 'ok'
+            run.side_effect = exhausted
+            self.assertEqual(v.main(), 1)
 
     def test_final_upload_failure_is_not_reported_as_success(self):
         self.states={r['GID_2']:complete_state(r['GID_2']) for r in [ROW,URBAN]}
