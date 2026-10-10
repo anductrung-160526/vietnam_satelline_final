@@ -51,6 +51,7 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
+                           START_GID='', REPAIR_GIDS='',
                            STOP_EVENT=threading.Event(), STOP_REASON=[None], REST_SEC=0, ALLOW_FULL_RESTART=False,
                            RESUME_DIAGNOSTICS={}, RESTORE_INT16_MARKER=False, DAY_IMAGE_SCALE=20,
                            REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
@@ -179,6 +180,94 @@ class StartDistrictTests(LocalCase):
         states = {'VNM.55.8_1': complete_state('VNM.55.8_1')}
         jobs = v.next_round_jobs(list(targets.GID_2), rows, states)
         self.assertEqual([gid for gid, _, _ in jobs], ['VNM.55.10_1', 'VNM.56.1_1'])
+
+
+    def test_explicit_repairs_run_after_tail_without_duplicates(self):
+        with patch.multiple(v, MODE='full', START_GID='55.8', REPAIR_GIDS='55.7,55.6;55.8,55.7,'):
+            targets = v.load_targets(self.range_admin())
+        self.assertEqual(list(targets.GID_2), ['VNM.55.8_1', 'VNM.55.10_1', 'VNM.56.1_1',
+                                             'VNM.55.7_1', 'VNM.55.6_1'])
+
+    def test_invalid_repair_fails_instead_of_ignoring_district(self):
+        with patch.multiple(v, MODE='full', START_GID='55.8', REPAIR_GIDS='55.9'):
+            with self.assertRaises(ValueError):
+                v.load_targets(self.range_admin())
+        with patch.multiple(v, MODE='full', START_GID='55.8', REPAIR_GIDS='none'):
+            self.assertEqual(len(v.load_targets(self.range_admin())), 3)
+
+    def test_exhausted_explicit_repair_reopens_once_and_preserves_month_evidence(self):
+        state = complete_state(ROW['GID_2'])
+        state['attempts'] = v.MAX_ATTEMPTS
+        state['status'] = 'partial'
+        state['t1_by_month']['2024-07'] = 'no_data'
+        states = {ROW['GID_2']: state, URBAN['GID_2']: {**state, 'gid_2': URBAN['GID_2']}}
+        with patch.multiple(v, MODE='full', REPAIR_GIDS=ROW['GID_2']):
+            v.reopen_requested_repairs(states)
+            self.assertEqual(states[ROW['GID_2']]['attempts'], 0)
+            self.assertEqual(states[ROW['GID_2']]['t2'], state['t2'])
+            self.assertEqual(states[ROW['GID_2']]['t1_by_month']['2024-07'], 'no_data')
+            self.assertEqual(states[URBAN['GID_2']]['attempts'], v.MAX_ATTEMPTS)
+            v.reopen_requested_repairs(states)
+        self.assertEqual(len(Path(v.STATUS_FILE).read_text().splitlines()), 1)
+
+    def test_completed_or_missing_asset_repair_is_not_reopened(self):
+        for state in [complete_state(), {**complete_state(), 'status': 'not_in_asset',
+                                        't2': {}, 'attempts': v.MAX_ATTEMPTS}]:
+            with self.subTest(status=state['status']), patch.multiple(v, MODE='full', REPAIR_GIDS=ROW['GID_2']):
+                with patch.object(v, 'write_status') as save:
+                    v.reopen_requested_repairs({ROW['GID_2']: state})
+                    save.assert_not_called()
+
+
+class StableUploadTests(LocalCase):
+    def test_live_status_parts_and_log_append_do_not_change_upload_source(self):
+        v.write_status(complete_state())
+        v.append_parts('day', [{'GID_2': ROW['GID_2'], 'YEAR': 2024, 'MONTH': 7}])
+        log_path = self.root / '_control/logs/run.log'
+        log_path.parent.mkdir()
+        log_path.write_text('before\n', encoding='utf-8')
+        (self.root / '_control/incomplete.part').write_text('not ready', encoding='utf-8')
+        snapshots = []
+        def upload(args, **kwargs):
+            src = Path(args[1]);snapshots.append(src)
+            self.assertNotEqual(src, self.root / '_control')
+            original = (src / 'status/status_test.jsonl').read_text()
+            parts = (src / 'parts/day_test.jsonl').read_text()
+            self.assertFalse((src / 'incomplete.part').exists())
+            v.write_status({'gid_2': 'VNM.55.8_1', 'status': 'partial'})
+            v.append_parts('day', [{'GID_2': 'VNM.55.8_1', 'YEAR': 2024, 'MONTH': 8}])
+            with log_path.open('a', encoding='utf-8') as f: f.write('after\n')
+            self.assertEqual((src / 'status/status_test.jsonl').read_text(), original)
+            self.assertEqual((src / 'parts/day_test.jsonl').read_text(), parts)
+            self.assertEqual((src / 'logs/run.log').read_text(), 'before\n')
+            return True
+        with patch.object(v, '_rclone', side_effect=upload):
+            self.assertTrue(v._copy_stable_directory(v.D_CONTROL))
+        self.assertFalse(snapshots[0].exists())
+        self.assertEqual(len(Path(v.STATUS_FILE).read_text().splitlines()), 2)
+        self.assertEqual(log_path.read_text(), 'before\nafter\n')
+
+    def test_failed_upload_keeps_original_checkpoint(self):
+        v.write_status(complete_state())
+        before = Path(v.STATUS_FILE).read_text()
+        with patch.object(v, '_rclone', return_value=False):
+            self.assertFalse(v._copy_stable_directory(v.D_CONTROL))
+        self.assertEqual(Path(v.STATUS_FILE).read_text(), before)
+
+    def test_checkpoint_upload_precedes_tiffs_and_marker_upload_follows(self):
+        day = self.root / 'Day/day.tif';day.parent.mkdir()
+        v.write_day_int16(day, np.full((10,2,2),0.2,'float32'), from_origin(105,22,0.001,0.001),
+                          'EPSG:4326', np.nan, v.DAY_BANDS_ALL)
+        v.write_status(complete_state())
+        calls = []
+        def upload(args, **kwargs):
+            calls.append((args[0],args[2]))
+            return True
+        with patch.object(v, '_rclone', side_effect=upload):
+            self.assertTrue(v.rclone_sync_once(final=True))
+        self.assertEqual(calls[0], ('copy', f'{v.REMOTE_BASE}/_control'))
+        self.assertEqual(calls[1], ('move', f'{v.REMOTE_BASE}/Day'))
+        self.assertEqual(calls[-1], ('copy', f'{v.REMOTE_BASE}/_control'))
 
 
 class Node:

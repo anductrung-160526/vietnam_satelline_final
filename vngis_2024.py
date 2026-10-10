@@ -82,6 +82,7 @@ if MODE not in ("pilot", "full"):
     raise SystemExit(f"VNGIS_MODE phải là 'pilot' hoặc 'full', đang là '{MODE}'")
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 START_GID = _env("VNGIS_START_GID", "")                         # full: mã huyện bắt đầu, bao gồm mã này
+REPAIR_GIDS = _env("VNGIS_REPAIR_GIDS", "")                     # full: mã cần sửa riêng, xử lý sau phần đuôi
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
 
@@ -733,7 +734,8 @@ def _http_get(url, timeout=600):
 
 def _classify(msg):
     low = msg.lower()
-    if re.search(r"\b429\b", low) or "too many requests" in low or "concurrency limit" in low:
+    if (re.search(r"\b429\b", low) or "too many requests" in low or "concurrency limit" in low
+            or "too many concurrent aggregations" in low):
         return "rate_limit"
     if any(k in low for k in _TOO_LARGE_ERR):
         return "too_large"
@@ -1667,6 +1669,25 @@ def _rclone(args, timeout=6 * 3600, quiet=False, missing_ok=False):
 _sync_lock = threading.Lock()
 
 
+def _copy_stable_directory(rel):
+    """Upload bản sao đã đóng, không đọc file JSONL/log còn được pipeline ghi thêm."""
+    src = L(rel)
+    if not os.path.isdir(src):
+        return True
+    with tempfile.TemporaryDirectory(prefix="vngis_upload_") as snapshot:
+        # Không giữ khóa khi upload: worker chỉ chờ thời gian copy file nhỏ trên máy.
+        with _status_lock, _parts_lock:
+            for root, _, files in os.walk(src):
+                for name in files:
+                    if name.endswith(".part"):
+                        continue
+                    source = os.path.join(root, name)
+                    target = os.path.join(snapshot, os.path.relpath(source, src))
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    shutil.copyfile(source, target)
+        return _rclone(["copy", snapshot, f"{REMOTE_BASE}/{rel}", *RCLONE_COMMON])
+
+
 def rclone_sync_once(final=False):
     """TIF: move (rclone chỉ xóa bản trên máy sau khi đã kiểm tra kích thước/hash bản trên Drive).
     CSV, trạng thái, log: copy."""
@@ -1683,6 +1704,10 @@ def rclone_sync_once(final=False):
             if not isinstance(saved, list) or not all(isinstance(p, str) for p in saved):
                 raise RuntimeError("Marker Int16 không hợp lệ; không ghi đè trạng thái đã lưu.")
             REMOTE_INT16_TIFS.update(saved)
+        # Bàn giao checkpoint nhỏ trước hàng nghìn TIFF. Trạng thái done trên máy vẫn
+        # phải được reconcile với ảnh/CSV thực có khi resume; không coi là đã upload.
+        if not _copy_stable_directory(D_CONTROL):
+            log.warning("Checkpoint chưa đồng bộ trước ảnh; sẽ thử lại sau khi upload ảnh.")
         # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
         # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
         cutoff = None if final else time.time() - 120
@@ -1718,9 +1743,7 @@ def rclone_sync_once(final=False):
                 json.dump(sorted(REMOTE_INT16_TIFS), f)
             os.replace(marker + ".part", marker)
         for d in (D_CSV, D_CONTROL):
-            src = L(d)
-            if os.path.isdir(src):
-                success = _rclone(["copy", src, f"{REMOTE_BASE}/{d}", "--filter", "- *.part", *RCLONE_COMMON]) and success
+            success = _copy_stable_directory(d) and success
     return success
 
 
@@ -1878,11 +1901,18 @@ def normalize_start_gid(value):
     return value
 
 
+def repair_gid_list():
+    if not REPAIR_GIDS.strip() or REPAIR_GIDS.strip().lower() == "none":
+        return []
+    return list(dict.fromkeys(normalize_start_gid(gid) for gid in re.split(r"[,;\s]+", REPAIR_GIDS.strip()) if gid))
+
+
 def load_targets(admin):
     """Full lấy GADM cấp 2 từ mã bắt đầu (bao gồm); pilot chọn xen kẽ huyện/đô thị."""
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_2"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
+        all_df = df
         start = normalize_start_gid(START_GID)
         if start:
             positions = df.index[df["GID_2"] == start].tolist()
@@ -1894,6 +1924,18 @@ def load_targets(admin):
             log.info(f"[range] Bắt đầu từ {start} ({df.iloc[0]['NAME_2']}, {df.iloc[0]['NAME_1']}); "
                      f"đến {df.iloc[-1]['GID_2']}; {len(df)} huyện trong phạm vi. "
                      f"Bỏ qua {skipped} huyện trước mã này, không xác nhận chúng đã upload đủ.")
+        extras = []
+        selected = set(df["GID_2"])
+        for gid in repair_gid_list():
+            matches = all_df.index[all_df["GID_2"] == gid].tolist()
+            if len(matches) != 1:
+                raise ValueError(f"Mã cần sửa {gid} phải khớp đúng một huyện trong GADM cấp 2")
+            if gid not in selected:
+                extras.append(matches[0])
+        if extras:
+            df = pd.concat([df, all_df.loc[extras]], ignore_index=True)
+            log.info(f"[repair] Thêm {len(extras)} huyện vào cuối phạm vi: "
+                     + ", ".join(all_df.loc[extras, "GID_2"]) + "; ưu tiên xử lý phần đuôi trước.")
         return df
     kinds = df["TYPE_2"].str.strip().str.lower()
     pools = [list(df.index[kinds == "huyện"]), list(df.index[kinds != "huyện"])]
@@ -2006,6 +2048,21 @@ def preflight(row):
 def progress_filename():
     start = normalize_start_gid(START_GID) if MODE == "full" else ""
     return f"progress_from_{start}.csv" if start else "progress.csv"
+
+
+def reopen_requested_repairs(statuses):
+    """Một lần ở đầu lượt: cho mã sửa được chỉ định một ngân sách retry mới, giữ dữ liệu hợp lệ."""
+    if MODE != "full":
+        return
+    for gid in repair_gid_list():
+        st = statuses.get(gid)
+        if (not current_status(st) or district_complete(st) or st.get("status") == "not_in_asset"
+                or int(st.get("attempts", 0)) < MAX_ATTEMPTS):
+            continue
+        st = {**st, "attempts": 0, "status": "partial"}
+        statuses[gid] = st
+        write_status(st)
+        log.info(f"[repair] {gid}: mở lại lần thử cho huyện được chỉ định, giữ các tháng còn hợp lệ.")
 
 
 def write_progress(targets, statuses):
@@ -2210,6 +2267,7 @@ def main():
     except RuntimeError as exc:
         log.error("[resume] " + str(exc))
         return 1
+    reopen_requested_repairs(statuses)
     if PREFLIGHT:
         pend = [g for g in gids if not core_finished(statuses.get(g))] or gids
         for attempt in (1, 2, 3):
@@ -2285,8 +2343,9 @@ def main():
         if len(failed):
             log.warning(f"{len(failed)} huyện không đạt sau {MAX_ATTEMPTS} lần, xem _control/{progress_filename()}")
         if MODE == "full" and START_GID:
-            log.info(f"[range] Kết quả chỉ áp dụng từ {normalize_start_gid(START_GID)} trở đi; "
-                     "không xác nhận dữ liệu các huyện trước đó đã đồng bộ đầy đủ.")
+            log.info(f"[range] Kết quả chỉ áp dụng phạm vi từ {normalize_start_gid(START_GID)} "
+                     f"và các mã sửa được chỉ định ({', '.join(repair_gid_list()) or 'không có'}); "
+                     "không xác nhận dữ liệu toàn quốc đã đồng bộ đầy đủ.")
         return code or (1 if len(failed) else 0)
 
     log.info(f"Chưa xong: còn {len(unfinished):,} huyện | {progress['status'].value_counts().to_dict()}")

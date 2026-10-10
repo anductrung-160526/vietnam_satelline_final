@@ -71,6 +71,17 @@ class EarthEngineRequestTests(unittest.TestCase):
         self.assertEqual(v.ee_getinfo(obj), {"ok": True})
         self.assertEqual(waits, [5, 10])
 
+    def test_aggregation_limit_uses_shared_backoff_and_reduces_request_limit(self):
+        waits = self.fake_clock()
+        gate = v.EERequestGate(4)
+        query = SimpleNamespace(getInfo=Mock(side_effect=[
+            v.ee.EEException('Too many concurrent aggregations.'),
+            v.ee.EEException('Too many concurrent aggregations.'), {'ok': True}]))
+        with patch.object(v, 'EE_SEM', gate):
+            self.assertEqual(v.ee_getinfo(query), {'ok': True})
+        self.assertEqual(waits, [5, 10])
+        self.assertEqual(gate.limit, 1)
+
     def test_adaptive_gate_can_run_four_requests_without_exceeding_limit(self):
         gate=v.EERequestGate(4)
         lock=threading.Lock();active=0;peak=0

@@ -48,6 +48,12 @@ on:
         type: string
         default: "VNM.55.8_1"
 
+      repair_gids:
+        description: "Full: mã huyện cần sửa thêm, cách nhau dấu phẩy; none để tắt. Xử lý sau phần đuôi."
+        required: false
+        type: string
+        default: "VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1"
+
       stop_after_province:
         description: "Ô tương thích main; nhánh huyện dùng start_gid, bỏ qua giá trị này"
         required: false
@@ -72,6 +78,7 @@ env:
   VNGIS_END_MONTH: "2025-06"
   # Nhánh hiện được cấu hình chạy tiếp từ Vũ Thư. Variable dùng khi UI lấy inputs từ main.
   VNGIS_START_GID: ${{ inputs.start_gid || vars.VNGIS_DISTRICTS_START_GID || 'VNM.55.8_1' }}
+  VNGIS_REPAIR_GIDS: ${{ inputs.repair_gids || vars.VNGIS_DISTRICTS_REPAIR_GIDS || 'VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1' }}
 
 jobs:
   gate:
@@ -316,6 +323,7 @@ jobs:
           WORKERS_INPUT: ${{ inputs.workers }}
           DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
           START_GID_INPUT: ${{ env.VNGIS_START_GID }}
+          REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
@@ -329,7 +337,8 @@ jobs:
               -f pilot_n="$PILOT_N_INPUT" \
               -f workers="$WORKERS_INPUT" \
               -f day_scale="$DAY_SCALE_INPUT" \
-              -f start_gid="$START_GID_INPUT"
+              -f start_gid="$START_GID_INPUT" \
+              -f repair_gids="$REPAIR_GIDS_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

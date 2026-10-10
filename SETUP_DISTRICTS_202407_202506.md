@@ -4,7 +4,7 @@ Branch: **`vngis-ee-districts-202407-202506`**. Dùng `vngis_2024.py`, `verify_p
 
 | Thành phần | Cấu hình |
 |---|---|
-| Phạm vi | Toàn quốc: **710 đơn vị cấp huyện, 63 tỉnh/thành** |
+| Phạm vi | GADM toàn quốc: **710 đơn vị cấp huyện, 63 tỉnh/thành**; nhánh mặc định chạy tiếp từ `55.8` và sửa thêm 5 mã ở mục 15 |
 | Ranh giới | GADM 4.1 Việt Nam, level 2; geometry huyện, mã `GID_2` |
 | Tháng | 2024-07 đến 2025-06, **12 tháng**, bao gồm hai đầu |
 | Project EE mặc định | `vngis-ee-2`, tái sử dụng project hiện có |
@@ -303,8 +303,33 @@ Nhánh hiện mặc định full bắt đầu từ **`VNM.55.8_1`**, bao gồm h
 1. **Run workflow** mới trên branch `vngis-ee-districts-202407-202506`, chọn **`mode=full`, `day_scale=50`**, giữ workers phù hợp với quota.
 2. Ô **`start_gid`** nhập `VNM.55.8_1` hoặc `55.8`. Nếu giao diện lấy inputs từ main và chưa có ô này, mặc định nhánh đã là `VNM.55.8_1`; không cần tạo variable. Variable tùy chọn `VNGIS_DISTRICTS_START_GID` dùng khi input trống/không có. Thứ tự ưu tiên: input → variable → mặc định nhánh.
 3. Log phải có `[range] Bắt đầu từ VNM.55.8_1 (Vũ Thư, Thái Bình)` cùng số huyện trong phạm vi. Mã không tồn tại sẽ báo lỗi, không tự chọn huyện khác. Các huyện trong phạm vi có dữ liệu/checkpoint hợp lệ vẫn được bỏ qua; tháng thiếu được xử lý như cơ chế resume hiện tại.
-4. Báo cáo lưu ở **`_control/progress_from_VNM.55.8_1.csv`**, để giữ nguyên `progress.csv` cũ. Khi tự nối lượt, workflow giữ nguyên `start_gid`. CSV gộp vẫn lấy mọi parts hợp lệ đã có, nhưng lượt này chỉ bảo đảm dữ liệu trong phạm vi đã chọn, không bảo đảm đủ toàn quốc.
+4. Báo cáo lưu ở **`_control/progress_from_VNM.55.8_1.csv`**, để giữ nguyên `progress.csv` cũ. Khi tự nối lượt, workflow giữ nguyên `start_gid` và `repair_gids`. CSV gộp vẫn lấy mọi parts hợp lệ đã có, nhưng lượt này chỉ bảo đảm dữ liệu trong phạm vi đã chọn, không bảo đảm đủ toàn quốc. Mặc định mới thêm 5 mã cần sửa ở mục 15 vào cuối phạm vi: tổng **95 huyện được xét**, huyện đủ dữ liệu bền vững vẫn được bỏ qua.
 
 Muốn kiểm tra/bổ sung lại toàn quốc, nhập **`start_gid=VNM.1.1_1`** (mã đầu GADM). Huyện có dữ liệu bền vững hợp lệ sẽ không bị tải lại. Với Python trực tiếp, dùng `VNGIS_START_GID=VNM.55.8_1`; mặc định Python để trống để xét toàn quốc. Pilot bỏ qua tham số này.
 
 Giới hạn `concurrency` giữ nguyên: lượt mới vẫn chờ lượt cũ kết thúc, kể cả khi lượt cũ đang upload. Tùy chọn bắt đầu từ mã huyện không cho phép hai workflow chạy đồng thời. Cập nhật code không thay đổi lượt đang chạy, và Cancel có thể làm mất file chưa đồng bộ. Nếu bỏ qua các mã trước `55.8`, cần kiểm tra riêng phần đó sau khi upload hoàn tất, tránh bỏ sót huyện từng partial hoặc file mất.
+
+## 15. Quyết định từ log người dùng cung cấp ngày 10/10/2026
+
+File `run_20261010_0233_38017392268.log` có 11.595 dòng. Dòng 1–291 thuộc khoảng `2026-10-10 02:33–02:37`; dòng 292 chuyển về `2026-10-09 19:26` và phần cuối tới `23:11`. Vì vậy không dùng tên file hoặc bộ đếm để suy ra một danh sách đầy đủ của một lượt duy nhất. File có **437 mã với dòng `full -> done`** (10 mã ở đoạn 10/10, 427 mã ở đoạn 09/10), **5 mã partial**, cùng dòng bộ đếm 610 done. Không có thông báo đồng bộ cuối thành công. 437 dòng done này không phải danh sách đầy đủ của 610, và không chứng minh ảnh đã nằm trên Drive.
+
+Quyết định: ưu tiên **90 huyện từ VNM.55.8_1 đến cuối**; sau đó kiểm tra/sửa thêm **5 mã partial tìm thấy trong log**, tránh bỏ sót chúng khi cắt phần đầu:
+
+| Mã GADM | Đơn vị / tỉnh theo GADM 4.1 | Phần còn lỗi trong log |
+|---|---|---|
+| `VNM.23.5_1` | Đồ Sơn / Hải Phòng | CSV ngày 2024-07 |
+| `VNM.23.11_1` | Lê Chân / Hải Phòng | CSV ngày 2024-07 |
+| `VNM.33.11_1` | Phú Quốc / Kiên Giang | CSV đêm: Too many concurrent aggregations |
+| `VNM.46.2_1` | Ba Đồn / Quảng Bình | CSV ngày 2025-02 |
+| `VNM.48.4_1` | Lý Sơn / Quảng Ngãi | CSV ngày 2024-12 |
+
+Workflow mặc định **`repair_gids=VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1`**. `repair_gids=none` tắt phần bổ sung. Nếu giao diện chưa có input, mặc định nhánh vẫn thêm 5 mã; variable tùy chọn `VNGIS_DISTRICTS_REPAIR_GIDS` áp dụng khi input không có/trống. Python trực tiếp dùng `VNGIS_REPAIR_GIDS` (mặc định trống). Pilot bỏ qua cả hai tham số phạm vi.
+
+Các mã sửa được chỉ định mà đã hết ngân sách retry sẽ được mở lại **một lần ở đầu lượt**, giữ mọi tháng có bằng chứng hợp lệ; huyện đã đủ dữ liệu hoặc không có trong asset không tự mở lại. Nếu vẫn không có pixel cho đúng tháng, CSV tiếp tục báo no_data/partial, không thay bằng tháng khác hay giá trị 0.
+
+Hai lỗi được sửa theo bằng chứng log:
+
+- `source file is being updated (size changed ...)`: trước khi upload CSV/trạng thái/log, tạo bản sao đã đóng trong thư mục tạm rồi để rclone đọc bản này. Khóa ghi status/parts chỉ giữ lúc copy cục bộ; worker vẫn làm việc trong thời gian upload. File `.part` không được copy. Checkpoint nhỏ được upload trước TIFF, rồi upload lại sau TIFF để cập nhật marker; resume vẫn kiểm tra file/parts thực có, không coi checkpoint done là bằng chứng upload ảnh.
+- `Too many concurrent aggregations`: nhận diện như lỗi hạn mức, dùng cooldown/backoff chung và tự giảm số yêu cầu đồng thời như HTTP 429. Đây là giới hạn Earth Engine, không phải lỗi dung lượng Drive; giảm yêu cầu không tạo thêm quota và chưa chứng minh một query gộp nhiều phép tính luôn thành công.
+
+Sau lượt này và sau khi upload cũ kết thúc, chạy **`start_gid=VNM.1.1_1`** để đối soát toàn quốc từ Drive. Chỉ file/CSV thật sự còn thiếu sẽ được xử lý, huyện có bằng chứng hợp lệ không bị tải lại. Không thể xác nhận toàn bộ 710 chỉ từ file log hiện có; không dùng danh sách done trích từ log để ghi đè checkpoint trên Drive.
