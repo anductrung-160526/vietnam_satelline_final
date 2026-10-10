@@ -400,3 +400,20 @@ rclone size "gdrive:VNGISDash_202407_202506_Districts_50m/Night" --include "*.ti
 ```
 
 Nếu số file không tăng và lượt upload đã kết thúc/lỗi, chờ không tự khôi phục file chưa upload của runner đã bị hủy. Khi đó dùng báo cáo tháng thiếu để chọn bước tải bù; không gán done theo log cũ.
+
+## 18. Phục hồi phần chưa lưu trên Drive, ưu tiên tỉnh 34–54
+
+Đối chiếu file người dùng gửi: [reports/DRIVE_RECOVERY_20261010.md](reports/DRIVE_RECOVERY_20261010.md). Log có đủ ảnh 238 huyện nhóm 34–54 nhưng CSV gửi lại thiếu toàn bộ nhóm này; không dùng progress cũ để đánh dấu ảnh đã upload.
+
+Run workflow mới trên branch huyện, chọn **`mode=full`, `scope=recover_drive`, `day_scale=50`**. Nếu UI main chưa có scope, nhập **`RECOVER_DRIVE`** vào `stop_after_province`. Nhánh tự chọn full cho phục hồi. Bỏ qua start_gid và danh sách 5 huyện cũ: phục hồi đối chiếu cả 710 huyện, ưu tiên 238 huyện tỉnh 34–54 rồi phần còn lại.
+
+File `.github/recovery/drive-recovery-request.txt` cũng kích hoạt lượt phục hồi khi được thay đổi và push vào đúng branch. Các push không thay đổi file này không tự chạy. Yêu cầu STOP vẫn được giữ; nếu đang có STOP, workflow sẽ báo skipped. Lượt phục hồi chờ lượt xử lý/upload cùng nhánh nếu lượt đó còn chạy; không Cancel để ép chạy song song và làm mất file cục bộ.
+
+- Chỉ nhận CSV thực đọc từ Drive khi manifest/schema/metadata/tháng khớp; import các dòng hợp lệ còn thiếu vào parts, không ghi đè parts đã có. Dòng no_data hoặc trùng khóa không được nhận là hoàn tất.
+- Đọc inventory TIFF dung lượng >0; thiếu file thì mở lại tháng cần xử lý. TIFF ngày đã có marker Int16 cùng đường dẫn được giữ; ảnh có file nhưng thiếu bằng chứng định dạng/checkpoint được đọc lại và kiểm tra trước khi dùng. Lỗi API/quota/quyền đọc không bị biến thành lý do tải lại.
+- Nếu còn TIFF trên chính máy chạy phục hồi, đồng bộ ngay trước khi tính lại. Runner GitHub mới không lấy được file chưa upload từ runner cũ đã bị hủy; cần tải bù từ EE.
+- CSV hợp lệ có trong parts được dùng ngay cả khi checkpoint status bị thiếu hoặc pending. Các huyện hết ngân sách thử nhưng còn thiếu dữ liệu được mở lại một ngân sách ở đầu lượt phục hồi; no_data thật vẫn có thể thất bại sau ngân sách này.
+- Lượt phục hồi tự kích hoạt qua push dùng **2 huyện song song**, **2 yêu cầu EE đồng thời**, giữ backoff và nghỉ chủ động. Khi Run workflow thủ công, ô workers quyết định số huyện song song. CSV đêm tính từng tháng. CSV tổng hợp được dựng và upload trước đợt TIFF dài, rồi cập nhật lại sau ảnh, không chờ hết lượt.
+- Đọc `_control/progress_recovery.csv` và log `[recovery]`, `[upload]`. Sau lượt có artifact `drive-recovery-audit-<run_id>` kiểm kê file thực có trên Drive. Chưa kiểm kê đủ 8.520 TIFF mỗi loại và CSV đủ 12 tháng/710 huyện thì chưa xác nhận hoàn tất toàn quốc.
+
+Python trực tiếp: `VNGIS_MODE=full`, `VNGIS_RECOVER_DRIVE=true`, `VNGIS_DAY_IMAGE_SCALE=50`, cùng thư mục Drive 50 m, EE project/credentials hiện có. Cờ phục hồi ưu tiên hơn cờ sửa riêng CSV; không cần `VNGIS_ALLOW_FULL_RESTART=true` và không dùng log để tạo checkpoint done giả.

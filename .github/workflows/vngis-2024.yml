@@ -14,6 +14,11 @@ name: VNGISDash huyện 07/2024–06/2025
 # Sau khi cập nhật mã, dùng Run workflow để chạy lượt mới.
 
 on:
+  push:
+    branches:
+      - vngis-ee-districts-202407-202506
+    paths:
+      - .github/recovery/drive-recovery-request.txt
   workflow_dispatch:
     inputs:
       mode:
@@ -31,6 +36,7 @@ on:
           - repair_csv
           - range
           - audit_drive
+          - recover_drive
         default: repair_csv
 
       pilot_n:
@@ -64,7 +70,7 @@ on:
         default: "VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1"
 
       stop_after_province:
-        description: "Tương thích UI main: nhập AUDIT_DRIVE để kiểm kê Drive; giá trị tỉnh bị bỏ qua."
+        description: "UI main: AUDIT_DRIVE để kiểm kê; RECOVER_DRIVE để tải bù toàn quốc, ưu tiên tỉnh 34–54."
         required: false
         type: string
         default: ""
@@ -74,15 +80,16 @@ permissions:
   contents: read
 
 env:
-  VNGIS_MODE: ${{ inputs.mode }}
+  VNGIS_MODE: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'full' || inputs.mode }}
   VNGIS_PILOT_N: ${{ inputs.pilot_n }}
   VNGIS_DAY_IMAGE_SCALE: ${{ inputs.day_scale || '50' }}
-  VNGIS_DRIVE_FOLDER: ${{ (inputs.day_scale || '50') == '50' && (inputs.mode == 'full' && 'VNGISDash_202407_202506_Districts_50m' || 'VNGISDash_202407_202506_Districts_50m_PILOT') || (inputs.mode == 'full' && 'VNGISDash_202407_202506_Districts' || 'VNGISDash_202407_202506_Districts_PILOT') }}
+  VNGIS_DRIVE_FOLDER: ${{ (inputs.day_scale || '50') == '50' && ((github.event_name == 'push' || inputs.mode == 'full' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'VNGISDash_202407_202506_Districts_50m' || 'VNGISDash_202407_202506_Districts_50m_PILOT') || ((inputs.mode == 'full' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'VNGISDash_202407_202506_Districts' || 'VNGISDash_202407_202506_Districts_PILOT') }}
   VNGIS_RCLONE_REMOTE: gdrive
   VNGIS_START_MONTH: "2024-07"
   VNGIS_END_MONTH: "2025-06"
   # Nhánh hiện mặc định chỉ sửa CSV của 5 huyện. UI cũ không có scope vẫn dùng mặc định này.
   VNGIS_CSV_REPAIR_ONLY: ${{ (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && 'true' || 'false' }}
+  VNGIS_RECOVER_DRIVE: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && 'true' || 'false' }}
   VNGIS_START_GID: ${{ inputs.start_gid || vars.VNGIS_DISTRICTS_START_GID || 'VNM.55.8_1' }}
   VNGIS_REPAIR_GIDS: ${{ inputs.repair_gids || vars.VNGIS_DISTRICTS_REPAIR_GIDS || 'VNM.23.5_1,VNM.23.11_1,VNM.33.11_1,VNM.46.2_1,VNM.48.4_1' }}
 
@@ -181,7 +188,7 @@ jobs:
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
       # Sửa CSV giữ 1 yêu cầu để giảm lỗi aggregation; phạm vi range dùng variable hoặc 4.
-      VNGIS_EE_CONCURRENCY: ${{ (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && inputs.mode == 'full' && '1' || vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
+      VNGIS_EE_CONCURRENCY: ${{ (github.event_name == 'push' || inputs.scope == 'recover_drive' || inputs.stop_after_province == 'RECOVER_DRIVE') && '2' || (inputs.scope || vars.VNGIS_DISTRICTS_SCOPE || 'repair_csv') == 'repair_csv' && inputs.mode == 'full' && '1' || vars.VNGIS_DISTRICTS_EE_CONCURRENCY || '4' }}
       VNGIS_MONTH_THREADS: "2"
       VNGIS_EE_MAX_RETRIES: "8"
 
@@ -379,17 +386,32 @@ jobs:
                       )
           PY
 
+      - name: Kiểm kê Drive sau lượt phục hồi
+        if: always() && env.VNGIS_RECOVER_DRIVE == 'true' && steps.pipeline.outputs.code != ''
+        continue-on-error: true
+        run: |
+          python -u audit_drive.py --output "$RUNNER_TEMP/drive-recovery-audit"
+          cat "$RUNNER_TEMP/drive-recovery-audit/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lưu báo cáo phục hồi
+        if: always() && env.VNGIS_RECOVER_DRIVE == 'true' && steps.pipeline.outputs.code != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-recovery-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/drive-recovery-audit
+          if-no-files-found: warn
+
       - name: Nối lượt kế tiếp
         if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
         env:
           GH_TOKEN: ${{ github.token }}
-          MODE_INPUT: ${{ inputs.mode }}
+          MODE_INPUT: ${{ env.VNGIS_MODE }}
           PILOT_N_INPUT: ${{ inputs.pilot_n }}
           WORKERS_INPUT: ${{ inputs.workers }}
           DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
           START_GID_INPUT: ${{ env.VNGIS_START_GID }}
           REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
-          SCOPE_INPUT: ${{ env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
+          SCOPE_INPUT: ${{ env.VNGIS_RECOVER_DRIVE == 'true' && 'recover_drive' || env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \

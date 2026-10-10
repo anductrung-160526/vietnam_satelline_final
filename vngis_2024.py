@@ -85,6 +85,9 @@ PILOT_N = _env("VNGIS_PILOT_N", 2, int)
 START_GID = _env("VNGIS_START_GID", "")                         # full: mã huyện bắt đầu, bao gồm mã này
 REPAIR_GIDS = _env("VNGIS_REPAIR_GIDS", "")                     # mã sửa CSV, hoặc bổ sung sau phần đuôi trong range
 CSV_REPAIR_ONLY = _env("VNGIS_CSV_REPAIR_ONLY", False, bool)    # full: chỉ sửa CSV cho REPAIR_GIDS
+RECOVER_DRIVE = _env("VNGIS_RECOVER_DRIVE", False, bool)      # đối soát toàn quốc, ưu tiên tỉnh 34–54
+if RECOVER_DRIVE and MODE != "full":
+    raise SystemExit("VNGIS_RECOVER_DRIVE yêu cầu VNGIS_MODE=full")
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
 
@@ -565,7 +568,7 @@ def task3_all_months(district_geom, row):
     })
     per_month.append(ee.Algorithms.If(col.size().gt(0), d, ee.Dictionary({"n": 0})))
   area = district_geom.area(maxError=1).divide(10000)
-  if csv_repair_mode():
+  if csv_repair_mode() or RECOVER_DRIVE:
     # Chỉ sửa CSV: tránh gộp 12 x nhiều reduceRegion trong cùng một query.
     # Giữ nguyên phép tính; ghép lại đủ năm trước khi tính rolling/growth ở dưới.
     out = {"months": []}
@@ -1214,6 +1217,34 @@ def reuse_day_tif(ctx, period, path, label):
 
 def _download_month(kind, ctx, period, img, path):
     label = f"[{ctx['gid2']}] {kind} {month_key(period)}"
+    if RECOVER_DRIVE and month_key(period) not in ctx.get(f"recovery_no_data_{kind}", []):
+        if kind == "day" and existing_day_source(ctx, period) is not None:
+            reused = reuse_day_tif(ctx, period, path, label)
+            if reused is not None:
+                return reused
+        if kind == "night":
+            rel = f"{ctx['rel_night_dir']}/{night_name(ctx, period)}"
+            if rel in REMOTE_TIFS:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                temp = path + ".source.part"
+                try:
+                    copied = _rclone(["copyto", f"{REMOTE_BASE}/{rel}", temp],
+                                     timeout=1800, missing_ok=True)
+                    if copied is False:
+                        raise RuntimeError(f"Không đọc được TIFF đêm để kiểm tra: {rel}")
+                    if copied:
+                        ok, empty, note = inspect_tif(temp, 2)
+                        if not ok:
+                            raise RuntimeError(f"TIFF đêm trên Drive không hợp lệ: {note}")
+                        if not empty:
+                            os.replace(temp, path)
+                            log.info(f"{label}: kiểm tra TIFF thực có trên Drive đạt; không tải lại EE")
+                            return 1, False
+                    else:
+                        REMOTE_TIFS.discard(rel)
+                finally:
+                    if os.path.isfile(temp):
+                        os.remove(temp)
     if kind == "day":
         if DAY_FORMAT == "int16" and month_key(period) in ctx.get("convert_day_months", []):
             reused = reuse_day_tif(ctx, period, path, label)
@@ -1252,7 +1283,7 @@ def district_complete(st):
 
 
 def csv_repair_mode():
-    return MODE == "full" and CSV_REPAIR_ONLY
+    return MODE == "full" and CSV_REPAIR_ONLY and not RECOVER_DRIVE
 
 
 def csv_complete(st):
@@ -1303,6 +1334,9 @@ def process_district(row, prev):
     ctx["tile_hints"] = {kind: max([0] + [math.ceil(math.sqrt(n))
         for key, n in (prev.get("tiles_used") or {}).items() if key.startswith(kind + "_")])
         for kind in ("day", "night")}
+    for kind, slot in (("day", "t2"), ("night", "t3img")):
+        ctx[f"recovery_no_data_{kind}"] = [key for key, value in (prev.get(slot) or {}).items()
+                                         if value == "no_data"]
     info = {"gid_2": gid2, "gid_1": ctx["gid1"], "run_id": RUN_ID,
             "period": PERIOD_ID, "profile": OUTPUT_PROFILE, "schema": SCHEMA_ID,
             "attempts": int(prev.get("attempts", 0)),
@@ -1557,9 +1591,13 @@ def check_resume(targets, statuses):
                    "Dừng để tránh tự tải lại toàn bộ. Kiểm tra đúng tài khoản Drive, thư mục 20m/50m/pilot, "
                    "_control/status, _control/parts, int16_uploaded.json và bước đồng bộ cuối của lượt trước. "
                    "Không xóa dữ liệu cũ. Chỉ đặt VNGIS_DISTRICTS_ALLOW_FULL_RESTART=true nếu chủ động muốn chạy lại toàn bộ.")
-        if not ALLOW_FULL_RESTART:
+        if RECOVER_DRIVE:
+            log.warning("[recovery] Checkpoint thiếu bằng chứng: đã yêu cầu đối soát Drive. "
+                        "Giữ CSV/ảnh có bằng chứng, chỉ tính lại phần thiếu hoặc chưa kiểm tra được.")
+        elif not ALLOW_FULL_RESTART:
             raise RuntimeError(message)
-        log.warning("[resume] " + message + " Đã cho phép chạy lại toàn bộ theo cấu hình.")
+        else:
+            log.warning("[resume] " + message + " Đã cho phép chạy lại toàn bộ theo cấu hình.")
 
 
 def migrate_float_status(st):
@@ -1577,6 +1615,7 @@ def migrate_float_status(st):
 REMOTE_TIFS = set()
 REMOTE_INT16_TIFS = set()
 RESTORE_INT16_MARKER = False
+REMOTE_MANIFEST_MATCHED = False
 
 
 def reconcile_status(st, part_keys=None):
@@ -1756,6 +1795,10 @@ def rclone_sync_once(final=False):
     CSV, trạng thái, log: copy."""
     if not os.path.isdir(LOCAL_ROOT):
         return True
+    if RECOVER_DRIVE:
+        # Giữ CSV tổng hợp cập nhật trong lúc phục hồi, không chờ hết 710 huyện.
+        with _parts_lock:
+            build_national_csv()
     success = True
     with _sync_lock:
         # --sync-only chạy trong Python mới: nạp marker bền vững trước khi ghi lại,
@@ -1771,6 +1814,9 @@ def rclone_sync_once(final=False):
         # phải được reconcile với ảnh/CSV thực có khi resume; không coi là đã upload.
         if not _copy_stable_directory(D_CONTROL):
             log.warning("Checkpoint chưa đồng bộ trước ảnh; sẽ thử lại sau khi upload ảnh.")
+        if RECOVER_DRIVE:
+            # CSV nhỏ lên trước đợt TIFF dài; người dùng không phải đợi toàn bộ ảnh.
+            success = _copy_stable_directory(D_CSV) and success
         # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
         # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
         cutoff = None if final else time.time() - 120
@@ -1809,6 +1855,9 @@ def rclone_sync_once(final=False):
             with open(marker + ".part", "w", encoding="utf-8") as f:
                 json.dump(sorted(REMOTE_INT16_TIFS), f)
             os.replace(marker + ".part", marker)
+        if RECOVER_DRIVE:
+            with _parts_lock:
+                build_national_csv()
         for d in (D_CSV, D_CONTROL):
             success = _copy_stable_directory(d) and success
     return success
@@ -1847,7 +1896,7 @@ def drive_stop_exists():
 
 
 def init_storage():
-    global REMOTE_TIFS, REMOTE_INT16_TIFS, RESTORE_INT16_MARKER
+    global REMOTE_TIFS, REMOTE_INT16_TIFS, RESTORE_INT16_MARKER, REMOTE_MANIFEST_MATCHED
     for d in (LOCAL_ROOT, L(D_STATUS), L(D_PARTS), L(D_LOGS), CACHE_DIR):
         os.makedirs(d, exist_ok=True)
     if shutil.which("rclone") is None:
@@ -1858,6 +1907,7 @@ def init_storage():
                 "level": 2, "months": MONTH_KEYS}
     old_manifest = _run_rclone(["cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"], timeout=180)
     matched_manifest = old_manifest.returncode == 0 and json.loads(old_manifest.stdout) == manifest
+    REMOTE_MANIFEST_MATCHED = matched_manifest
     if old_manifest.returncode == 0 and not matched_manifest:
         old = json.loads(old_manifest.stdout)
         if DAY_IMAGE_SCALE != 20 or DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
@@ -1871,10 +1921,23 @@ def init_storage():
         res = _run_rclone(["copy", f"{REMOTE_BASE}/{d}", L(d), "--update"], timeout=3600)
         if res.returncode != 0 and "directory not found" not in res.stderr:
             raise RuntimeError(f"Không kéo được {d} từ Drive: {res.stderr.strip()[-300:]}")
-    listing = _run_rclone(["lsf", REMOTE_BASE, "--recursive", "--files-only", "--include", "*.tif"], timeout=3600)
+    listing = _run_rclone(["lsjson" if RECOVER_DRIVE else "lsf", REMOTE_BASE,
+                          "--recursive", "--files-only", "--include", "*.tif"], timeout=3600)
     if listing.returncode != 0:
         raise RuntimeError("Không kiểm tra được TIFF trên Drive: " + listing.stderr[-200:])
-    REMOTE_TIFS = set(listing.stdout.splitlines())
+    if RECOVER_DRIVE:
+        entries = json.loads(listing.stdout)
+        if not isinstance(entries, list):
+            raise RuntimeError("Inventory TIFF Drive không hợp lệ; không tải lại khi chưa đối chiếu được.")
+        counts = {}
+        for item in entries:
+            counts[item["Path"]] = counts.get(item["Path"], 0) + 1
+        if any(count > 1 for count in counts.values()):
+            raise RuntimeError("Drive có TIFF trùng đường dẫn; cần kiểm kê/xử lý bản trùng trước khi phục hồi.")
+        REMOTE_TIFS = {item["Path"] for item in entries if not item.get("IsDir") and item.get("Size", 0) > 0}
+        log.info(f"[recovery] Kiểm kê {len(REMOTE_TIFS)} TIFF dung lượng >0 trên Drive.")
+    else:
+        REMOTE_TIFS = set(listing.stdout.splitlines())
     log.info(f"[resume] Đã kéo checkpoint từ {REMOTE_BASE}: "
              f"{len(glob.glob(L(D_STATUS, 'status_*.jsonl')))} file trạng thái, "
              f"{len(glob.glob(L(D_PARTS, '*.jsonl')))} file CSV parts, {len(REMOTE_TIFS)} TIFF trên Drive.")
@@ -1979,6 +2042,12 @@ def load_targets(admin):
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_2"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
+        if RECOVER_DRIVE:
+            priority = df["GID_1"].str.extract(r"VNM\.(\d+)_")[0].astype(int).between(34, 54)
+            df = pd.concat([df[priority], df[~priority]], ignore_index=True)
+            log.info(f"[recovery] Đối soát {len(df)} huyện, ưu tiên {int(priority.sum())} huyện tỉnh 34–54; "
+                     "không dùng log/progress cũ làm bằng chứng đã upload.")
+            return df
         if csv_repair_mode():
             gids = repair_gid_list()
             if not gids:
@@ -2130,6 +2199,8 @@ def preflight(row):
 # 12. TIẾN ĐỘ
 # =====================================================================================
 def progress_filename():
+    if RECOVER_DRIVE:
+        return "progress_recovery.csv"
     if csv_repair_mode():
         return "progress_csv_repair.csv"
     start = normalize_start_gid(START_GID) if MODE == "full" else ""
@@ -2149,6 +2220,91 @@ def reopen_requested_repairs(statuses):
         statuses[gid] = st
         write_status(st)
         log.info(f"[repair] {gid}: mở lại lần thử cho huyện được chỉ định, giữ các tháng còn hợp lệ.")
+
+
+def recovery_csv_valid(kind, record):
+    if record.get("DATA_STATUS") != "ok":
+        return False
+    metrics = ([f"{band}_mean" for band in DAY_BANDS_ALL] if kind == "day"
+               else ["TNL", "MEAN_RAD", "LIT_PIXELS", "CLOUD_FREE_OBS"])
+    try:
+        return all(math.isfinite(float(record[column])) for column in metrics)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def import_recovery_csv():
+    """Khôi phục parts từ CSV thực trên Drive, không lấy chỉ số từ log hoặc progress."""
+    if not REMOTE_MANIFEST_MATCHED:
+        raise RuntimeError("Phục hồi yêu cầu manifest Drive khớp kỳ/profile; không tự nhận CSV khác nguồn.")
+    for kind, columns in (("day", DAY_COLUMNS), ("night", NIGHT_COLUMNS)):
+        known = {(r.get("GID_2"), int(r.get("YEAR", 0)), int(r.get("MONTH", 0)))
+                 for r in _read_parts(kind) if part_current(kind, r)}
+        with tempfile.TemporaryDirectory(prefix="vngis_csv_recovery_") as temp:
+            dest = os.path.join(temp, f"{kind}.csv")
+            copied = _rclone(["copyto", f"{REMOTE_BASE}/CSV/{kind}_indices.csv", dest],
+                             timeout=1800, missing_ok=True)
+            if copied is None:
+                log.warning(f"[recovery] CSV {kind} chưa có trên Drive; dùng parts có thật hoặc tính phần thiếu.")
+                continue
+            if not copied:
+                raise RuntimeError(f"Không đọc được CSV {kind} trên Drive; không coi lỗi API là dữ liệu thiếu.")
+            frame = pd.read_csv(dest, keep_default_na=False, dtype={"GID_2": str})
+            if list(frame.columns) != columns:
+                raise RuntimeError(f"CSV {kind} sai schema cấp huyện; không ghi đè dữ liệu.")
+            duplicates = frame.duplicated(["GID_2", "YEAR", "MONTH"], keep=False)
+            records = []
+            for record in frame[~duplicates].to_dict("records"):
+                gid = record["GID_2"]
+                year, month = int(record["YEAR"]), int(record["MONTH"])
+                row = ADMIN_BY_GID.get(gid)
+                if ((year, month) not in PERIODS or (gid, year, month) in known
+                        or row is None or any(str(record[c]) != str(row[c]) for c in ADM_COLS)
+                        or not recovery_csv_valid(kind, record)):
+                    continue
+                records.append({c: _clean(record[c]) if record[c] != "" else None for c in columns})
+            if records:
+                append_parts(kind, records)
+            log.info(f"[recovery] Giữ CSV {kind} trên Drive: bổ sung {len(records)} dòng hợp lệ vào parts; "
+                     "không ghi đè parts đã có, không nhận no_data/tháng trùng.")
+
+
+def restore_recovery_statuses(statuses):
+    """CSV + marker thật khôi phục trạng thái; không gán TIFF còn thiếu thành done."""
+    records = {}
+    for kind in ("day", "night"):
+        latest = {}
+        for record in _read_parts(kind):
+            if part_current(kind, record) and (int(record["YEAR"]), int(record["MONTH"])) in PERIODS:
+                latest[(record["GID_2"], month_key((int(record["YEAR"]), int(record["MONTH"]))))] = record
+        records[kind] = {key for key, record in latest.items() if recovery_csv_valid(kind, record)}
+    for gid, row in ADMIN_BY_GID.items():
+        old = statuses.get(gid)
+        st = dict(old) if current_status(old) else {"gid_2": gid, "gid_1": row["GID_1"],
+             "period": PERIOD_ID, "profile": OUTPUT_PROFILE, "status": "pending", "attempts": 0}
+        if st.get("status") == "not_in_asset":
+            continue
+        for kind, slot, label in (("day", "t1_by_month", "t1"), ("night", "t3csv_by_month", "t3csv")):
+            st[slot] = {key: "ok" if (gid, key) in records[kind] else "pending" for key in MONTH_KEYS}
+            st[label] = "ok" if all(value == "ok" for value in st[slot].values()) else "pending"
+        st["t2"] = dict(st.get("t2") or {})
+        st["t3img"] = dict(st.get("t3img") or {})
+        ctx = build_ctx(row)
+        for period in PERIODS:
+            key = month_key(period)
+            rel = f"{ctx['rel_day_dir']}/{day_name(ctx, period)}"
+            if (DAY_FORMAT == "int16" and rel in REMOTE_TIFS and rel in REMOTE_INT16_TIFS
+                    and st["t2"].get(key) != "no_data"):
+                st["t2"][key] = "ok"
+                st["convert_day_months"] = [m for m in st.get("convert_day_months", []) if m != key]
+        st = reconcile_status(st)
+        if not district_complete(st) and int(st.get("attempts", 0)) >= MAX_ATTEMPTS:
+            st["attempts"] = 0  # Một ngân sách mới duy nhất khi người dùng yêu cầu phục hồi.
+        st["status"] = "done" if district_complete(st) else "partial"
+        statuses[gid] = st
+        write_status(st)
+    log.info(f"[recovery] Sau đối chiếu: {sum(district_complete(s) for s in statuses.values())} huyện "
+             "đủ bằng chứng ảnh + CSV; các huyện còn lại chỉ xử lý phần thiếu.")
 
 
 def write_progress(targets, statuses):
@@ -2182,7 +2338,7 @@ MAX_OUTAGES = 8
 
 
 def next_round_jobs(gids, rows, statuses):
-    return [(g, rows[g], "csv-repair" if csv_repair_mode() else "full")
+    return [(g, rows[g], "recovery" if RECOVER_DRIVE else "csv-repair" if csv_repair_mode() else "full")
             for g in gids if not core_finished(statuses.get(g))]
 
 
@@ -2349,7 +2505,21 @@ def main():
     log.info(f"Danh sách: {len(gids):,} huyện, {targets['GID_1'].nunique()} tỉnh"
              + (f" (pilot_n={PILOT_N}; thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
 
+    if RECOVER_DRIVE:
+        try:
+            import_recovery_csv()
+            local_images = [path for kind in (D_DAY, D_NIGHT)
+                            for path in glob.glob(L(kind, "**", "*.tif"), recursive=True)]
+            if local_images:
+                log.info(f"[recovery] Đồng bộ ngay {len(local_images)} TIFF còn trên máy trước khi tính/tải bù.")
+                if not rclone_sync_once(final=True):
+                    raise RuntimeError("Upload TIFF cục bộ chưa hoàn tất; giữ file, không tính lại ngay.")
+        except Exception as exc:
+            log.error(f"[recovery] Không khôi phục được CSV: {exc}")
+            return 1
     statuses = load_all_status()
+    if RECOVER_DRIVE:
+        restore_recovery_statuses(statuses)
     try:
         check_resume(targets, statuses)
     except RuntimeError as exc:
@@ -2417,7 +2587,8 @@ def main():
     progress = write_progress(targets, statuses)
     unfinished = [g for g in gids if not core_finished(statuses.get(g))]
     try:
-        build_national_csv()
+        with _parts_lock:
+            build_national_csv()
     except Exception as exc:
         log.error(f"Dựng CSV toàn quốc lỗi: {exc}")
         code = 1
@@ -2433,7 +2604,7 @@ def main():
                      "xem _control/progress_csv_repair.csv")
         if len(failed):
             log.warning(f"{len(failed)} huyện không đạt sau {MAX_ATTEMPTS} lần, xem _control/{progress_filename()}")
-        if MODE == "full" and START_GID and not csv_repair_mode():
+        if MODE == "full" and START_GID and not csv_repair_mode() and not RECOVER_DRIVE:
             log.info(f"[range] Kết quả chỉ áp dụng phạm vi từ {normalize_start_gid(START_GID)} "
                      f"và các mã sửa được chỉ định ({', '.join(repair_gid_list()) or 'không có'}); "
                      "không xác nhận dữ liệu toàn quốc đã đồng bộ đầy đủ.")

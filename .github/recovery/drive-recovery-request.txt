@@ -1,0 +1,7 @@
+Requested: 2026-10-10
+Scope: recover_drive (all 710 districts, prioritize GADM provinces 34 through 54)
+Period: 2024-07 through 2025-06
+Drive folder: VNGISDash_202407_202506_Districts_50m
+Reuse valid Drive outputs and CSV parts; upload local files first if present.
+Fetch missing outputs from Earth Engine when the previous runner's files are unavailable.
+Evidence: reports/DRIVE_RECOVERY_20261010.md

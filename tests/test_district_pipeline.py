@@ -1204,5 +1204,109 @@ class Int16UpgradeTests(LocalCase):
         self.assertTrue(v.core_finished(state));self.assertFalse(v.district_complete(state))
 
 
+class RecoveryTests(LocalCase):
+    def setUp(self):
+        super().setUp()
+        p=patch.multiple(v,RECOVER_DRIVE=True,MODE='full',REMOTE_MANIFEST_MATCHED=True)
+        p.start();self.addCleanup(p.stop)
+
+    def parts(self):
+        v.append_parts('day',v.day_records(ROW,day_props()))
+        night=night_records().fillna(0).to_dict('records')
+        v.append_parts('night',night)
+
+    def test_all_country_targets_prioritize_34_to_54_even_when_csv_flag_true(self):
+        priority={**ROW,'GID_1':'VNM.34_1','GID_2':'VNM.34.1_1'}
+        with patch.multiple(v,START_GID='VNM.55.8_1',CSV_REPAIR_ONLY=True):
+            chosen=v.load_targets(pd.DataFrame([ROW,priority]))
+            self.assertFalse(v.csv_repair_mode())
+            self.assertEqual(v.progress_filename(),'progress_recovery.csv')
+        self.assertEqual(list(chosen.GID_2),['VNM.34.1_1',ROW['GID_2']])
+
+    def test_csv_evidence_does_not_mark_missing_tiffs_complete(self):
+        self.parts();statuses={}
+        v.restore_recovery_statuses(statuses)
+        st=statuses[ROW['GID_2']]
+        self.assertTrue(v.csv_complete(st));self.assertFalse(v.district_complete(st))
+        self.assertEqual(st['status'],'partial')
+        self.assertEqual(len(v.next_round_jobs([ROW['GID_2']],{ROW['GID_2']:ROW},statuses)),1)
+
+    def test_marker_is_only_proof_if_file_still_exists_and_missing_attempts_reopen(self):
+        self.parts();ctx=v.build_ctx(ROW)
+        rel=f"{ctx['rel_day_dir']}/{v.day_name(ctx,v.PERIODS[0])}"
+        v.REMOTE_INT16_TIFS.add(rel)
+        statuses={ROW['GID_2']:{**complete_state(),'attempts':3}}
+        v.restore_recovery_statuses(statuses)
+        self.assertEqual(statuses[ROW['GID_2']]['t2']['2024-07'],'pending')
+        self.assertEqual(statuses[ROW['GID_2']]['attempts'],0)
+        v.REMOTE_TIFS.add(rel)
+        v.restore_recovery_statuses(statuses)
+        self.assertEqual(statuses[ROW['GID_2']]['t2']['2024-07'],'ok')
+
+    def test_complete_district_not_queued_and_csv_not_recomputed(self):
+        self.parts();ctx=v.build_ctx(ROW)
+        for period in v.PERIODS:
+            day=f"{ctx['rel_day_dir']}/{v.day_name(ctx,period)}"
+            v.REMOTE_TIFS.update([day,f"{ctx['rel_night_dir']}/{v.night_name(ctx,period)}"])
+            v.REMOTE_INT16_TIFS.add(day)
+        statuses={ROW['GID_2']:complete_state()}
+        v.restore_recovery_statuses(statuses)
+        self.assertTrue(v.district_complete(statuses[ROW['GID_2']]))
+        self.assertEqual(v.next_round_jobs([ROW['GID_2']],{ROW['GID_2']:ROW},statuses),[])
+
+    def test_import_csv_preserves_existing_parts_rejects_no_data_and_duplicate_month(self):
+        existing=v.day_records(ROW,day_props())[:1];existing[0]['BLUE_mean']=.99
+        v.append_parts('day',existing)
+        day=pd.DataFrame(v.day_records(ROW,day_props()),columns=v.DAY_COLUMNS)
+        day.loc[1,'DATA_STATUS']='no_data'
+        day=pd.concat([day,day.iloc[2:3]],ignore_index=True)
+        night=night_records().fillna(0)
+        def copy(args,**kwargs):
+            (day if '/day_indices.csv' in args[1] else night).to_csv(args[2],index=False)
+            return True
+        with patch.object(v,'_rclone',side_effect=copy):v.import_recovery_csv()
+        parts=v._read_parts('day')
+        self.assertEqual(len(parts),10)
+        self.assertEqual(parts[0]['BLUE_mean'],.99)
+        self.assertEqual(len(v._read_parts('night')),12)
+
+    def test_import_manifest_mismatch_or_drive_read_error_stops_instead_of_recomputing(self):
+        with patch.object(v,'REMOTE_MANIFEST_MATCHED',False),patch.object(v,'_rclone') as command:
+            with self.assertRaisesRegex(RuntimeError,'manifest'):v.import_recovery_csv()
+            command.assert_not_called()
+        with patch.object(v,'_rclone',return_value=False):
+            with self.assertRaisesRegex(RuntimeError,'API'):v.import_recovery_csv()
+        self.assertEqual(v._read_parts('day'),[])
+
+    def test_existing_night_tif_is_inspected_and_reused_without_ee_download(self):
+        ctx=v.build_ctx(ROW);ctx['geom']=object()
+        rel=f"{ctx['rel_night_dir']}/{v.night_name(ctx,v.PERIODS[0])}"
+        v.REMOTE_TIFS.add(rel)
+        def copy(args,**kwargs):
+            v.write_tif(args[2],np.ones((2,2,2),'float64'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,['avg_rad','cf_cvg'])
+            return True
+        with patch.object(v,'_rclone',side_effect=copy),patch.object(v,'download_tif') as download:
+            result=v._download_month('night',ctx,v.PERIODS[0],object(),v.L(rel))
+        self.assertEqual(result,(1,False));download.assert_not_called()
+        self.assertTrue(Path(v.L(rel)).is_file())
+
+    def test_night_read_permission_error_never_causes_ee_redownload(self):
+        ctx=v.build_ctx(ROW);ctx['geom']=object()
+        rel=f"{ctx['rel_night_dir']}/{v.night_name(ctx,v.PERIODS[0])}"
+        v.REMOTE_TIFS.add(rel)
+        with patch.object(v,'_rclone',return_value=False),patch.object(v,'download_tif') as download:
+            with self.assertRaisesRegex(RuntimeError,'Không đọc'):v._download_month('night',ctx,v.PERIODS[0],object(),v.L(rel))
+        download.assert_not_called()
+
+    def test_recovery_periodic_sync_builds_csv_before_upload_even_when_no_new_images(self):
+        self.parts()
+        with patch.object(v,'_copy_stable_directory',return_value=True) as copy,patch.object(v,'_rclone',return_value=True):
+            self.assertTrue(v.rclone_sync_once())
+        self.assertEqual([call.args[0] for call in copy.call_args_list],
+                         [v.D_CONTROL,v.D_CSV,v.D_CSV,v.D_CONTROL])
+        self.assertEqual(len(pd.read_csv(v.L(v.DAY_CSV))),12)
+        self.assertEqual(len(pd.read_csv(v.L(v.NIGHT_CSV))),12)
+
+
 if __name__=='__main__':
     unittest.main()
