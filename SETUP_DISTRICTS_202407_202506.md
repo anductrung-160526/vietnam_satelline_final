@@ -140,8 +140,8 @@ Trong **Settings → Actions → General**, policy phải cho phép workflow t�
 1. **Actions → workflow `vngis-2024.yml` → Run workflow → Use workflow from `vngis-ee-districts-202407-202506`**. Tên trên trang Actions có thể vẫn lấy từ main.
 2. Chọn **`mode=pilot`, `pilot_n=6`, `workers=4`, `day_scale=50`** để đo tốc độ. Pilot từ 6 huyện trở lên lấy cả huyện đầu tiên/đô thị và các huyện phân bố trên cả nước; mọi huyện chạy đủ 12 tháng. Pilot 2 vẫn lấy huyện/đô thị đầu tiên như trước. Ô `stop_after_province` chỉ giữ tương thích giao diện main và bị bỏ qua.
 3. Log phải ghi đúng project, asset, khoảng tháng và huyện thử; preflight kiểm tra Drive, ảnh ngày/đêm và ghép ô giữ pixel. `verify_pilot.py` kiểm tra file TIFF, độ phân giải, kiểu dữ liệu, năm/tháng và CSV. Thiếu dữ liệu sẽ báo FAIL, không coi là đủ.
-4. Kiểm tra **`VNGISDash_202407_202506_Districts_50m_PILOT`**. Khi pilot đạt, tạo lượt mới trên đúng branch với **`mode=full`, `workers=4`, `day_scale=50`**. Full lưu vào `VNGISDash_202407_202506_Districts_50m`. Pilot/full dùng thư mục riêng; full xử lý toàn quốc, không chỉ các huyện thí điểm.
-5. Full phải ghi **710 huyện, 63 tỉnh**. Khi hoàn tất đầy đủ, mỗi CSV có **8.520 dòng huyện–tháng**, có 12 TIFF ngày và 12 TIFF đêm mỗi huyện (tổng 8.520 file mỗi loại).
+4. Kiểm tra **`VNGISDash_202407_202506_Districts_50m_PILOT`**. Khi pilot đạt, tạo lượt mới trên đúng branch với **`mode=full`, `workers=4`, `day_scale=50`**. Full lưu vào `VNGISDash_202407_202506_Districts_50m`. Pilot/full dùng thư mục riêng; phạm vi full theo `start_gid`, không chỉ các huyện thí điểm.
+5. Để xét toàn quốc, đặt **`start_gid=VNM.1.1_1`**. Full toàn quốc phải ghi **710 huyện, 63 tỉnh**. Khi hoàn tất đầy đủ, mỗi CSV có **8.520 dòng huyện–tháng**, có 12 TIFF ngày và 12 TIFF đêm mỗi huyện (tổng 8.520 file mỗi loại). Nhánh hiện mặc định chạy tiếp từ `VNM.55.8_1`; xem mục 14.
 
 Sentinel-2 ngày: median, 10 kênh BLUE/GREEN/RED/NIR/SWIR1/SWIR2/NDVI/NDBI/MNDWI/BSI; TIFF **Int16, 50 m mặc định trên Actions, scale 0.0001, offset 0, NoData -32768**. Đọc giá trị thực bằng **DN × 0.0001**. Trong miền biểu diễn, sai số lượng tử hóa tối đa 0.00005; giá trị vượt miền ±3.2767 gây lỗi rõ ràng, không tự cắt. TIFF đêm vẫn avg_rad/cf_cvg float64, 500 m.
 
@@ -169,7 +169,7 @@ _control/progress.csv
 _control/logs/
 ```
 
-- Mỗi lượt tối đa 5 giờ 15 phút rồi đồng bộ và tự nối trên **cùng branch**, cùng mode/pilot_n/workers. Khoảng tháng và project đọc từ workflow/variables của branch.
+- Mỗi lượt tối đa 5 giờ 15 phút rồi đồng bộ và tự nối trên **cùng branch**, cùng mode/pilot_n/workers/day_scale/start_gid. Khoảng tháng và project đọc từ workflow/variables của branch.
 - Trạng thái chứa `gid_2`, `period=202407-202506`, profile và khóa tháng `YYYY-MM`; không dùng trạng thái xã hoặc của khoảng khác.
 - Checkpoint sau từng tháng tải xong giúp tiếp tục phần còn lại. TIFF/CSV đã báo xong nhưng thiếu trên Drive và máy hiện tại sẽ được tính/tải lại.
 - Chỉ `done` khi cả TIFF ngày/đêm và CSV ngày/đêm đủ dữ liệu hợp lệ cho mọi tháng. `no_data` không coi là hoàn thành. Hết ba lần thử mà còn thiếu thì workflow báo lỗi, không nối vô hạn hoặc báo thành công.
@@ -295,3 +295,16 @@ rclone config show gdrive | findstr /B /C:"client_id"
 Nếu không có dòng này hoặc giá trị trống, remote thường đang dùng client chung của rclone (trừ khi đã ghi đè qua biến môi trường/cờ dòng lệnh). Nếu đã có ID thì kiểm tra trong project OAuth tương ứng. Làm theo [hướng dẫn tạo Client ID riêng chính thức](https://rclone.org/drive/#making-your-own-client-id): bật Google Drive API, cấu hình OAuth consent, tạo OAuth client Desktop app, điền client_id/client_secret và reconnect bằng đúng `adt.wqiqc@gmail.com`. Giữ tên remote `gdrive` và thư mục dữ liệu; cập nhật `RCLONE_CONF` sau khi xác thực. Không gửi config/token lên chat. Client riêng tách quota project khỏi client dùng chung, nhưng không loại bỏ hạn mức tài khoản/file.
 
 Ví dụ log có **5.275 TIFF** thì đó là số file workflow thực sự nhìn thấy trong thư mục Drive. **610 huyện đủ 12 TIFF ngày và 12 TIFF đêm cần 14.640 TIFF**. Huyện done trên runner chưa chứng minh tất cả file đã upload; Cancel khi uploader còn lỗi có thể làm mất phần chưa đồng bộ trên runner. Không thể khôi phục phần này chỉ bằng sửa marker; code cần xử lý các tháng thật sự thiếu. Giữ nguyên thư mục và `_control`, dùng STOP và đợi đồng bộ thay vì Cancel nếu muốn giữ tiến độ tốt nhất.
+
+## 14. Chạy tiếp từ huyện Vũ Thư (`VNM.55.8_1`)
+
+Nhánh hiện mặc định full bắt đầu từ **`VNM.55.8_1`**, bao gồm huyện này và mọi mã huyện sau nó theo thứ tự số của GADM. Đây là huyện Vũ Thư, Thái Bình, cấp 2; không phải xã cấp 3. Đối chiếu GADM 4.1 có **90 huyện trong phạm vi**, bỏ qua **620 mã trước đó**. Mã trước `55.8` được bỏ qua trong lượt này, không được gán `done` hay xác nhận đã upload đủ. Bộ đếm 610 done không xác định phạm vi; việc cắt danh sách dựa vào mã GADM chính xác. Chênh lệch này cần kiểm tra lại sau, tránh bỏ sót huyện trước `55.8` chưa hoàn tất.
+
+1. **Run workflow** mới trên branch `vngis-ee-districts-202407-202506`, chọn **`mode=full`, `day_scale=50`**, giữ workers phù hợp với quota.
+2. Ô **`start_gid`** nhập `VNM.55.8_1` hoặc `55.8`. Nếu giao diện lấy inputs từ main và chưa có ô này, mặc định nhánh đã là `VNM.55.8_1`; không cần tạo variable. Variable tùy chọn `VNGIS_DISTRICTS_START_GID` dùng khi input trống/không có. Thứ tự ưu tiên: input → variable → mặc định nhánh.
+3. Log phải có `[range] Bắt đầu từ VNM.55.8_1 (Vũ Thư, Thái Bình)` cùng số huyện trong phạm vi. Mã không tồn tại sẽ báo lỗi, không tự chọn huyện khác. Các huyện trong phạm vi có dữ liệu/checkpoint hợp lệ vẫn được bỏ qua; tháng thiếu được xử lý như cơ chế resume hiện tại.
+4. Báo cáo lưu ở **`_control/progress_from_VNM.55.8_1.csv`**, để giữ nguyên `progress.csv` cũ. Khi tự nối lượt, workflow giữ nguyên `start_gid`. CSV gộp vẫn lấy mọi parts hợp lệ đã có, nhưng lượt này chỉ bảo đảm dữ liệu trong phạm vi đã chọn, không bảo đảm đủ toàn quốc.
+
+Muốn kiểm tra/bổ sung lại toàn quốc, nhập **`start_gid=VNM.1.1_1`** (mã đầu GADM). Huyện có dữ liệu bền vững hợp lệ sẽ không bị tải lại. Với Python trực tiếp, dùng `VNGIS_START_GID=VNM.55.8_1`; mặc định Python để trống để xét toàn quốc. Pilot bỏ qua tham số này.
+
+Giới hạn `concurrency` giữ nguyên: lượt mới vẫn chờ lượt cũ kết thúc, kể cả khi lượt cũ đang upload. Tùy chọn bắt đầu từ mã huyện không cho phép hai workflow chạy đồng thời. Cập nhật code không thay đổi lượt đang chạy, và Cancel có thể làm mất file chưa đồng bộ. Nếu bỏ qua các mã trước `55.8`, cần kiểm tra riêng phần đó sau khi upload hoàn tất, tránh bỏ sót huyện từng partial hoặc file mất.

@@ -114,6 +114,73 @@ print(json.dumps({'scale':v.DAY_IMAGE_SCALE,'folder':v.DRIVE_FOLDER,'profile':v.
         self.assertEqual(set(selected.TYPE_2), {'Huyện','Thành phố'})
 
 
+class StartDistrictTests(LocalCase):
+    def range_admin(self):
+        gids = ['VNM.56.1_1', 'VNM.55.10_1', 'VNM.55.7_1', 'VNM.55.8_1', 'VNM.55.6_1']
+        return pd.DataFrame([{**ROW, 'GID_2': gid} for gid in gids])
+
+    def test_full_range_includes_start_and_sorts_numeric_ids(self):
+        with patch.multiple(v, MODE='full', START_GID='VNM.55.8_1'):
+            selected = v.load_targets(self.range_admin())
+        self.assertEqual(list(selected.GID_2), ['VNM.55.8_1', 'VNM.55.10_1', 'VNM.56.1_1'])
+
+    def test_short_start_code_and_empty_start(self):
+        with patch.multiple(v, MODE='full', START_GID=' 55.8 '):
+            selected = v.load_targets(self.range_admin())
+        self.assertEqual(selected.iloc[0].GID_2, 'VNM.55.8_1')
+        with patch.multiple(v, MODE='full', START_GID=''):
+            self.assertEqual(len(v.load_targets(self.range_admin())), 5)
+
+    def test_bad_or_missing_start_does_not_silently_select_another_district(self):
+        for start in ['55.9', 'VNM.55.8_2', '../55.8', 'communes_l3']:
+            with self.subTest(start=start), patch.multiple(v, MODE='full', START_GID=start):
+                with self.assertRaises(ValueError):
+                    v.load_targets(self.range_admin())
+
+    def test_pilot_ignores_full_only_start_code(self):
+        with patch.multiple(v, MODE='pilot', PILOT_N=2, START_GID='VNM.55.8_1'):
+            selected = v.load_targets(pd.DataFrame([ROW, URBAN]))
+        self.assertEqual(set(selected.GID_2), {ROW['GID_2'], URBAN['GID_2']})
+
+    def test_range_keeps_original_progress_report_and_does_not_mark_skipped_done(self):
+        original = self.root / '_control/progress.csv'
+        original.write_text('old progress', encoding='utf-8')
+        with patch.multiple(v, MODE='full', START_GID='55.8'):
+            targets = v.load_targets(self.range_admin())
+            progress = v.write_progress(targets, {})
+        self.assertEqual(original.read_text(encoding='utf-8'), 'old progress')
+        self.assertTrue((self.root / '_control/progress_from_VNM.55.8_1.csv').is_file())
+        self.assertEqual(set(progress.status), {'pending'})
+        self.assertNotIn('VNM.55.7_1', set(progress.GID_2))
+
+    def test_previous_district_checkpoints_do_not_block_intentional_tail_run(self):
+        admin = self.range_admin()
+        rows = {row['GID_2']: row for row in admin.to_dict('records')}
+        diag = {'claimed_done': 1, 'claimed_done_gids': ['VNM.55.7_1']}
+        with patch.multiple(v, MODE='full', START_GID='55.8', ADMIN_BY_GID=rows,
+                            REMOTE_TIFS={'Day/old/VNM.55.7_1_day_202407.tif'}, RESUME_DIAGNOSTICS=diag):
+            targets = v.load_targets(admin)
+            v.check_resume(targets, {})
+            jobs = v.next_round_jobs(list(targets.GID_2), rows, {})
+        self.assertEqual([gid for gid, _, _ in jobs], ['VNM.55.8_1', 'VNM.55.10_1', 'VNM.56.1_1'])
+
+    def test_missing_completion_evidence_inside_range_still_blocks_restart(self):
+        admin = self.range_admin()
+        rows = {row['GID_2']: row for row in admin.to_dict('records')}
+        diag = {'claimed_done': 1, 'claimed_done_gids': ['VNM.55.8_1']}
+        with patch.multiple(v, MODE='full', START_GID='55.8', ADMIN_BY_GID=rows, RESUME_DIAGNOSTICS=diag):
+            with self.assertRaises(RuntimeError):
+                v.check_resume(v.load_targets(admin), {})
+
+    def test_resume_skips_complete_start_but_keeps_missing_later_districts(self):
+        with patch.multiple(v, MODE='full', START_GID='55.8'):
+            targets = v.load_targets(self.range_admin())
+        rows = {row['GID_2']: row for row in targets.to_dict('records')}
+        states = {'VNM.55.8_1': complete_state('VNM.55.8_1')}
+        jobs = v.next_round_jobs(list(targets.GID_2), rows, states)
+        self.assertEqual([gid for gid, _, _ in jobs], ['VNM.55.10_1', 'VNM.56.1_1'])
+
+
 class Node:
     def __init__(self,calls,kind='node'):
         self.calls,self.kind=calls,kind

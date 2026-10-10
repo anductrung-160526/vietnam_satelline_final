@@ -42,8 +42,14 @@ on:
           - "20"
         default: "50"
 
+      start_gid:
+        description: "Full: bắt đầu từ huyện này trở đi; VNM.1.1_1 để xét toàn quốc. Pilot bỏ qua."
+        required: false
+        type: string
+        default: "VNM.55.8_1"
+
       stop_after_province:
-        description: "Ô tương thích main; nhánh huyện luôn chạy toàn quốc, bỏ qua giá trị này"
+        description: "Ô tương thích main; nhánh huyện dùng start_gid, bỏ qua giá trị này"
         required: false
         type: string
         default: ""
@@ -64,6 +70,8 @@ env:
   VNGIS_RCLONE_REMOTE: gdrive
   VNGIS_START_MONTH: "2024-07"
   VNGIS_END_MONTH: "2025-06"
+  # Nhánh hiện được cấu hình chạy tiếp từ Vũ Thư. Variable dùng khi UI lấy inputs từ main.
+  VNGIS_START_GID: ${{ inputs.start_gid || vars.VNGIS_DISTRICTS_START_GID || 'VNM.55.8_1' }}
 
 jobs:
   gate:
@@ -269,12 +277,11 @@ jobs:
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import os
           import pandas as pd
+          import vngis_2024 as pipeline
 
           folder = os.environ["VNGIS_DRIVE_FOLDER"]
 
-          p = os.path.expanduser(
-              f"~/vngis_2024/{folder}/_control/progress.csv"
-          )
+          p = pipeline.L(pipeline.D_CONTROL, pipeline.progress_filename())
 
           if os.path.isfile(p):
               d = pd.read_csv(p)
@@ -308,6 +315,7 @@ jobs:
           PILOT_N_INPUT: ${{ inputs.pilot_n }}
           WORKERS_INPUT: ${{ inputs.workers }}
           DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
+          START_GID_INPUT: ${{ env.VNGIS_START_GID }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
@@ -320,7 +328,8 @@ jobs:
               -f mode="$MODE_INPUT" \
               -f pilot_n="$PILOT_N_INPUT" \
               -f workers="$WORKERS_INPUT" \
-              -f day_scale="$DAY_SCALE_INPUT"
+              -f day_scale="$DAY_SCALE_INPUT" \
+              -f start_gid="$START_GID_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

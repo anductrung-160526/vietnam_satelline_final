@@ -4,8 +4,8 @@ VNGISDash 07/2024–06/2025: pipeline tự động cấp huyện chạy trên Gi
 
 Nguồn khoa học: VNGISDash_Task123_Merged_final.ipynb. Pipeline chỉ giữ 3 chức năng:
   (1) trích xuất chỉ số từ ảnh ngày (Task 1) và ảnh đêm (Task 3.2), (2) lấy ảnh tif ngày (Task 2),
-  (3) lấy ảnh tif đêm (Task 3.1). Không có bước chọn tỉnh, huyện: VNGIS_MODE=pilot tự lấy VNGIS_PILOT_N huyện,
-  VNGIS_MODE=full chạy toàn bộ 710 huyện theo GADM 4.1.
+  (3) lấy ảnh tif đêm (Task 3.1). VNGIS_MODE=pilot tự lấy VNGIS_PILOT_N huyện;
+  VNGIS_MODE=full chạy 710 huyện GADM 4.1, hoặc từ VNGIS_START_GID trở đi nếu được cấu hình.
 
 Cấu trúc đầu ra (cấp 1 = thư mục trên Drive):
   Day/<GID_1>_<tỉnh>/<GID_2>_<huyện>/<GID_2>_day_YYYYMM.tif
@@ -21,7 +21,7 @@ Chạy:
     python vngis_2024.py               chạy pipeline
     python vngis_2024.py --sync-only   đẩy nốt dữ liệu trên máy lên Drive
 
-Mã thoát: 0 xong toàn bộ | 1 lỗi cấu hình hoặc preflight | 2 sự cố EE kéo dài | 3 hết giờ (nối lượt) | 130 dừng tay
+Mã thoát: 0 xong phạm vi đã chọn | 1 lỗi cấu hình hoặc preflight | 2 sự cố EE kéo dài | 3 hết giờ (nối lượt) | 130 dừng tay
 """
 
 import os, io, re, sys, json, time, glob, math, shutil, zipfile, signal, logging, calendar, struct
@@ -81,6 +81,7 @@ MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
 if MODE not in ("pilot", "full"):
     raise SystemExit(f"VNGIS_MODE phải là 'pilot' hoặc 'full', đang là '{MODE}'")
 PILOT_N = _env("VNGIS_PILOT_N", 2, int)
+START_GID = _env("VNGIS_START_GID", "")                         # full: mã huyện bắt đầu, bao gồm mã này
 if PILOT_N < 1:
     raise SystemExit("VNGIS_PILOT_N phải >= 1")
 
@@ -1496,6 +1497,7 @@ def load_all_status():
         restored = {gid: reconcile_status(st, part_keys) for gid, st in out.items()}
     RESUME_DIAGNOSTICS = {"files": len(files), "ignored": ignored,
                           "claimed_done": sum(district_complete(st) for st in out.values()),
+                          "claimed_done_gids": [gid for gid, st in out.items() if district_complete(st)],
                           "day_parts": len(part_keys["day"]), "night_parts": len(part_keys["night"])}
     return restored
 
@@ -1512,8 +1514,13 @@ def check_resume(targets, statuses):
     log.info(f"[resume] Drive: {len(REMOTE_TIFS)} TIFF, {len(REMOTE_INT16_TIFS)} TIFF có marker Int16; "
              f"CSV parts hợp lệ: ngày={diag.get('day_parts', 0)}, đêm={diag.get('night_parts', 0)}; "
              f"bản ghi khác profile/kỳ bị bỏ qua={diag.get('ignored', 0)}.")
-    lost_checkpoint = bool(REMOTE_TIFS) and known == 0
-    lost_evidence = diag.get("claimed_done", 0) > 0 and done == 0 and MODE == "full"
+    # Người dùng chủ động chọn phần đuôi: checkpoint/file của phần đầu không chứng minh
+    # rằng phần đuôi từng hoàn tất. Vẫn kiểm tra bằng chứng done trong phạm vi được chọn.
+    partial_range = MODE == "full" and bool(START_GID) and len(gids) < len(ADMIN_BY_GID)
+    claimed = (len(gids & set(diag["claimed_done_gids"])) if "claimed_done_gids" in diag
+               else diag.get("claimed_done", 0))
+    lost_checkpoint = bool(REMOTE_TIFS) and known == 0 and not partial_range
+    lost_evidence = claimed > 0 and done == 0 and MODE == "full"
     if lost_checkpoint or lost_evidence:
         message = ("Drive đã có dữ liệu/checkpoint nhưng không khôi phục được huyện hoàn tất. "
                    "Dừng để tránh tự tải lại toàn bộ. Kiểm tra đúng tài khoản Drive, thư mục 20m/50m/pilot, "
@@ -1860,11 +1867,33 @@ def natural_sort_key(gid_str):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", str(gid_str))]
 
 
+def normalize_start_gid(value):
+    value = value.strip()
+    if not value:
+        return ""
+    if re.fullmatch(r"\d+\.\d+", value):
+        value = f"VNM.{value}_1"
+    if not re.fullmatch(r"VNM\.\d+\.\d+_\d+", value):
+        raise ValueError("VNGIS_START_GID phải là mã huyện GADM, ví dụ VNM.55.8_1 hoặc 55.8")
+    return value
+
+
 def load_targets(admin):
-    """Full lấy toàn bộ GADM cấp 2; pilot chọn xen kẽ huyện và đơn vị đô thị."""
+    """Full lấy GADM cấp 2 từ mã bắt đầu (bao gồm); pilot chọn xen kẽ huyện/đô thị."""
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_2"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
+        start = normalize_start_gid(START_GID)
+        if start:
+            positions = df.index[df["GID_2"] == start].tolist()
+            if len(positions) != 1:
+                raise ValueError(f"Mã bắt đầu {start} phải khớp đúng một huyện trong GADM cấp 2; "
+                                 "không tự chuyển sang mã khác.")
+            skipped = positions[0]
+            df = df.iloc[skipped:].reset_index(drop=True)
+            log.info(f"[range] Bắt đầu từ {start} ({df.iloc[0]['NAME_2']}, {df.iloc[0]['NAME_1']}); "
+                     f"đến {df.iloc[-1]['GID_2']}; {len(df)} huyện trong phạm vi. "
+                     f"Bỏ qua {skipped} huyện trước mã này, không xác nhận chúng đã upload đủ.")
         return df
     kinds = df["TYPE_2"].str.strip().str.lower()
     pools = [list(df.index[kinds == "huyện"]), list(df.index[kinds != "huyện"])]
@@ -1974,6 +2003,11 @@ def preflight(row):
 # =====================================================================================
 # 12. TIẾN ĐỘ
 # =====================================================================================
+def progress_filename():
+    start = normalize_start_gid(START_GID) if MODE == "full" else ""
+    return f"progress_from_{start}.csv" if start else "progress.csv"
+
+
 def write_progress(targets, statuses):
     rows = []
     for r in targets.itertuples():
@@ -1992,7 +2026,7 @@ def write_progress(targets, statuses):
                      "seconds": st.get("seconds"), "finished_at": st.get("finished_at"),
                      "errors": " | ".join(st.get("errors") or [])[:500]})
     df = pd.DataFrame(rows)
-    _write_csv(df, L(D_CONTROL, "progress.csv"))
+    _write_csv(df, L(D_CONTROL, progress_filename()))
     return df
 
 
@@ -2249,7 +2283,10 @@ def main():
         failed = progress[progress["status"] != "done"]
         log.info(f"Kết thúc hàng đợi: {progress['status'].value_counts().to_dict()}")
         if len(failed):
-            log.warning(f"{len(failed)} huyện không đạt sau {MAX_ATTEMPTS} lần, xem _control/progress.csv")
+            log.warning(f"{len(failed)} huyện không đạt sau {MAX_ATTEMPTS} lần, xem _control/{progress_filename()}")
+        if MODE == "full" and START_GID:
+            log.info(f"[range] Kết quả chỉ áp dụng từ {normalize_start_gid(START_GID)} trở đi; "
+                     "không xác nhận dữ liệu các huyện trước đó đã đồng bộ đầy đủ.")
         return code or (1 if len(failed) else 0)
 
     log.info(f"Chưa xong: còn {len(unfinished):,} huyện | {progress['status'].value_counts().to_dict()}")
