@@ -264,3 +264,15 @@ Các tham số dưới đây là giá trị mặc định trên **workflow của
 `workers=4` × `MONTH_THREADS=2` có thể tạo 8 tác vụ tải ảnh, nhưng **tối đa 4 yêu cầu EE đang chạy** do giới hạn chung; nếu bị hạ về 1 thì tăng workers không vượt qua được giới hạn này. TIFF đêm giữ 500 m. Huyện lớn phải chia nhiều ô và project Restricted Mode vẫn có thể chậm dù có nghỉ chủ động. Xem `[speed]`, `[quota]`, `[rest]` để đo tốc độ và các khoảng nghỉ thực tế.
 
 Bản sửa chỉ áp dụng cho lượt mới: chờ lượt cũ kết thúc, hoặc tạo STOP trên đúng branch rồi đợi đồng bộ xong, xóa STOP và Run workflow. Thư mục Drive, project, asset và Secrets giữ nguyên.
+
+## 12. Lượt trước đã xong nhiều huyện nhưng lượt mới lại xếp 710 huyện
+
+`Danh sách: 710 huyện` là tổng phạm vi, còn **`Vòng mới: ... huyện cần xử lý`** là số huyện thực sự chưa hoàn tất. Nếu lượt trước xong 610 thì khi checkpoint/file/CSV đã đồng bộ đủ, lượt sau chỉ cần xử lý khoảng 100 huyện còn lại.
+
+Bản cũ có lỗi ở `--sync-only`: Python mới bắt đầu với danh sách TIFF Int16 trong RAM rỗng, rồi ghi đè `_control/int16_uploaded.json` thành rỗng. Do đó ảnh ngày đã tải có thể bị đưa lại vào hàng đợi nâng cấp và huyện mất trạng thái hoàn tất. Bản sửa nạp marker đã lưu trước khi ghi, và nếu không có bản local thì đọc marker từ Drive; lỗi đọc/quyền không được coi là marker rỗng để ghi đè.
+
+Để phục hồi marker bị xóa bởi lỗi cũ, chỉ với **thư mục 50 m có manifest khớp**, code dùng checkpoint cùng profile Int16, các tháng ảnh ngày đã xác nhận `ok` và TIFF đúng đường dẫn thực có trên Drive. Không dùng trạng thái khác kỳ/profile hoặc dữ liệu float 20 m để đánh dấu xong. CSV vẫn phải có các bản ghi parts hợp lệ; ảnh thiếu vẫn bị đưa vào hàng đợi. Không suy ra `done` chỉ từ số lượng hoặc tên TIFF.
+
+Log `[resume]` ghi đích/profile, số file checkpoint được kéo về, số huyện có trạng thái/đã hoàn tất, số TIFF/marker và số bản ghi CSV parts ngày/đêm. Nếu đã có TIFF mà không có trạng thái hợp lệ, hoặc tất cả huyện từng có checkpoint hoàn tất đều bị mất bằng chứng, pipeline dừng trước preflight để tránh chạy lại toàn bộ âm thầm. Kiểm tra đúng tài khoản OAuth Drive, đúng folder full/pilot/20m/50m, `_control/status`, `_control/parts`, marker và lỗi đồng bộ của lượt cũ. **Không xóa `_control` hoặc đổi folder khi muốn nối lượt.**
+
+Chỉ khi chủ động muốn tải lại toàn bộ mới đặt repository variable **`VNGIS_DISTRICTS_ALLOW_FULL_RESTART=true`** (Python trực tiếp: `VNGIS_ALLOW_FULL_RESTART=true`). Không bật để che lỗi checkpoint. Kiểm thử offline mô phỏng 610 huyện hoàn tất với marker rỗng chứng minh chỉ còn 100 huyện trong hàng đợi sau phục hồi; quyền và dữ liệu Drive thật cần kiểm tra qua log của lượt mới.

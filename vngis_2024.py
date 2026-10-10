@@ -115,6 +115,7 @@ if min(N_WORKERS, MONTH_THREADS, EE_CONCURRENCY, EE_MAX_RETRIES) < 1:
 REST_EVERY_N = _env("VNGIS_REST_EVERY_N", 10, int)
 REST_AFTER_PROVINCE = _env("VNGIS_REST_AFTER_PROVINCE", True, bool)
 REST_SEC = _env("VNGIS_REST_SEC", 30, int)
+ALLOW_FULL_RESTART = _env("VNGIS_ALLOW_FULL_RESTART", False, bool)
 if REST_EVERY_N < 0 or REST_SEC < 0:
     raise SystemExit("VNGIS_REST_EVERY_N và VNGIS_REST_SEC phải >= 0")
 RUN_ID = _env("VNGIS_RUN_ID", "local")
@@ -1416,6 +1417,7 @@ def build_national_csv():
 # =====================================================================================
 _status_lock = threading.Lock()
 STATUS_FILE = None
+RESUME_DIAGNOSTICS = {}
 
 
 def write_status(info):
@@ -1427,8 +1429,11 @@ def write_status(info):
 
 
 def load_all_status():
+    global RESUME_DIAGNOSTICS
     out = {}
-    for p in sorted(glob.glob(L(D_STATUS, "status_*.jsonl"))):
+    files = sorted(glob.glob(L(D_STATUS, "status_*.jsonl")))
+    ignored = 0
+    for p in files:
         try:
             with open(p, encoding="utf-8") as f:
                 for line in f:
@@ -1440,6 +1445,8 @@ def load_all_status():
                         d = migrate_float_status(d)
                     if isinstance(d, dict) and "gid_2" in d and current_status(d):
                         out[d["gid_2"]] = d
+                    elif isinstance(d, dict) and "gid_2" in d:
+                        ignored += 1
         except OSError:
             continue
     part_keys = {
@@ -1450,7 +1457,53 @@ def load_all_status():
     }
     # Cùng khóa với uploader: không nhìn thấy khoảng trống giữa move và cập nhật REMOTE_TIFS.
     with _sync_lock:
-        return {gid: reconcile_status(st, part_keys) for gid, st in out.items()}
+        if RESTORE_INT16_MARKER:
+            recovered = set()
+            for gid, st in out.items():
+                row = ADMIN_BY_GID.get(gid)
+                if row is None:
+                    continue
+                ctx = build_ctx(row)
+                for period in PERIODS:
+                    key = month_key(period)
+                    if (st.get("t2") or {}).get(key) != "ok" or key in st.get("convert_day_months", []):
+                        continue
+                    rel = f"{ctx['rel_day_dir']}/{day_name(ctx, period)}"
+                    if rel in REMOTE_TIFS and rel not in REMOTE_INT16_TIFS:
+                        recovered.add(rel)
+            if recovered:
+                REMOTE_INT16_TIFS.update(recovered)
+                log.warning(f"[resume] Khôi phục marker cho {len(recovered)} TIFF ngày 50m từ checkpoint "
+                            "cùng profile Int16 và file thực có trên Drive; không tải lại EE.")
+        restored = {gid: reconcile_status(st, part_keys) for gid, st in out.items()}
+    RESUME_DIAGNOSTICS = {"files": len(files), "ignored": ignored,
+                          "claimed_done": sum(district_complete(st) for st in out.values()),
+                          "day_parts": len(part_keys["day"]), "night_parts": len(part_keys["night"])}
+    return restored
+
+
+def check_resume(targets, statuses):
+    """Báo bằng chứng khôi phục; không âm thầm làm lại toàn bộ khi mất checkpoint."""
+    gids = set(targets["GID_2"])
+    known = sum(gid in statuses for gid in gids)
+    done = sum(district_complete(statuses.get(gid)) for gid in gids)
+    diag = RESUME_DIAGNOSTICS
+    log.info(f"[resume] Đích {REMOTE_BASE} | profile={OUTPUT_PROFILE}")
+    log.info(f"[resume] {diag.get('files', 0)} file checkpoint; {known}/{len(gids)} huyện có trạng thái; "
+             f"{done} huyện đã hoàn tất, {len(gids)-done} huyện chưa đủ dữ liệu.")
+    log.info(f"[resume] Drive: {len(REMOTE_TIFS)} TIFF, {len(REMOTE_INT16_TIFS)} TIFF có marker Int16; "
+             f"CSV parts hợp lệ: ngày={diag.get('day_parts', 0)}, đêm={diag.get('night_parts', 0)}; "
+             f"bản ghi khác profile/kỳ bị bỏ qua={diag.get('ignored', 0)}.")
+    lost_checkpoint = bool(REMOTE_TIFS) and known == 0
+    lost_evidence = diag.get("claimed_done", 0) > 0 and done == 0 and MODE == "full"
+    if lost_checkpoint or lost_evidence:
+        message = ("Drive đã có dữ liệu/checkpoint nhưng không khôi phục được huyện hoàn tất. "
+                   "Dừng để tránh tự tải lại toàn bộ. Kiểm tra đúng tài khoản Drive, thư mục 20m/50m/pilot, "
+                   "_control/status, _control/parts, int16_uploaded.json và bước đồng bộ cuối của lượt trước. "
+                   "Không xóa dữ liệu cũ. Chỉ đặt VNGIS_DISTRICTS_ALLOW_FULL_RESTART=true nếu chủ động muốn chạy lại toàn bộ.")
+        if not ALLOW_FULL_RESTART:
+            raise RuntimeError(message)
+        log.warning("[resume] " + message + " Đã cho phép chạy lại toàn bộ theo cấu hình.")
 
 
 def migrate_float_status(st):
@@ -1467,6 +1520,7 @@ def migrate_float_status(st):
 
 REMOTE_TIFS = set()
 REMOTE_INT16_TIFS = set()
+RESTORE_INT16_MARKER = False
 
 
 def reconcile_status(st, part_keys=None):
@@ -1552,6 +1606,15 @@ def rclone_sync_once(final=False):
         return True
     success = True
     with _sync_lock:
+        # --sync-only chạy trong Python mới: nạp marker bền vững trước khi ghi lại,
+        # tránh xóa danh sách đã upload chỉ vì tập hợp trong RAM bắt đầu rỗng.
+        marker = L(D_CONTROL, "int16_uploaded.json")
+        if DAY_FORMAT == "int16" and os.path.isfile(marker):
+            with open(marker, encoding="utf-8") as f:
+                saved = json.load(f)
+            if not isinstance(saved, list) or not all(isinstance(p, str) for p in saved):
+                raise RuntimeError("Marker Int16 không hợp lệ; không ghi đè trạng thái đã lưu.")
+            REMOTE_INT16_TIFS.update(saved)
         # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
         # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
         cutoff = None if final else time.time() - 120
@@ -1627,7 +1690,7 @@ def drive_stop_exists():
 
 
 def init_storage():
-    global REMOTE_TIFS, REMOTE_INT16_TIFS
+    global REMOTE_TIFS, REMOTE_INT16_TIFS, RESTORE_INT16_MARKER
     for d in (LOCAL_ROOT, L(D_STATUS), L(D_PARTS), L(D_LOGS), CACHE_DIR):
         os.makedirs(d, exist_ok=True)
     if shutil.which("rclone") is None:
@@ -1638,7 +1701,8 @@ def init_storage():
                 "level": 2, "months": MONTH_KEYS}
     old_manifest = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/pipeline.json"],
                                   capture_output=True, text=True, timeout=180)
-    if old_manifest.returncode == 0 and json.loads(old_manifest.stdout) != manifest:
+    matched_manifest = old_manifest.returncode == 0 and json.loads(old_manifest.stdout) == manifest
+    if old_manifest.returncode == 0 and not matched_manifest:
         old = json.loads(old_manifest.stdout)
         if DAY_IMAGE_SCALE != 20 or DAY_FORMAT != "int16" or old != {**manifest, "profile": LEGACY_FLOAT_PROFILE}:
             raise RuntimeError("Thư mục Drive có cấu hình cấp hành chính/thời gian khác. Chọn thư mục đầu ra mới.")
@@ -1657,6 +1721,9 @@ def init_storage():
     if listing.returncode != 0:
         raise RuntimeError("Không kiểm tra được TIFF trên Drive: " + listing.stderr[-200:])
     REMOTE_TIFS = set(listing.stdout.splitlines())
+    log.info(f"[resume] Đã kéo checkpoint từ {REMOTE_BASE}: "
+             f"{len(glob.glob(L(D_STATUS, 'status_*.jsonl')))} file trạng thái, "
+             f"{len(glob.glob(L(D_PARTS, '*.jsonl')))} file CSV parts, {len(REMOTE_TIFS)} TIFF trên Drive.")
     if DAY_FORMAT == "int16":
         marker = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"],
                                 capture_output=True, text=True, timeout=180)
@@ -1666,6 +1733,10 @@ def init_storage():
             REMOTE_INT16_TIFS = set()
         else:
             raise RuntimeError("Không kiểm tra được trạng thái TIFF Int16 trên Drive: " + marker.stderr[-200:])
+        RESTORE_INT16_MARKER = matched_manifest and DAY_IMAGE_SCALE == 50 and not REMOTE_INT16_TIFS
+        if RESTORE_INT16_MARKER:
+            log.warning("[resume] Marker Int16 rỗng/thiếu trong thư mục 50m có manifest khớp; "
+                        "sẽ đối chiếu checkpoint cùng profile và TIFF trên Drive để phục hồi.")
     # Cảnh báo nếu đích còn cấu trúc của bản pipeline cũ
     old = subprocess.run(["rclone", "lsf", REMOTE_BASE, "--dirs-only"], capture_output=True, text=True, timeout=120)
     if any(x.strip("/") in ("03_Provinces", "04_Status", "1_Task1_Spectral_Indices", "2_Task2_Day_S2")
@@ -2046,6 +2117,11 @@ def main():
              + (f" (pilot_n={PILOT_N}; thí điểm: {', '.join(gids)})" if MODE == "pilot" else ""))
 
     statuses = load_all_status()
+    try:
+        check_resume(targets, statuses)
+    except RuntimeError as exc:
+        log.error("[resume] " + str(exc))
+        return 1
     if PREFLIGHT:
         pend = [g for g in gids if not core_finished(statuses.get(g))] or gids
         for attempt in (1, 2, 3):
@@ -2137,6 +2213,17 @@ def main():
 if __name__ == "__main__" and os.environ.get("VNGIS_SKIP_MAIN") != "1":
     if "--sync-only" in sys.argv:
         setup_logging()
+        if DAY_FORMAT == "int16" and not os.path.isfile(L(D_CONTROL, "int16_uploaded.json")):
+            res = subprocess.run(["rclone", "cat", f"{REMOTE_BASE}/{D_CONTROL}/int16_uploaded.json"],
+                                 capture_output=True, text=True, timeout=180)
+            if res.returncode == 0:
+                saved = json.loads(res.stdout)
+                if not isinstance(saved, list) or not all(isinstance(p, str) for p in saved):
+                    raise RuntimeError("Marker Int16 trên Drive không hợp lệ; không ghi đè.")
+                REMOTE_INT16_TIFS.update(saved)
+            elif not any(s in res.stderr.lower() for s in ("not found", "doesn't exist")):
+                log.error("Không đọc được marker Int16 để đồng bộ nốt; không ghi đè trạng thái Drive.")
+                sys.exit(1)
         ok = rclone_sync_once(final=True)
         log.info("Đồng bộ nốt xong." if ok else "Đồng bộ nốt chưa hoàn tất.")
         sys.exit(0 if ok else 1)

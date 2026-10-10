@@ -113,6 +113,7 @@ jobs:
       VNGIS_REST_EVERY_N: ${{ vars.VNGIS_DISTRICTS_REST_EVERY_N || '10' }}
       VNGIS_REST_AFTER_PROVINCE: ${{ vars.VNGIS_DISTRICTS_REST_AFTER_PROVINCE || 'true' }}
       VNGIS_REST_SEC: ${{ vars.VNGIS_DISTRICTS_REST_SEC || '30' }}
+      VNGIS_ALLOW_FULL_RESTART: ${{ vars.VNGIS_DISTRICTS_ALLOW_FULL_RESTART || 'false' }}
 
       # Định dạng ảnh ngày.
       VNGIS_DAY_FORMAT: "int16"

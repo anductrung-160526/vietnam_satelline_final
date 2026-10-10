@@ -51,7 +51,9 @@ class LocalCase(unittest.TestCase):
         (self.root / '_control/status').mkdir(parents=True)
         p = patch.multiple(v, LOCAL_ROOT=str(self.root), STATUS_FILE=str(self.root / '_control/status/status_test.jsonl'),
                            PARTS_STAMP='test', ADMIN_BY_GID={ROW['GID_2']: ROW},
-                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REST_SEC=0, DAY_IMAGE_SCALE=20, REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
+                           STOP_EVENT=threading.Event(), STOP_REASON=[None], REST_SEC=0, ALLOW_FULL_RESTART=False,
+                           RESUME_DIAGNOSTICS={}, RESTORE_INT16_MARKER=False, DAY_IMAGE_SCALE=20,
+                           REMOTE_TIFS=set(), REMOTE_INT16_TIFS=set(),
                            _dl_stats={'ok':0,'fail':0,'last_err':''})
         p.start()
         self.addCleanup(p.stop)
@@ -364,6 +366,87 @@ class ProcessTests(LocalCase):
         restored=v.load_all_status()[ROW['GID_2']]
         self.assertEqual(restored['t2'][v.MONTH_KEYS[0]],'ok')
         self.assertEqual(restored['attempts'],1)
+
+
+class DriveResumeTests(LocalCase):
+    def test_resume_610_done_districts_keeps_only_100_jobs(self):
+        rows={f'VNM.1.{i}_1':{**ROW,'GID_2':f'VNM.1.{i}_1'} for i in range(1,711)}
+        parts={'day':[],'night':[]}
+        for gid,row in list(rows.items())[:610]:
+            v.write_status(complete_state(gid))
+            ctx=v.build_ctx(row)
+            for period in v.PERIODS:
+                for kind in ('day','night'):
+                    parts[kind].append({'GID_2':gid,'YEAR':period[0],'MONTH':period[1],
+                                        'DATA_STATUS':'ok','_profile':v.OUTPUT_PROFILE})
+                v.REMOTE_TIFS.add(ctx['rel_day_dir']+'/'+v.day_name(ctx,period))
+                v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+        targets=pd.DataFrame(rows.values())
+        # Reproduce the old --sync-only bug: Drive has all TIFFs, marker is empty.
+        with patch.multiple(v,ADMIN_BY_GID=rows,MODE='full',RESTORE_INT16_MARKER=True), \
+             patch.object(v,'_read_parts',side_effect=lambda kind:parts[kind]):
+            states=v.load_all_status();v.check_resume(targets,states)
+            jobs=v.next_round_jobs(list(rows),rows,states)
+        self.assertEqual(sum(v.district_complete(st) for st in states.values()),610)
+        self.assertEqual(len(jobs),100)
+        self.assertEqual(len(v.REMOTE_INT16_TIFS),610*12)
+        self.assertNotIn('VNM.1.1_1',[gid for gid,_,_ in jobs])
+
+    def test_fresh_sync_process_preserves_marker_saved_by_previous_process(self):
+        control=self.root/'_control';marker=control/'int16_uploaded.json'
+        previous=['Day/a/old1.tif','Day/a/old2.tif']
+        marker.write_text(json.dumps(previous))
+        with patch.object(v,'_rclone',return_value=True):
+            self.assertTrue(v.rclone_sync_once(final=True))
+        self.assertEqual(set(json.loads(marker.read_text())),set(previous))
+        self.assertEqual(v.REMOTE_INT16_TIFS,set(previous))
+
+    def test_missing_csv_evidence_does_not_fake_completed_districts(self):
+        gid=ROW['GID_2'];v.write_status(complete_state(gid));ctx=v.build_ctx(ROW)
+        for period in v.PERIODS:
+            rel=ctx['rel_day_dir']+'/'+v.day_name(ctx,period)
+            v.REMOTE_TIFS.add(rel);v.REMOTE_INT16_TIFS.add(rel)
+            v.REMOTE_TIFS.add(ctx['rel_night_dir']+'/'+v.night_name(ctx,period))
+        with patch.object(v,'MODE','full'):
+            states=v.load_all_status()
+            self.assertFalse(v.district_complete(states[gid]))
+            with self.assertRaisesRegex(RuntimeError,'tránh tự tải lại toàn bộ'):
+                v.check_resume(pd.DataFrame([ROW]),states)
+
+    def test_existing_tiffs_without_checkpoint_stop_before_download(self):
+        v.REMOTE_TIFS.add('Day/a/file.tif')
+        with self.assertRaisesRegex(RuntimeError,'không khôi phục'):
+            v.check_resume(pd.DataFrame([ROW]),{})
+        with patch.object(v,'ALLOW_FULL_RESTART',True):
+            v.check_resume(pd.DataFrame([ROW]),{})
+
+    def test_empty_new_folder_is_allowed(self):
+        v.check_resume(pd.DataFrame([ROW]),{})
+
+    def test_recovery_does_not_trust_missing_or_wrong_profile_records(self):
+        state=complete_state();state['profile']='different-profile';v.write_status(state)
+        v.REMOTE_TIFS.add('Day/a/file.tif')
+        with patch.object(v,'RESTORE_INT16_MARKER',True):
+            self.assertEqual(v.load_all_status(),{})
+        self.assertEqual(v.REMOTE_INT16_TIFS,set())
+
+    def test_marker_recovery_requires_matching_manifest_and_50m(self):
+        for scale,manifest_exists,expected in [(50,True,True),(20,True,False),(50,False,False)]:
+            with self.subTest(scale=scale,manifest_exists=manifest_exists):
+                manifest={'schema':v.SCHEMA_ID,'period':v.PERIOD_ID,'profile':v.OUTPUT_PROFILE,
+                          'level':2,'months':v.MONTH_KEYS}
+                def command(args,**kwargs):
+                    if args[1]=='cat' and args[2].endswith('pipeline.json'):
+                        return SimpleNamespace(returncode=0 if manifest_exists else 3,
+                                               stdout=json.dumps(manifest),stderr='' if manifest_exists else 'object not found')
+                    if args[1]=='cat':
+                        return SimpleNamespace(returncode=0,stdout='[]',stderr='')
+                    return SimpleNamespace(returncode=0,stdout='',stderr='')
+                with patch.multiple(v,DAY_IMAGE_SCALE=scale,CACHE_DIR=str(self.root/'cache')), \
+                     patch.object(v.shutil,'which',return_value='/bin/rclone'), \
+                     patch.object(v,'_rclone',return_value=True),patch.object(v.subprocess,'run',side_effect=command):
+                    v.init_storage()
+                self.assertEqual(v.RESTORE_INT16_MARKER,expected)
 
 
 class SpeedTests(LocalCase):
