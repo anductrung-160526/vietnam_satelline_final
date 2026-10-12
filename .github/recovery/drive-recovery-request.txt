@@ -1,4 +1,4 @@
-Requested: 2026-10-12 (retry after run #28 stopped on duplicate Drive TIFF paths)
+Requested: 2026-10-12 (retry after run #29 hit Drive rate limit while re-listing after dedupe)
 Scope: recover_drive (all 710 districts, prioritize GADM provinces 34 through 54)
 Period: 2024-07 through 2025-06
 Drive folder: VNGISDash_202407_202506_Districts_50m

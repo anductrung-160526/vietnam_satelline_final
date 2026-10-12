@@ -933,6 +933,10 @@ class MainTests(LocalCase):
             run.side_effect = exhausted
             self.assertEqual(v.main(), 1)
 
+    def test_drive_rate_limit_during_init_retries_next_run(self):
+        with patch.object(v,'init_storage',side_effect=v.DriveRateLimitError('lsjson')):
+            self.assertEqual(v.main(),2)
+
     def test_final_upload_failure_is_not_reported_as_success(self):
         self.states={r['GID_2']:complete_state(r['GID_2']) for r in [ROW,URBAN]}
         v.rclone_sync_once.return_value=False
@@ -1407,7 +1411,11 @@ class RecoveryTests(LocalCase):
                 self.assertEqual(args[1:3],['--dedupe-mode','newest'])
                 state['deduped'].append(args[3]);return SimpleNamespace(returncode=0,stdout='',stderr='')
             if args[0]=='lsjson':
-                items=[{'Path':dup,'Size':9}]*(1 if state['deduped'] else 2)
+                if args[1]!=v.REMOTE_BASE:  # chỉ liệt kê lại thư mục vừa gộp
+                    self.assertTrue(state['deduped'])
+                    return SimpleNamespace(returncode=0,stdout=json.dumps([{'Path':dup.rsplit('/',1)[1],'Size':9}]),stderr='')
+                self.assertFalse(state['deduped'],'không liệt kê lại cả cây Drive sau khi gộp')
+                items=[{'Path':dup,'Size':9}]*2
                 return SimpleNamespace(returncode=0,stdout=json.dumps(items),stderr='')
             return SimpleNamespace(returncode=0,stdout='',stderr='')
         with patch.multiple(v,DAY_IMAGE_SCALE=50,RECOVER_DRIVE=True,CACHE_DIR=str(self.root/'cache')), \

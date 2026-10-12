@@ -1726,6 +1726,7 @@ def core_finished(st):
 # =====================================================================================
 # 9. RCLONE
 # =====================================================================================
+INIT_LIST_RETRIES = _env("VNGIS_INIT_LIST_RETRIES", 10, int)
 DRIVE_TPS_LIMIT = _env("VNGIS_DRIVE_TPS_LIMIT", 2, float)
 DRIVE_TRANSFERS = _env("VNGIS_DRIVE_TRANSFERS", 2, int)
 DRIVE_MAX_RETRIES = _env("VNGIS_DRIVE_MAX_RETRIES", 6, int)
@@ -1779,7 +1780,7 @@ def upload_heartbeat(args):
         log.info(f"[upload] Lệnh {label} kết thúc sau {time.monotonic()-started:.0f}s; xem kết quả đồng bộ.")
 
 
-def _run_rclone(args, timeout=6 * 3600):
+def _run_rclone(args, timeout=6 * 3600, max_retries=None, max_delay=60):
     """Một tiến trình Drive trong lượt; mọi lệnh có TPS và backoff khi quota."""
     args = list(args)
     if "--fast-list" not in args and "--no-traverse" not in args:
@@ -1789,20 +1790,21 @@ def _run_rclone(args, timeout=6 * 3600):
                         ("--retries", "2"), ("--low-level-retries", "3")]:
         if flag not in args:
             args.extend([flag, value])
+    retries = max_retries or DRIVE_MAX_RETRIES
     with _drive_api_lock:
-        for attempt in range(DRIVE_MAX_RETRIES):
+        for attempt in range(retries):
             with upload_heartbeat(args):
                 res = subprocess.run(["rclone", *args], capture_output=True, text=True, timeout=timeout)
             if res.returncode == 0 or not _drive_rate_limited(res.stderr):
                 return res
-            if attempt + 1 < DRIVE_MAX_RETRIES:
-                delay = min(60, 5 * 2 ** attempt) + random.uniform(0, 3)
+            if attempt + 1 < retries:
+                delay = min(max_delay, 5 * 2 ** attempt) + random.uniform(0, 3)
                 log.warning(f"[drive-quota] Google Drive API giới hạn {args[0]}: "
-                            f"chờ {delay:.1f}s, thử lại {attempt+2}/{DRIVE_MAX_RETRIES}; giữ file/checkpoint.")
+                            f"chờ {delay:.1f}s, thử lại {attempt+2}/{retries}; giữ file/checkpoint.")
                 # STOP đã đặt vẫn phải chờ backoff khi đồng bộ cuối, không thử dồn dập.
                 time.sleep(delay)
         raise DriveRateLimitError(f"Drive API rateLimitExceeded: {args[0]} thất bại sau "
-                                  f"{DRIVE_MAX_RETRIES} lần; giữ file/checkpoint, không coi file là đã mất.")
+                                  f"{retries} lần; giữ file/checkpoint, không coi file là đã mất.")
 
 
 def _rclone(args, timeout=6 * 3600, quiet=False, missing_ok=False):
@@ -2003,8 +2005,10 @@ def init_storage():
     REMOTE_MANIFEST_MATCHED = matched_manifest
     with open(L(D_CONTROL, "pipeline.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False)
+    # Liệt kê cả cây chỉ một lần mỗi lượt; Drive hay giới hạn lệnh lớn này nên chờ lâu hơn (~25 phút tối đa).
     listing = _run_rclone(["lsjson" if RECOVER_DRIVE else "lsf", REMOTE_BASE,
-                          "--recursive", "--files-only", "--include", "*.tif"], timeout=3600)
+                          "--recursive", "--files-only", "--include", "*.tif"], timeout=3600,
+                          max_retries=INIT_LIST_RETRIES, max_delay=300)
     if listing.returncode != 0:
         raise RuntimeError("Không kiểm tra được TIFF trên Drive: " + listing.stderr[-200:])
     if RECOVER_DRIVE:
@@ -2025,16 +2029,17 @@ def init_storage():
                 res = _run_rclone(["dedupe", "--dedupe-mode", "newest", f"{REMOTE_BASE}/{folder}"], timeout=1800)
                 if res.returncode != 0:
                     raise RuntimeError(f"Không gộp được TIFF trùng trong {folder}: {res.stderr.strip()[-300:]}")
-            listing = _run_rclone(["lsjson", REMOTE_BASE, "--recursive", "--files-only", "--include", "*.tif"],
-                                  timeout=3600)
-            if listing.returncode != 0:
-                raise RuntimeError("Không kiểm tra lại được TIFF trên Drive: " + listing.stderr[-200:])
-            entries = json.loads(listing.stdout)
-            counts = {}
-            for item in entries:
-                counts[item["Path"]] = counts.get(item["Path"], 0) + 1
-            if any(count > 1 for count in counts.values()):
-                raise RuntimeError("Drive vẫn còn TIFF trùng đường dẫn sau khi gộp; cần kiểm tra thủ công.")
+            # Chỉ kiểm tra lại các thư mục vừa gộp, không liệt kê lại cả cây Drive.
+            for folder in folders:
+                again = _run_rclone(["lsjson", f"{REMOTE_BASE}/{folder}", "--files-only", "--include", "*.tif"],
+                                    timeout=600, max_retries=INIT_LIST_RETRIES, max_delay=300)
+                if again.returncode != 0:
+                    raise RuntimeError(f"Không kiểm tra lại được {folder}: " + again.stderr[-200:])
+                names = [item["Path"] for item in json.loads(again.stdout)]
+                if len(names) != len(set(names)):
+                    raise RuntimeError(f"Drive vẫn còn TIFF trùng trong {folder} sau khi gộp; cần kiểm tra thủ công.")
+                entries = [item for item in entries if item["Path"].rsplit("/", 1)[0] != folder]
+                entries += [{**item, "Path": f"{folder}/{item['Path']}"} for item in json.loads(again.stdout)]
         REMOTE_TIFS = {item["Path"] for item in entries if not item.get("IsDir") and item.get("Size", 0) > 0}
         log.info(f"[recovery] Kiểm kê {len(REMOTE_TIFS)} TIFF dung lượng >0 trên Drive.")
     else:
@@ -2615,6 +2620,10 @@ def main():
             f_ee.result()
         ADMIN_BY_GID = {r["GID_2"]: r for r in ADMIN_DF.to_dict("records")}
         targets = load_targets(ADMIN_DF)
+    except DriveRateLimitError as exc:
+        # Giới hạn tạm thời của Drive, không phải lỗi cấu hình: thoát 2 để lượt sau thử lại.
+        log.error(f"Khởi tạo thất bại do Drive giới hạn tốc độ: {exc}. Lượt sau sẽ thử lại.")
+        return 2
     except Exception as exc:
         log.error(f"Khởi tạo thất bại: {type(exc).__name__}: {exc}")
         log.error(PREFLIGHT_HINT)
