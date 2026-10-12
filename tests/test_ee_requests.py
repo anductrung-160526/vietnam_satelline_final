@@ -18,7 +18,7 @@ class EarthEngineRequestTests(unittest.TestCase):
     def setUp(self):
         for name, value in (("EE_SEM", threading.BoundedSemaphore(1)),
                             ("STOP_EVENT", threading.Event()), ("_ee_cooldown_until", 0.0),
-                            ("EE_CREDENTIALS", None), ("communes_fc", None)):
+                            ("EE_CREDENTIALS", None), ("districts_fc", None)):
             p = patch.object(v, name, value)
             p.start()
             self.addCleanup(p.stop)
@@ -70,6 +70,107 @@ class EarthEngineRequestTests(unittest.TestCase):
                                                         v.ee.EEException("Too Many Requests"), {"ok": True}]))
         self.assertEqual(v.ee_getinfo(obj), {"ok": True})
         self.assertEqual(waits, [5, 10])
+
+    def test_aggregation_limit_uses_shared_backoff_and_reduces_request_limit(self):
+        waits = self.fake_clock()
+        gate = v.EERequestGate(4)
+        query = SimpleNamespace(getInfo=Mock(side_effect=[
+            v.ee.EEException('Too many concurrent aggregations.'),
+            v.ee.EEException('Too many concurrent aggregations.'), {'ok': True}]))
+        with patch.object(v, 'EE_SEM', gate):
+            self.assertEqual(v.ee_getinfo(query), {'ok': True})
+        self.assertEqual(waits, [5, 10])
+        self.assertEqual(gate.limit, 1)
+
+    def test_adaptive_gate_can_run_four_requests_without_exceeding_limit(self):
+        gate=v.EERequestGate(4)
+        lock=threading.Lock();active=0;peak=0
+        def call():
+            nonlocal active,peak
+            with gate:
+                with lock:
+                    active+=1;peak=max(peak,active)
+                time.sleep(0.01)
+                with lock:active-=1
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            list(pool.map(lambda _:call(),range(24)))
+        self.assertEqual(peak,4);self.assertEqual(gate.active,0)
+
+    def test_restricted_mode_429_reduces_gate_to_one_and_retries(self):
+        waits=self.fake_clock();gate=v.EERequestGate(4)
+        obj=SimpleNamespace(getInfo=Mock(side_effect=[v.ee.EEException('HTTP 429 Restricted Mode concurrency limit'),{'ok':True}]))
+        with patch.object(v,'EE_SEM',gate):
+            self.assertEqual(v.ee_getinfo(obj),{'ok':True})
+        self.assertEqual(gate.limit,1);self.assertEqual(gate.active,0);self.assertEqual(waits,[5])
+
+    def test_generic_429_halves_gate_without_ever_reaching_zero(self):
+        self.fake_clock();gate=v.EERequestGate(4)
+        request=Mock(side_effect=[v.ee.EEException('HTTP 429'),v.ee.EEException('HTTP 429'),v.ee.EEException('HTTP 429'),'ok'])
+        with patch.object(v,'EE_SEM',gate):self.assertEqual(v._ee_call(request),'ok')
+        self.assertEqual(gate.limit,1)
+
+    def test_reduced_gate_blocks_new_request_until_inflight_request_finishes(self):
+        gate=v.EERequestGate(4);entered=threading.Event()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with gate:
+                gate.reduce(restricted=True)
+                def call():
+                    with gate:entered.set()
+                future=pool.submit(call)
+                self.assertFalse(entered.wait(0.05))
+            future.result(timeout=1)
+        self.assertTrue(entered.is_set());self.assertEqual(gate.active,0)
+
+    def test_proactive_rest_drains_active_requests_and_blocks_all_new_requests(self):
+        gate=v.EERequestGate(4)
+        active_started=threading.Event();release_active=threading.Event()
+        drain_started=threading.Event();rest_started=threading.Event();release_rest=threading.Event()
+        new_entered=threading.Event();waits=[]
+        def existing():
+            with gate:
+                active_started.set();release_active.wait(2)
+        def waiting():
+            with gate:new_entered.set()
+        def rest_wait(seconds):
+            waits.append((seconds,gate.active,gate.paused))
+            rest_started.set();release_rest.wait(2)
+            return False
+        def log(message):
+            if 'chờ các yêu cầu' in message:drain_started.set()
+        pool=ThreadPoolExecutor(max_workers=3)
+        try:
+            with patch.object(v.STOP_EVENT,'wait',side_effect=rest_wait),patch.object(v.log,'info',side_effect=log):
+                first=pool.submit(existing);self.assertTrue(active_started.wait(1))
+                rest=pool.submit(gate.pause,30,'10 huyện')
+                self.assertTrue(drain_started.wait(1))
+                next_request=pool.submit(waiting)
+                self.assertFalse(rest_started.wait(0.03));self.assertFalse(new_entered.is_set())
+                release_active.set();self.assertTrue(rest_started.wait(1))
+                self.assertFalse(new_entered.wait(0.03))
+                gate.reduce();release_rest.set()
+                self.assertTrue(rest.result(timeout=1));first.result(timeout=1);next_request.result(timeout=1)
+        finally:
+            release_active.set();release_rest.set();pool.shutdown(wait=True)
+        self.assertEqual(waits,[(30,0,True)])
+        self.assertTrue(new_entered.is_set());self.assertEqual(gate.active,0)
+        self.assertFalse(gate.paused);self.assertEqual(gate.limit,2)
+
+    def test_stop_interrupts_proactive_rest_and_releases_gate(self):
+        gate=v.EERequestGate(4)
+        def stop(seconds):v.request_stop('deadline');return True
+        with patch.object(v.STOP_EVENT,'wait',side_effect=stop):
+            self.assertFalse(gate.pause(30,'hết tỉnh'))
+        self.assertFalse(gate.paused);self.assertEqual(gate.active,0)
+        with self.assertRaises(v.StopRequested):
+            with gate:pass
+
+    def test_stop_while_draining_does_not_wait_thirty_seconds(self):
+        gate=v.EERequestGate(4)
+        with gate:
+            v.STOP_EVENT.set()
+            with patch.object(v.STOP_EVENT,'wait') as wait:
+                self.assertFalse(gate.pause(30,'10 huyện'))
+            wait.assert_not_called();self.assertFalse(gate.paused)
 
     def test_download_429_respects_retry_after(self):
         waits = self.fake_clock()
@@ -155,10 +256,12 @@ class EarthEngineRequestTests(unittest.TestCase):
                  patch.object(v, "EE_HIGH_VOLUME", False), \
                  patch.object(v.ee, "ServiceAccountCredentials", return_value="fake-credentials"), \
                  patch.object(v.ee, "Initialize") as initialize, \
-                 patch.object(v.ee.data, "setDeadline"), patch.object(v.ee, "FeatureCollection"), \
+                 patch.object(v.ee.data, "setDeadline"), patch.object(v.ee.data,"setMaxRetries") as retries, \
+                 patch.object(v.ee, "FeatureCollection"), \
                  self.assertLogs(v.log, level="INFO") as logs:
                 v.init_earth_engine()
         initialize.assert_called_once_with(credentials="fake-credentials", project="vngis-ee-2")
+        retries.assert_called_once_with(0)
         self.assertIn("project=vngis-ee-2", logs.output[0])
         self.assertIn("runner@other-project", logs.output[0])
 

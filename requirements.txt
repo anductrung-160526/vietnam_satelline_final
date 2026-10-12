@@ -1,4 +1,4 @@
-earthengine-api>=1.1
+earthengine-api>=1.7.47
 google-auth>=2.20
 requests>=2.31
 numpy>=1.26,<2.3
