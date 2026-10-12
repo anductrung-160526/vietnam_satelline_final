@@ -1,9 +1,7 @@
-Requested: 2026-10-10 (retry run #26 after missing-manifest recovery fix)
+Requested: 2026-10-12 (retry after run #27 was cancelled at the 350-minute job limit)
 Scope: recover_drive (all 710 districts, prioritize GADM provinces 34 through 54)
 Period: 2024-07 through 2025-06
 Drive folder: VNGISDash_202407_202506_Districts_50m
-Reuse valid Drive outputs and CSV parts; upload local files first if present.
-Fetch missing outputs from Earth Engine when the previous runner's files are unavailable.
-Evidence: reports/DRIVE_RECOVERY_20261010.md
-Require checkpoint profile validation before reconstructing a missing manifest.
-Do not publish CSV from partial checkpoints when CSV import has failed.
+Evidence: reports/DRIVE_GAP_20261012.md, reports/drive_gap_20261012.csv
+Missing on Drive: Day provinces 50-54, Night provinces 15-33 and 42-54, CSV for 56 districts.
+Upload Day and Night together; bounded drain after deadline; watchdog keeps sync and chaining inside the job limit.

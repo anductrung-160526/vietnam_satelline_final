@@ -28,7 +28,7 @@ import os, io, re, sys, json, time, glob, math, shutil, zipfile, signal, logging
 import threading, subprocess, unicodedata, warnings, random, tempfile
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait as wait_futures
 from contextlib import contextmanager
 
 import numpy as np
@@ -1177,9 +1177,10 @@ def reuse_day_tif(ctx, period, path, label):
     with _sync_lock:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         source = path
+        rel_on_drive = None
         try:
             if not os.path.isfile(path):
-                rel = existing_day_source(ctx, period)
+                rel = rel_on_drive = existing_day_source(ctx, period)
                 if rel is None:
                     log.warning(f"{label}: trạng thái cũ có TIFF nhưng không thấy file trên Drive; tải lại tháng này từ EE")
                     return None
@@ -1198,6 +1199,14 @@ def reuse_day_tif(ctx, period, path, label):
             with rasterio.open(source) as src:
                 already = all(d == "int16" for d in src.dtypes) and all(
                     abs(s - 1.0 / DAY_SCALE_INV) < 1e-12 for s in src.scales)
+            if already and rel_on_drive == f"{ctx['rel_day_dir']}/{day_name(ctx, period)}":
+                # Đã Int16 và đã nằm đúng đường dẫn: chỉ ghi marker, không upload lại cùng file.
+                ok, empty, note = inspect_tif(source, DAY_BANDS)
+                if not ok:
+                    raise RuntimeError(note)
+                REMOTE_INT16_TIFS.add(rel_on_drive)
+                log.info(f"{label}: TIFF Int16 đã có đúng chỗ trên Drive; không tải lại EE, không upload lại")
+                return 1, empty
             if already:
                 if source != path:
                     os.replace(source, path)
@@ -1237,8 +1246,8 @@ def _download_month(kind, ctx, period, img, path):
                         if not ok:
                             raise RuntimeError(f"TIFF đêm trên Drive không hợp lệ: {note}")
                         if not empty:
-                            os.replace(temp, path)
-                            log.info(f"{label}: kiểm tra TIFF thực có trên Drive đạt; không tải lại EE")
+                            # File đã đúng đường dẫn trên Drive: không giữ bản local để khỏi upload lại.
+                            log.info(f"{label}: kiểm tra TIFF thực có trên Drive đạt; không tải lại EE, không upload lại")
                             return 1, False
                     else:
                         REMOTE_TIFS.discard(rel)
@@ -1773,7 +1782,7 @@ def upload_heartbeat(args):
 def _run_rclone(args, timeout=6 * 3600):
     """Một tiến trình Drive trong lượt; mọi lệnh có TPS và backoff khi quota."""
     args = list(args)
-    if "--fast-list" not in args:
+    if "--fast-list" not in args and "--no-traverse" not in args:
         args.append("--fast-list")
     for flag, value in [("--tpslimit", str(DRIVE_TPS_LIMIT)), ("--tpslimit-burst", "1"),
                         ("--transfers", str(DRIVE_TRANSFERS)), ("--checkers", "4"),
@@ -1869,34 +1878,45 @@ def rclone_sync_once(final=False):
         # rclone mới không cho kết hợp --files-from với --min-age (cùng nhóm filter).
         # Chọn file đã ổn định >= 2 phút trước khi tạo danh sách, final lấy mọi TIFF.
         cutoff = None if final else time.time() - 120
+        candidates = []
         for d in (() if csv_repair_mode() else (D_DAY, D_NIGHT)):
-            src = L(d)
-            if os.path.isdir(src):
-                candidates = list(glob.glob(os.path.join(src, "**", "*.tif"), recursive=True))
-                if cutoff is not None:
-                    candidates = [p for p in candidates if os.path.getmtime(p) <= cutoff]
-                int16_candidates = []
-                if d == D_DAY and DAY_FORMAT == "int16":
-                    import rasterio
-                    for p in candidates:
-                        with rasterio.open(p) as tif:
-                            if all(dtype == "int16" for dtype in tif.dtypes) and all(
-                                    abs(scale - 1.0 / DAY_SCALE_INV) < 1e-12 for scale in tif.scales):
-                                int16_candidates.append(p)
-                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".files") as snapshot:
-                    snapshot.write("\n".join(os.path.relpath(p, src).replace(os.sep, "/") for p in candidates))
-                    snapshot.flush()
-                    ok = _rclone(["move", src, f"{REMOTE_BASE}/{d}", "--files-from", snapshot.name,
-                                  *RCLONE_COMMON]) if candidates else True
-                success = ok and success
-                # rclone move chỉ xóa file đã upload thành công, kể cả khi một file khác lỗi.
-                REMOTE_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
-                                   for p in candidates if not os.path.isfile(p))
-                REMOTE_INT16_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
-                                         for p in int16_candidates if not os.path.isfile(p))
-                moved = sum(not os.path.isfile(p) for p in candidates)
-                log.info(f"[upload] {d}: xác nhận đã chuyển {moved}/{len(candidates)} TIFF của đợt; "
-                         f"còn {len(candidates)-moved} TIFF trong danh sách chờ đợt này; "
+            found = glob.glob(os.path.join(L(d), "**", "*.tif"), recursive=True)
+            candidates += [p for p in found if cutoff is None or os.path.getmtime(p) <= cutoff]
+        # Day và Night chung một lệnh move, xếp theo thời điểm tạo: ảnh đêm không phải chờ hết
+        # hàng đợi ảnh ngày. Các lượt cũ bị hủy giữa chừng mất toàn bộ ảnh đêm chưa upload.
+        candidates.sort(key=os.path.getmtime)
+        int16_candidates = []
+        if DAY_FORMAT == "int16":
+            import rasterio
+            for p in candidates:
+                if not os.path.relpath(p, LOCAL_ROOT).startswith(D_DAY + os.sep):
+                    continue
+                try:
+                    with rasterio.open(p) as tif:
+                        if all(dtype == "int16" for dtype in tif.dtypes) and all(
+                                abs(scale - 1.0 / DAY_SCALE_INV) < 1e-12 for scale in tif.scales):
+                            int16_candidates.append(p)
+                except Exception as exc:
+                    # Một file lỗi không được chặn upload của mọi file khác.
+                    log.warning(f"[upload] Không đọc được {p} để ghi marker Int16: {exc}")
+        if candidates:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".files") as snapshot:
+                snapshot.write("\n".join(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/") for p in candidates))
+                snapshot.flush()
+                # --no-traverse: chỉ kiểm tra từng file trong danh sách, không liệt kê cả cây Drive mỗi đợt.
+                ok = _rclone(["move", LOCAL_ROOT, REMOTE_BASE, "--files-from", snapshot.name,
+                              "--no-traverse", *RCLONE_COMMON])
+            success = ok and success
+            # rclone move chỉ xóa file đã upload thành công, kể cả khi một file khác lỗi.
+            REMOTE_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
+                               for p in candidates if not os.path.isfile(p))
+            REMOTE_INT16_TIFS.update(os.path.relpath(p, LOCAL_ROOT).replace(os.sep, "/")
+                                     for p in int16_candidates if not os.path.isfile(p))
+            for d in (D_DAY, D_NIGHT):
+                mine = [p for p in candidates if os.path.relpath(p, LOCAL_ROOT).startswith(d + os.sep)]
+                moved = sum(not os.path.isfile(p) for p in mine)
+                log.info(f"[upload] {d}: xác nhận đã chuyển {moved}/{len(mine)} TIFF của đợt; "
+                         f"còn {len(mine)-moved} TIFF trong danh sách chờ đợt này; "
                          f"kết quả={'OK' if ok else 'chưa hoàn tất'}.")
         if DAY_FORMAT == "int16":
             os.makedirs(L(D_CONTROL), exist_ok=True)
@@ -2400,6 +2420,8 @@ def write_progress(targets, statuses):
 
 # 13. VÒNG CHẠY
 # =====================================================================================
+DRAIN_SEC = _env("VNGIS_DRAIN_SEC", 900, int)
+DRAIN_TIMED_OUT = [False]
 OUTAGE_STREAK = 10
 OUTAGE_SLEEP_SEC = 900
 MAX_OUTAGES = 8
@@ -2524,7 +2546,17 @@ def run_round(jobs, statuses, rest_policy=None):
     except BaseException:
         pool.shutdown(wait=False, cancel_futures=True)
         raise
-    pool.shutdown(wait=True, cancel_futures=True)
+    if STOP_EVENT.is_set():
+        # Hết giờ/STOP: chỉ chờ huyện đang chạy trong DRAIN_SEC, còn lại bỏ để đồng bộ cuối kịp chạy.
+        # Huyện bị bỏ dở được làm tiếp ở lượt sau từ checkpoint; trước đây lượt chờ quá lâu nên
+        # GitHub hủy job và mất mọi TIFF chưa upload.
+        pool.shutdown(wait=False, cancel_futures=True)
+        _, running = wait_futures(futures, timeout=DRAIN_SEC)
+        if running:
+            DRAIN_TIMED_OUT[0] = True
+            log.warning(f"[stop] Sau {DRAIN_SEC}s còn {len(running)} huyện chưa dừng; bỏ qua để đồng bộ Drive.")
+    else:
+        pool.shutdown(wait=True, cancel_futures=True)
     for fut in futures:
         if fut not in handled and fut.done():
             consume(fut)
@@ -2662,7 +2694,8 @@ def main():
         code = 1
     if not rclone_sync_once(final=True):
         log.error("Đồng bộ cuối lên Drive thất bại. Giữ trạng thái để tải lại file thiếu ở lượt sau.")
-        return 1
+        # Checkpoint bền vững: lượt sau đối chiếu Drive và làm lại phần thiếu, không dừng chuỗi.
+        return 3 if MODE == "full" and not csv_repair_mode() else 1
 
     if not unfinished and not STOP_EVENT.is_set():
         failed = progress[~progress["csv_complete"]] if csv_repair_mode() else progress[progress["status"] != "done"]
@@ -2710,4 +2743,10 @@ if __name__ == "__main__" and os.environ.get("VNGIS_SKIP_MAIN") != "1":
         ok = rclone_sync_once(final=True)
         log.info("Đồng bộ nốt xong." if ok else "Đồng bộ nốt chưa hoàn tất.")
         sys.exit(0 if ok else 1)
-    sys.exit(main())
+    exit_code = main()
+    if DRAIN_TIMED_OUT[0]:
+        # Luồng huyện bị bỏ dở không được giữ tiến trình lại sau khi đã đồng bộ cuối.
+        logging.shutdown()
+        sys.stdout.flush()
+        os._exit(exit_code)
+    sys.exit(exit_code)

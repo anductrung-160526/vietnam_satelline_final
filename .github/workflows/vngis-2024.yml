@@ -1,6 +1,8 @@
 name: VNGISDash huyện 07/2024–06/2025
 
-# Mỗi lượt chạy tối đa 5 giờ 15 phút.
+# Mỗi lượt: pipeline nhận dữ liệu mới đến 4 giờ 15 phút, tối đa 15 phút để dừng các huyện
+# đang chạy, phần còn lại để đồng bộ Drive. Watchdog dừng cứng ở 5 giờ để bước đồng bộ nốt
+# và bước nối lượt luôn kịp chạy trước giới hạn 350 phút của job.
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
@@ -179,7 +181,10 @@ jobs:
 
     env:
       VNGIS_UPLOAD_EVERY_SEC: "300"
-      VNGIS_MAX_RUNTIME_SEC: "18900"
+      VNGIS_MAX_RUNTIME_SEC: "15300"
+      VNGIS_DRAIN_SEC: "900"
+      # Dừng cứng (KILL) nếu Python vẫn chưa thoát; file chưa upload do bước đồng bộ nốt đẩy lên.
+      VNGIS_HARD_STOP_SEC: "18000"
 
       # Project được truyền vào ee.Initialize(project=...).
       VNGIS_EE_PROJECT: ${{ vars.VNGIS_DISTRICTS_EE_PROJECT || 'vngis-ee-2' }}
@@ -304,13 +309,24 @@ jobs:
           LOGGER=$!
           python -u vngis_2024.py >&3 2>&1 &
           PID=$!
+          HARD_FLAG="$RUNNER_TEMP/vngis-hard-stop"
+          rm -f "$HARD_FLAG"
 
           (
             exec 3>&-
+            STARTED=$SECONDS
             while kill -0 "$PID" 2>/dev/null; do
               for _ in $(seq 1 "$STOP_POLL_SEC"); do
                 sleep 1
                 kill -0 "$PID" 2>/dev/null || exit 0
+                if [ $((SECONDS - STARTED)) -ge "$VNGIS_HARD_STOP_SEC" ]; then
+                  # Trước đây job bị GitHub hủy ở phút 350: mất TIFF chưa upload và đứt chuỗi.
+                  echo "::warning::Pipeline vượt ${VNGIS_HARD_STOP_SEC}s: dừng cứng, đồng bộ nốt rồi nối lượt."
+                  touch "$HARD_FLAG"
+                  pkill -TERM -P "$PID" 2>/dev/null
+                  kill -KILL "$PID" 2>/dev/null
+                  exit 0
+                fi
               done
 
               if gh api \
@@ -333,6 +349,9 @@ jobs:
           wait "$WATCH" 2>/dev/null
           exec 3>&-
           wait "$LOGGER"
+          if [ -f "$HARD_FLAG" ]; then
+            code=3
+          fi
 
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "Script thoát với mã $code"
@@ -342,10 +361,43 @@ jobs:
       - name: Đồng bộ nốt lên Drive
         if: always()
         continue-on-error: true
+        timeout-minutes: 25
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/vngis-logs"
           python -u vngis_2024.py --sync-only 2>&1 | tee "$RUNNER_TEMP/vngis-logs/sync.log"
+
+      - name: Nối lượt kế tiếp
+        # Chạy ngay sau đồng bộ, trước các bước báo cáo, để chuỗi không đứt khi job sắp hết giờ.
+        if: ${{ !cancelled() && (steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE_INPUT: ${{ env.VNGIS_MODE }}
+          PILOT_N_INPUT: ${{ inputs.pilot_n }}
+          WORKERS_INPUT: ${{ inputs.workers }}
+          DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
+          START_GID_INPUT: ${{ env.VNGIS_START_GID }}
+          REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
+          SCOPE_INPUT: ${{ env.VNGIS_RECOVER_DRIVE == 'true' && 'recover_drive' || env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
+        run: |
+          if gh api \
+            "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
+            > /dev/null 2>&1; then
+
+            echo "::notice::Có file STOP: dừng chuỗi, không nối lượt."
+          else
+            gh workflow run vngis-2024.yml \
+              --ref "$GITHUB_REF_NAME" \
+              -f mode="$MODE_INPUT" \
+              -f pilot_n="$PILOT_N_INPUT" \
+              -f workers="$WORKERS_INPUT" \
+              -f day_scale="$DAY_SCALE_INPUT" \
+              -f start_gid="$START_GID_INPUT" \
+              -f repair_gids="$REPAIR_GIDS_INPUT" \
+              -f scope="$SCOPE_INPUT"
+
+            echo "Đã gọi lượt kế tiếp."
+          fi
 
       - name: Kiểm tra kết quả thí điểm
         if: always() && inputs.mode == 'pilot' && steps.pipeline.outputs.code == '0'
@@ -400,6 +452,7 @@ jobs:
       - name: Kiểm kê Drive sau lượt phục hồi
         if: always() && env.VNGIS_RECOVER_DRIVE == 'true' && steps.pipeline.outputs.code != ''
         continue-on-error: true
+        timeout-minutes: 12
         run: |
           set -o pipefail
           mkdir -p "$RUNNER_TEMP/vngis-logs"
@@ -422,37 +475,6 @@ jobs:
           path: ${{ runner.temp }}/vngis-logs
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Nối lượt kế tiếp
-        if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          MODE_INPUT: ${{ env.VNGIS_MODE }}
-          PILOT_N_INPUT: ${{ inputs.pilot_n }}
-          WORKERS_INPUT: ${{ inputs.workers }}
-          DAY_SCALE_INPUT: ${{ inputs.day_scale || '50' }}
-          START_GID_INPUT: ${{ env.VNGIS_START_GID }}
-          REPAIR_GIDS_INPUT: ${{ env.VNGIS_REPAIR_GIDS }}
-          SCOPE_INPUT: ${{ env.VNGIS_RECOVER_DRIVE == 'true' && 'recover_drive' || env.VNGIS_CSV_REPAIR_ONLY == 'true' && 'repair_csv' || 'range' }}
-        run: |
-          if gh api \
-            "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
-            > /dev/null 2>&1; then
-
-            echo "::notice::Có file STOP: dừng chuỗi, không nối lượt."
-          else
-            gh workflow run vngis-2024.yml \
-              --ref "$GITHUB_REF_NAME" \
-              -f mode="$MODE_INPUT" \
-              -f pilot_n="$PILOT_N_INPUT" \
-              -f workers="$WORKERS_INPUT" \
-              -f day_scale="$DAY_SCALE_INPUT" \
-              -f start_gid="$START_GID_INPUT" \
-              -f repair_gids="$REPAIR_GIDS_INPUT" \
-              -f scope="$SCOPE_INPUT"
-
-            echo "Đã gọi lượt kế tiếp."
-          fi
 
       - name: Báo lỗi nếu script thoát bất thường
         if: >-

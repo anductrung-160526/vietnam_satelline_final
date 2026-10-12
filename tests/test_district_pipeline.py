@@ -288,8 +288,29 @@ class StableUploadTests(LocalCase):
         with patch.object(v, '_rclone', side_effect=upload):
             self.assertTrue(v.rclone_sync_once(final=True))
         self.assertEqual(calls[0], ('copy', f'{v.REMOTE_BASE}/_control'))
-        self.assertEqual(calls[1], ('move', f'{v.REMOTE_BASE}/Day'))
+        self.assertEqual(calls[1], ('move', v.REMOTE_BASE))
         self.assertEqual(calls[-1], ('copy', f'{v.REMOTE_BASE}/_control'))
+
+    def test_day_and_night_share_one_upload_so_night_is_never_starved(self):
+        ctx=v.build_ctx(ROW)
+        night=Path(v.L(ctx['rel_night_dir'],v.night_name(ctx,(2024,7))))
+        day=Path(v.L(ctx['rel_day_dir'],v.day_name(ctx,(2024,7))))
+        night.parent.mkdir(parents=True);day.parent.mkdir(parents=True)
+        v.write_tif(str(night),np.ones((2,2,2),'float64'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,['avg_rad','cf_cvg'])
+        v.write_day_int16(str(day),np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+        os.utime(night,(1,1))
+        moves=[]
+        def upload(args,**kwargs):
+            if args[0]=='move':
+                listed=Path(args[args.index('--files-from')+1]).read_text().splitlines()
+                moves.append(listed);self.assertIn('--no-traverse',args)
+                night.unlink();day.unlink()
+            return True
+        with patch.object(v,'_rclone',side_effect=upload):
+            self.assertTrue(v.rclone_sync_once(final=True))
+        self.assertEqual(moves,[[str(night.relative_to(self.root)),str(day.relative_to(self.root))]])
+        self.assertIn(str(night.relative_to(self.root)),v.REMOTE_TIFS)
+        self.assertEqual(v.REMOTE_INT16_TIFS,{str(day.relative_to(self.root))})
 
     def test_csv_repair_does_not_upload_or_remove_existing_local_tiff(self):
         day = self.root / 'Day/old.tif';day.parent.mkdir()
@@ -578,6 +599,23 @@ class ProcessTests(LocalCase):
         records=v.day_records(ROW,props)
         self.assertEqual(records[0]['DATA_STATUS'],'no_data')
         self.assertEqual(records[1]['DATA_STATUS'],'ok')
+
+    def test_stop_does_not_wait_forever_for_a_stuck_district(self):
+        release=threading.Event();started=threading.Event()
+        def stuck(row,previous):
+            started.set();release.wait(10);raise v.StopRequested()
+        def quick(row,previous):
+            started.wait(5);v.STOP_EVENT.set();return {'status':'partial','errors':[]}
+        other={**ROW,'GID_2':'VNM.1.2_1'}
+        try:
+            with patch.object(v,'process_district',side_effect=lambda r,p:(stuck if r is ROW else quick)(r,p)), \
+                 patch.multiple(v,DRAIN_SEC=0.2,DRAIN_TIMED_OUT=[False],N_WORKERS=2):
+                started_at=v.time.time()
+                self.assertEqual(v.run_round([(ROW['GID_2'],ROW,'full'),(other['GID_2'],other,'full')],{}),'stop')
+                self.assertLess(v.time.time()-started_at,5)
+                self.assertTrue(v.DRAIN_TIMED_OUT[0])
+        finally:
+            release.set()
 
     def test_checkpoint_before_exception_is_preserved_by_run_round(self):
         def failing_process(row,previous):
@@ -898,7 +936,10 @@ class MainTests(LocalCase):
     def test_final_upload_failure_is_not_reported_as_success(self):
         self.states={r['GID_2']:complete_state(r['GID_2']) for r in [ROW,URBAN]}
         v.rclone_sync_once.return_value=False
-        self.assertEqual(v.main(),1)
+        # Pilot dừng với lỗi; full trả 3 để lượt sau đối chiếu Drive và upload lại phần thiếu.
+        self.assertEqual(v.main(),1 if v.MODE!='full' else 3)
+        with patch.object(v,'MODE','full'):
+            self.assertEqual(v.main(),3)
 
     def test_empty_pilot_verification_fails(self):
         with patch('sys.argv',['verify_pilot.py','--root',str(self.root)]):
@@ -1140,7 +1181,7 @@ class Int16UpgradeTests(LocalCase):
                 moves.append(args)
                 self.assertNotIn('--min-age',args);self.assertNotIn('--filter',args)
                 listed=Path(args[args.index('--files-from')+1]).read_text().splitlines()
-                self.assertEqual(listed,[str(old.relative_to(self.root/'Day'))])
+                self.assertEqual(listed,[str(old.relative_to(self.root))])
                 old.unlink()
             return True
         with patch.object(v,'_rclone',side_effect=upload):
@@ -1288,7 +1329,22 @@ class RecoveryTests(LocalCase):
         with patch.object(v,'_rclone',side_effect=copy),patch.object(v,'download_tif') as download:
             result=v._download_month('night',ctx,v.PERIODS[0],object(),v.L(rel))
         self.assertEqual(result,(1,False));download.assert_not_called()
-        self.assertTrue(Path(v.L(rel)).is_file())
+        # Đã đúng chỗ trên Drive: không giữ bản local để upload lại.
+        self.assertFalse(Path(v.L(rel)).exists());self.assertIn(rel,v.REMOTE_TIFS)
+
+    def test_existing_canonical_int16_day_tif_is_marked_without_reupload(self):
+        ctx=v.build_ctx(ROW);ctx['geom']=object()
+        rel=f"{ctx['rel_day_dir']}/{v.day_name(ctx,v.PERIODS[0])}"
+        v.REMOTE_TIFS.add(rel)
+        def copy(args,**kwargs):
+            v.write_day_int16(args[2],np.full((10,2,2),0.2,'float32'),from_origin(105,22,.001,.001),'EPSG:4326',np.nan,v.DAY_BANDS_ALL)
+            return True
+        with patch.multiple(v,RECOVER_DRIVE=True,DAY_FORMAT='int16'), \
+             patch.object(v,'_rclone',side_effect=copy),patch.object(v,'download_tif') as download:
+            result=v._download_month('day',ctx,v.PERIODS[0],object(),v.L(rel))
+        self.assertEqual(result,(1,False));download.assert_not_called()
+        self.assertFalse(Path(v.L(rel)).exists());self.assertIn(rel,v.REMOTE_INT16_TIFS)
+        self.assertEqual(list(Path(v.L(ctx['rel_day_dir'])).iterdir()),[])
 
     def test_night_read_permission_error_never_causes_ee_redownload(self):
         ctx=v.build_ctx(ROW);ctx['geom']=object()
