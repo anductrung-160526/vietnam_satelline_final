@@ -1395,6 +1395,28 @@ class RecoveryTests(LocalCase):
         self.assertEqual(len(v._read_parts('day')),12)
         self.assertFalse(v.district_complete(v.reconcile_status(complete_state())))
 
+    def test_duplicate_drive_tiffs_are_merged_keeping_newest_before_recovery(self):
+        manifest={'schema':v.SCHEMA_ID,'period':v.PERIOD_ID,'profile':v.OUTPUT_PROFILE,'level':2,'months':v.MONTH_KEYS}
+        dup='Night/VNM.15_1_dak_lak/VNM.15.1_1_x/VNM.15.1_1_night_202407.tif'
+        state={'deduped':[]}
+        def command(args,**kwargs):
+            if args[0]=='cat':
+                body=json.dumps(manifest) if args[1].endswith('pipeline.json') else '[]'
+                return SimpleNamespace(returncode=0,stdout=body,stderr='')
+            if args[0]=='dedupe':
+                self.assertEqual(args[1:3],['--dedupe-mode','newest'])
+                state['deduped'].append(args[3]);return SimpleNamespace(returncode=0,stdout='',stderr='')
+            if args[0]=='lsjson':
+                items=[{'Path':dup,'Size':9}]*(1 if state['deduped'] else 2)
+                return SimpleNamespace(returncode=0,stdout=json.dumps(items),stderr='')
+            return SimpleNamespace(returncode=0,stdout='',stderr='')
+        with patch.multiple(v,DAY_IMAGE_SCALE=50,RECOVER_DRIVE=True,CACHE_DIR=str(self.root/'cache')), \
+             patch.object(v.shutil,'which',return_value='/usr/bin/rclone'), \
+             patch.object(v,'_run_rclone',side_effect=command),patch.object(v,'_rclone',return_value=True):
+            v.init_storage()
+        self.assertEqual(state['deduped'],[f"{v.REMOTE_BASE}/{dup.rsplit('/',1)[0]}"])
+        self.assertEqual(v.REMOTE_TIFS,{dup})
+
     def test_missing_manifest_without_checkpoint_does_not_create_profile_proof(self):
         with self.assertRaisesRegex(RuntimeError,'không có checkpoint'):
             v.recover_manifest_from_checkpoint()

@@ -2014,8 +2014,27 @@ def init_storage():
         counts = {}
         for item in entries:
             counts[item["Path"]] = counts.get(item["Path"], 0) + 1
-        if any(count > 1 for count in counts.values()):
-            raise RuntimeError("Drive có TIFF trùng đường dẫn; cần kiểm kê/xử lý bản trùng trước khi phục hồi.")
+        duplicates = sorted(path for path, count in counts.items() if count > 1)
+        if duplicates:
+            # Lượt bị hủy giữa lúc upload để lại 2 file cùng tên (Drive cho phép). Cùng pipeline,
+            # cùng đường dẫn: giữ bản mới nhất; rclone xóa bản giống hệt (md5) trước.
+            folders = sorted({path.rsplit("/", 1)[0] for path in duplicates})
+            log.warning(f"[recovery] {len(duplicates)} TIFF trùng đường dẫn trong {len(folders)} thư mục; "
+                        f"gộp, giữ bản mới nhất. Ví dụ: {duplicates[:3]}")
+            for folder in folders:
+                res = _run_rclone(["dedupe", "--dedupe-mode", "newest", f"{REMOTE_BASE}/{folder}"], timeout=1800)
+                if res.returncode != 0:
+                    raise RuntimeError(f"Không gộp được TIFF trùng trong {folder}: {res.stderr.strip()[-300:]}")
+            listing = _run_rclone(["lsjson", REMOTE_BASE, "--recursive", "--files-only", "--include", "*.tif"],
+                                  timeout=3600)
+            if listing.returncode != 0:
+                raise RuntimeError("Không kiểm tra lại được TIFF trên Drive: " + listing.stderr[-200:])
+            entries = json.loads(listing.stdout)
+            counts = {}
+            for item in entries:
+                counts[item["Path"]] = counts.get(item["Path"], 0) + 1
+            if any(count > 1 for count in counts.values()):
+                raise RuntimeError("Drive vẫn còn TIFF trùng đường dẫn sau khi gộp; cần kiểm tra thủ công.")
         REMOTE_TIFS = {item["Path"] for item in entries if not item.get("IsDir") and item.get("Size", 0) > 0}
         log.info(f"[recovery] Kiểm kê {len(REMOTE_TIFS)} TIFF dung lượng >0 trên Drive.")
     else:

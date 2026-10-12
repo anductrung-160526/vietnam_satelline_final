@@ -1,7 +1,8 @@
-Requested: 2026-10-12 (retry after run #27 was cancelled at the 350-minute job limit)
+Requested: 2026-10-12 (retry after run #28 stopped on duplicate Drive TIFF paths)
 Scope: recover_drive (all 710 districts, prioritize GADM provinces 34 through 54)
 Period: 2024-07 through 2025-06
 Drive folder: VNGISDash_202407_202506_Districts_50m
 Evidence: reports/DRIVE_GAP_20261012.md, reports/drive_gap_20261012.csv
 Missing on Drive: Day provinces 50-54, Night provinces 15-33 and 42-54, CSV for 56 districts.
 Upload Day and Night together; bounded drain after deadline; watchdog keeps sync and chaining inside the job limit.
+Merge duplicate TIFF paths left by cancelled uploads (keep newest) before reconciling.
