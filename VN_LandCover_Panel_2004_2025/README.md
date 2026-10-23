@@ -4,6 +4,8 @@ Bộ dữ liệu ảnh vệ tinh ban ngày, bản đồ lớp phủ 5 lớp và 
 
 ## Nguồn ảnh (qua Google Earth Engine)
 
+Mặc định mỗi năm dùng một nguồn: **Landsat cho 2004–2014, Sentinel-2 cho 2015–2025**.
+
 | Nguồn | Giai đoạn | GEE collection | Độ phân giải |
 |---|---|---|---|
 | Landsat 5 TM | 2004–2011 | `LANDSAT/LT05/C02/T1_L2` | 30 m |
@@ -30,7 +32,8 @@ VN_LandCover_Panel_2004_2025/
 ├── raw_data/DAY/LANDSAT/     LANDSAT_<ma_huyen>_<nam>[_<thang>].tif  (ảnh tổng hợp đã che mây, 6 kênh, ×10000)
 ├── raw_data/DAY/SENTINEL2/   SENTINEL2_<ma_huyen>_<nam>[_<thang>].tif
 ├── data_intermediate/        LC_<LANDSAT|SENTINEL2>_<ma_huyen>_<nam>[_<thang>].tif (bản đồ phân lớp)
-├── data_processed/           vietnam_district_landcover_panel_2004_2025.{csv,xlsx,dta}  (năm)
+├── data_processed/           vietnam_district_day_indices_2004_2025.{csv,xlsx,dta}      (gộp năm + tháng, cột ky)
+│                             vietnam_district_landcover_panel_2004_2025.{csv,xlsx,dta}  (năm)
 │                             vietnam_district_landcover_monthly.{csv,xlsx,dta}         (12 tháng)
 ├── metadata/                 codebook_landcover.{md,xlsx}
 ├── samples/                  ground_truth_samples.{csv,geojson}

@@ -6,7 +6,8 @@ KHÔNG dùng machine learning: phân 5 lớp bằng luật ngưỡng chỉ số 
 độ dốc SRTM. Ngưỡng nằm trong pipeline_core/config.py (LANDCOVER_THRESHOLDS).
 
 Nguồn ảnh (Google Earth Engine):
-- Landsat 5/7/8/9 Collection 2 Level 2 (30 m), 2004–2025. Landsat 7 (lỗi SLC-off sau 2003) chỉ dùng để
+Mặc định (auto): Landsat cho 2004–2014, Sentinel-2 cho 2015–2025 (mỗi năm một nguồn).
+- Landsat 5/7/8/9 Collection 2 Level 2 (30 m). Landsat 7 (lỗi SLC-off sau 2003) chỉ dùng để
   lấp chỗ trống của cảm biến chính, trừ năm 2012 (năm chỉ có Landsat 7).
 - Sentinel-2 (10 m) từ 2015: S2_SR_HARMONIZED (từ 04/2017), trước đó S2_HARMONIZED (TOA).
 
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from pipeline_core.config import (YEARS, START_YEAR, LANDCOVER_PACKAGE, LANDCOVER_CLASSES, LANDCOVER_THRESHOLDS,
                                   DRY_SEASON, MAX_SCENE_CLOUD, SCALE, SENTINEL2_DOWNLOAD_SCALE)
 from pipeline_core.base_pipeline import BasePipeline, ID_COLS
-from pipeline_core.utils import export_multiformat_table
+from pipeline_core.utils import export_multiformat_table, combine_annual_monthly
 from pipeline_core import ee_utils
 
 BANDS = ["BLUE", "GREEN", "RED", "NIR", "SWIR1", "SWIR2"]
@@ -40,9 +41,11 @@ S2_FIRST_YEAR = 2015
 S2_SR_START = "2017-03-28"
 SRTM = "USGS/SRTMGL1_003"
 
-SENSORS = ("landsat", "sentinel2")
+SENSORS = ("auto",)  # auto: Landsat 2004–2014, Sentinel-2 2015–2025
+S2_SWITCH_YEAR = 2015
 TABLE = "vietnam_district_landcover_panel_2004_2025"
 MONTHLY_TABLE = "vietnam_district_landcover_monthly"
+COMBINED_TABLE = "vietnam_district_day_indices_2004_2025"  # bảng gộp năm + tháng
 AREA_COLS = [c["code"] for c in LANDCOVER_CLASSES.values()]
 TABLE_COLS = ID_COLS + ["nam", "nguon_anh"] + AREA_COLS + [
     "dt_khong_quan_sat", "tong_dien_tich_ha", "ty_le_nong_nghiep", "dt_nn_chuyen_doi",
@@ -58,6 +61,11 @@ def month_window(year, month):
     start = date(year, month, 1)
     end = date(year + (month == 12), month % 12 + 1, 1)
     return start, end
+
+
+def sensor_for_year(year):
+    """Nguồn ảnh ngày theo năm: Landsat đến hết 2014, Sentinel-2 từ 2015."""
+    return "landsat" if year < S2_SWITCH_YEAR else "sentinel2"
 
 
 def season_window(year):
@@ -89,6 +97,7 @@ class LandCoverPipeline(BasePipeline):
         self.raw_dir = {"landsat": self.pkg_dir / "raw_data" / "DAY" / "LANDSAT",
                         "sentinel2": self.pkg_dir / "raw_data" / "DAY" / "SENTINEL2"}
         self.sensors = tuple(sensors)
+        self.auto = self.sensors == ("auto",)
         self.accuracy = accuracy
         self._cls_cache = {}
         self._aoi = None
@@ -238,12 +247,16 @@ class LandCoverPipeline(BasePipeline):
         with self.timer.step(self.NAME, f"chuan_bi_anh_{sensor}", nam=year):
             comp, cls, label, n_scenes, window, note = self.classified(sensor, year)
             prev = None
-            first_year = START_YEAR if sensor == "landsat" else S2_FIRST_YEAR
+            prev_sensor = sensor_for_year(year - 1) if self.auto else sensor
+            first_year = START_YEAR if prev_sensor == "landsat" else S2_FIRST_YEAR
             if year - 1 >= first_year:
                 try:
-                    prev = self.classified(sensor, year - 1)[1]
+                    prev = self.classified(prev_sensor, year - 1)[1]
                 except Exception as e:
                     self.log(sensor_label, f"Không có ảnh năm {year - 1} để tính chuyển đổi: {e}")
+            if prev is not None and prev_sensor != sensor:
+                note = (note + "; " if note else "") + \
+                    "dt_nn_chuyen_doi so với năm trước dùng Landsat (khác nguồn ảnh, độ phân giải 30 m vs 10 m)"
         self.log(sensor_label, f"Năm {year}: {n_scenes} cảnh, kỳ {window}, {label}")
 
         for _, row in districts.iterrows():
@@ -361,33 +374,42 @@ class LandCoverPipeline(BasePipeline):
                     self.log(sensor_label, f"Lỗi huyện {row['ten_huyen']} ({gid}) {month:02d}/{year}: {e}",
                              error=True)
 
+    def _keep_auto_source(self, df):
+        """Chế độ auto: chỉ giữ bản ghi đúng nguồn của năm (bỏ bản ghi cũ từ lần chạy khác nguồn)."""
+        if df.empty or not self.auto:
+            return df
+        want = df["nam"].astype(int).map(lambda y: "Landsat" if sensor_for_year(y) == "landsat" else "Sentinel-2")
+        return df[[str(n).startswith(w) for n, w in zip(df["nguon_anh"], want)]]
+
     def export_tables(self):
-        monthly = pd.DataFrame(self.checkpoint.results("lcm_"))
+        monthly = self._keep_auto_source(pd.DataFrame(self.checkpoint.results("lcm_")))
         if not monthly.empty:
-            monthly = monthly.sort_values(["ma_huyen_gadm", "nguon_anh", "nam", "thang"]).reindex(columns=MONTHLY_COLS)
+            monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reindex(columns=MONTHLY_COLS)
             for f in export_multiformat_table(monthly, self.processed_dir / MONTHLY_TABLE, logger=self.logger):
                 self.log("LandCover", f"Xuất bảng {f}")
-        df = pd.DataFrame(self.checkpoint.results("lc_"))
-        if df.empty:
-            return df
-        df = df.sort_values(["ma_huyen_gadm", "nguon_anh", "nam"]).reindex(columns=TABLE_COLS)
+        df = self._keep_auto_source(pd.DataFrame(self.checkpoint.results("lc_")))
+        if not df.empty:
+            df = df.sort_values(["ma_huyen_gadm", "nam"]).reindex(columns=TABLE_COLS)
         with self.timer.step(self.NAME, "xuat_bang"):
-            for f in export_multiformat_table(df, self.processed_dir / TABLE, logger=self.logger):
-                self.log("LandCover", f"Xuất bảng {f}")
+            if not df.empty:
+                for f in export_multiformat_table(df, self.processed_dir / TABLE, logger=self.logger):
+                    self.log("LandCover", f"Xuất bảng {f}")
+            combined = combine_annual_monthly(df, monthly)
+            if not combined.empty:
+                for f in export_multiformat_table(combined, self.processed_dir / COMBINED_TABLE, logger=self.logger):
+                    self.log("LandCover", f"Xuất bảng chỉ số ảnh ngày (năm + tháng) {f}")
         return df
 
     def run(self, districts_df, years=None):
         years = sorted(years or YEARS)
         districts = self.prepare_districts(districts_df)
         self.log("LandCover", f"Bắt đầu: {len(districts)} huyện, năm {years[0]}–{years[-1]}, "
-                              f"ảnh: {', '.join(self.sensors)}{', có dữ liệu tháng' if self.monthly else ''} "
+                              f"ảnh: {'Landsat 2004–2014, Sentinel-2 2015–2025' if self.auto else ', '.join(self.sensors)}{', có dữ liệu tháng' if self.monthly else ''} "
                               f"(phân lớp theo ngưỡng chỉ số, không ML)")
         self.connect()
         self.load_geometries(districts)
-        for sensor in self.sensors:
-            for year in years:
-                if sensor == "sentinel2" and year < S2_FIRST_YEAR:
-                    continue
+        for sensor, sensor_years in self.plan(years):
+            for year in sensor_years:
                 try:
                     self.process(sensor, year, districts)
                 except Exception as e:
@@ -398,9 +420,17 @@ class LandCoverPipeline(BasePipeline):
                     except Exception as e:
                         self.log(sensor, f"Lỗi dữ liệu tháng năm {year}: {e}", error=True)
             if self.accuracy:
-                self.run_accuracy(sensor, [y for y in years if sensor == "landsat" or y >= S2_FIRST_YEAR])
-            self._cls_cache.clear()
+                self.run_accuracy(sensor, sensor_years)
+        self._cls_cache.clear()
         return self.export_tables()
+
+    def plan(self, years):
+        """[(nguồn, [năm...])]: auto -> Landsat 2004–2014, Sentinel-2 2015–2025."""
+        if self.auto:
+            out = [(s, [y for y in years if sensor_for_year(y) == s]) for s in ("landsat", "sentinel2")]
+        else:
+            out = [(s, [y for y in years if s == "landsat" or y >= S2_FIRST_YEAR]) for s in self.sensors]
+        return [(s, ys) for s, ys in out if ys]
 
     def run_accuracy(self, sensor, years):
         if not years:

@@ -55,8 +55,8 @@ def run_monthly(args, timer):
         d = lc.prepare_districts(districts)
         lc.connect()
         lc.load_geometries(d)
-        for sensor in lc.sensors:
-            for year in years:
+        for sensor, sensor_years in lc.plan(years):
+            for year in sensor_years:
                 lc.log(sensor, f"Cập nhật tự động dữ liệu tháng năm {year} cho {len(d)} huyện")
                 lc.process_monthly(sensor, year, d)
         lc.export_tables()

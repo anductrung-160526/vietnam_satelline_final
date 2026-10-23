@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from pipeline_core.config import (YEARS, NTL_PACKAGE, SCALE, DMSP_LAST_YEAR, VIIRS_FIRST_YEAR,
                                   VIIRS_BACKGROUND_THRESHOLD, DMSP_BACKGROUND_DN, VIIRS_MAX_RADIANCE)
 from pipeline_core.base_pipeline import BasePipeline, ID_COLS
-from pipeline_core.utils import export_multiformat_table, pct_change_consecutive
+from pipeline_core.utils import export_multiformat_table, pct_change_consecutive, combine_annual_monthly
 from pipeline_core import ee_utils
 
 VIIRS_ANNUAL_COLLECTIONS = ["NOAA/VIIRS/DNB/ANNUAL_V21", "NOAA/VIIRS/DNB/ANNUAL_V22"]
@@ -38,7 +38,8 @@ ANNUAL_TABLE = "vietnam_district_ntl_panel_2004_2025"
 MONTHLY_TABLE = "vietnam_district_ntl_viirs_monthly"
 ANNUAL_COLS = ID_COLS + ["nam", "nguon_anh", "sol_ntl", "mat_do_ntl", "thay_doi_ntl",
                          "dien_tich_km2", "sol_ntl_goc", "don_vi_goc", "so_pixel", "ghi_chu"]
-MONTHLY_COLS = ID_COLS + ["nam", "thang", "nguon_anh", "sol_ntl", "mat_do_ntl", "cf_cvg_tb",
+COMBINED_TABLE = "vietnam_district_night_indices_2004_2025"  # bảng gộp năm + tháng
+MONTHLY_COLS = ID_COLS + ["nam", "thang", "nguon_anh", "sol_ntl", "mat_do_ntl", "thay_doi_ntl", "cf_cvg_tb",
                           "dien_tich_km2", "ghi_chu"]
 
 
@@ -280,8 +281,14 @@ class NTLPipeline(BasePipeline):
                 written += export_multiformat_table(annual, self.processed_dir / ANNUAL_TABLE, logger=self.logger)
         monthly = pd.DataFrame(self.checkpoint.results("ntl_month_"))
         if not monthly.empty:
-            monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reindex(columns=MONTHLY_COLS)
+            monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reset_index(drop=True)
+            # Tháng: thay đổi so với cùng tháng năm trước
+            monthly["thay_doi_ntl"] = pct_change_consecutive(monthly, "ma_huyen_gadm", "sol_ntl", extra_keys=("thang",))
+            monthly = monthly.reindex(columns=MONTHLY_COLS)
             written += export_multiformat_table(monthly, self.processed_dir / MONTHLY_TABLE, logger=self.logger)
+        combined = combine_annual_monthly(annual, monthly)
+        if not combined.empty:
+            written += export_multiformat_table(combined, self.processed_dir / COMBINED_TABLE, logger=self.logger)
         for f in written:
             self.log("NTL", f"Xuất bảng {f}")
         return annual

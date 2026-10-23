@@ -26,6 +26,7 @@ COMMON_VARS = [
     v("ten_huyen", "Tên đơn vị hành chính cấp huyện", "GADM 4.1 Level 2", "Thuộc tính ranh giới", STR, ""),
     v("ma_huyen_gadm", "Mã GADM của huyện (GID_2), dùng để ghép ranh giới", "GADM 4.1 Level 2", "", STR, ""),
     v("nam", "Năm quan sát", "", "Năm tổng hợp ảnh", INT, "Năm"),
+    v("ky", "Loại kỳ của dòng trong bảng gộp *_indices: 'Năm' hoặc 'Tháng'", "", "", STR, ""),
 ]
 
 NTL_CODEBOOK_DATA = COMMON_VARS + [
@@ -35,8 +36,8 @@ NTL_CODEBOOK_DATA = COMMON_VARS + [
       "Σ(bức xạ pixel × diện tích pixel km²) trong ranh giới huyện, sau lọc nhiễu; DMSP quy đổi về VIIRS",
       NUM, "nW/cm²/sr·km²"),
     v("mat_do_ntl", "Mật độ kinh tế đêm", "Tính toán", "sol_ntl / dien_tich_km2", NUM, "nW/cm²/sr"),
-    v("thay_doi_ntl", "Mức độ thay đổi so với năm trước", "Tính toán",
-      "(sol_ntl_t − sol_ntl_t−1) / sol_ntl_t−1 × 100; trống nếu thiếu năm trước", NUM, "%"),
+    v("thay_doi_ntl", "Mức độ thay đổi so với năm trước (dòng tháng: so với cùng tháng năm trước)", "Tính toán",
+      "(sol_ntl_t − sol_ntl_t−1) / sol_ntl_t−1 × 100; trống nếu thiếu kỳ trước", NUM, "%"),
     v("dien_tich_km2", "Diện tích tự nhiên của huyện", "GADM 4.1", "Diện tích đa giác (GEE, geodesic)", NUM, "km²"),
     v("sol_ntl_goc", "Tổng lượng ánh sáng của ảnh gốc, chưa lọc nhiễu/hiệu chỉnh", "DMSP-OLS / SNPP-VIIRS",
       "Như sol_ntl nhưng trên ảnh thô", NUM, "DN·km² (DMSP) hoặc nW/cm²/sr·km² (VIIRS)"),
@@ -50,7 +51,7 @@ NTL_CODEBOOK_DATA = COMMON_VARS + [
 
 LANDCOVER_CODEBOOK_DATA = COMMON_VARS + [
     v("nguon_anh", "Nguồn ảnh của dòng dữ liệu", "Landsat 5/7/8/9 (USGS), Sentinel-2 (Copernicus)",
-      "Mỗi huyện-năm có 1 dòng Landsat và (từ 2015) 1 dòng Sentinel-2", STR, ""),
+      "Mặc định: Landsat cho 2004–2014, Sentinel-2 cho 2015–2025", STR, ""),
     v("dt_nong_nghiep", "Diện tích đất nông nghiệp", "Ảnh ban ngày", "Lớp 1, phân lớp theo ngưỡng", NUM, "ha"),
     v("dt_do_thi", "Diện tích đất đô thị và dịch vụ", "Ảnh ban ngày", "Lớp 2", NUM, "ha"),
     v("dt_rung", "Diện tích rừng", "Ảnh ban ngày", "Lớp 3", NUM, "ha"),

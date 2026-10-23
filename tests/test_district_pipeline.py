@@ -77,7 +77,7 @@ class UtilTests(unittest.TestCase):
         p = build_parser()
         p.set_defaults(province="Hà Nội", years="2024")
         a = p.parse_args([])
-        self.assertEqual((a.province, a.years, a.day_sensors), ("Hà Nội", "2024", "landsat,sentinel2"))
+        self.assertEqual((a.province, a.years, a.day_sensors), ("Hà Nội", "2024", "auto"))
 
 
 class EarthEngineHelperTests(unittest.TestCase):
@@ -131,6 +131,25 @@ class EarthEngineHelperTests(unittest.TestCase):
 class LandCoverRuleTests(unittest.TestCase):
     def test_dry_season_window(self):
         self.assertEqual(season_window(2024), ("2023-11-01", "2024-05-01"))
+
+    def test_auto_sensor_by_year(self):
+        from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import LandCoverPipeline, sensor_for_year
+        self.assertEqual((sensor_for_year(2014), sensor_for_year(2015), sensor_for_year(2024)),
+                         ("landsat", "sentinel2", "sentinel2"))
+        p = LandCoverPipeline.__new__(LandCoverPipeline)
+        p.auto, p.sensors = True, ("auto",)
+        self.assertEqual(p.plan([2024]), [("sentinel2", [2024])])
+        self.assertEqual(p.plan([2004, 2014, 2015]), [("landsat", [2004, 2014]), ("sentinel2", [2015])])
+        old = pd.DataFrame({"nam": [2024, 2024, 2010], "nguon_anh": ["Landsat 8+9", "Sentinel-2 (SR)", "Landsat 5"]})
+        self.assertEqual(list(p._keep_auto_source(old)["nguon_anh"]), ["Sentinel-2 (SR)", "Landsat 5"])
+
+    def test_combined_annual_monthly(self):
+        from pipeline_core.utils import combine_annual_monthly
+        a = pd.DataFrame({"ma_huyen_gadm": ["A"], "nam": [2024], "sol_ntl": [1.0]})
+        m = pd.DataFrame({"ma_huyen_gadm": ["A", "A"], "nam": [2024, 2024], "thang": [2, 1], "sol_ntl": [.1, .2]})
+        df = combine_annual_monthly(a, m)
+        self.assertEqual(list(df["ky"]), ["Năm", "Tháng", "Tháng"])
+        self.assertEqual(list(df["thang"].fillna(0)), [0, 1, 2])
 
     def test_month_window(self):
         from datetime import date

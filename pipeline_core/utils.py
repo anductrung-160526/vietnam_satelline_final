@@ -170,6 +170,30 @@ def export_multiformat_table(df, base_filepath_no_ext, formats=("csv", "xlsx", "
     return written
 
 
+def combine_annual_monthly(annual, monthly, sort_keys=("ma_huyen_gadm",)):
+    """Gộp bản ghi năm và tháng vào một bảng: cột 'ky' = 'Năm' | 'Tháng', 'thang' để trống ở dòng năm."""
+    parts = []
+    if annual is not None and not annual.empty:
+        a = annual.copy()
+        a.insert(a.columns.get_loc("nam") + 1, "ky", "Năm")
+        a["thang"] = pd.NA
+        parts.append(a)
+    if monthly is not None and not monthly.empty:
+        m = monthly.copy()
+        m.insert(m.columns.get_loc("nam") + 1, "ky", "Tháng")
+        parts.append(m)
+    if not parts:
+        return pd.DataFrame()
+    df = pd.concat(parts, ignore_index=True, sort=False)
+    cols = list(parts[0].columns)
+    cols = cols[:cols.index("ky") + 1] + ["thang"] + [c for c in df.columns if c not in cols[:cols.index("ky") + 1] + ["thang"]]
+    df = df[list(dict.fromkeys(cols))]
+    df["_ord"] = (df["ky"] == "Tháng").astype(int)
+    df["thang"] = pd.to_numeric(df["thang"], errors="coerce").astype("Int64")
+    df = df.sort_values([*sort_keys, "nam", "_ord", "thang"], na_position="first").drop(columns="_ord")
+    return df.reset_index(drop=True)
+
+
 def pct_change_consecutive(df, group_col, value_col, year_col="nam", extra_keys=()):
     """% thay đổi so với năm liền trước; năm đầu hoặc năm bị khuyết -> NaN (không điền 0)."""
     keys = [group_col, *extra_keys]

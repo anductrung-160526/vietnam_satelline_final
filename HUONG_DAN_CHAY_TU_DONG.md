@@ -95,8 +95,10 @@ setx VNGIS_USER "Ho Ten Nguoi Thuc Hien"
 |---|---|---|---|
 | DMSP-OLS (2004–2013) | có | **không** | NOAA chỉ phát hành ảnh năm |
 | VIIRS DNB | có (2013–2025) | có (từ 04/2012) | ảnh tháng tổng hợp sẵn của EOG |
-| Landsat 5/7/8/9 | có (ghép mùa khô) | có (ghép các cảnh trong tháng) | tháng mùa mưa nhiều mây, xem cột `ty_le_quan_sat` |
-| Sentinel-2 (từ 06/2015) | có (ghép mùa khô) | có (ghép các cảnh trong tháng) | như trên |
+| Landsat 5/7/8/9 | **2004–2014** (ghép mùa khô) | có (ghép các cảnh trong tháng) | tháng mùa mưa nhiều mây, xem cột `ty_le_quan_sat` |
+| Sentinel-2 | **2015–2025** (ghép mùa khô) | có (ghép các cảnh trong tháng) | như trên |
+
+Ảnh ngày mặc định dùng **một nguồn cho mỗi năm**: Landsat cho 2004–2014, Sentinel-2 cho 2015–2025. Ví dụ năm 2024 chỉ chạy Sentinel-2. Diện tích chuyển đổi năm 2015 so với 2014 được tính giữa hai nguồn khác nhau, và điều này được ghi ở cột `ghi_chu`. Muốn chạy nguồn khác, dùng `--day-sensors landsat` hoặc `--day-sensors landsat,sentinel2`.
 
 Nguồn chỉ có ảnh năm thì chỉ lấy theo năm. Nguồn có ảnh tháng thì lấy cả **năm** (theo đúng kế hoạch) **và 12 tháng**. Tháng không có cảnh nào vẫn có một dòng trong bảng, với `so_canh_anh = 0`; pipeline **không tự điền số**. Diện tích đất nông nghiệp chuyển đổi chỉ tính theo năm, vì ảnh tháng thay đổi theo mùa vụ.
 
@@ -109,7 +111,7 @@ python run_hanoi_pilot.py                      :: năm 2024: dữ liệu năm + 
 python run_hanoi_pilot.py --years 2004-2025    :: Hà Nội cả chuỗi, năm + 12 tháng mỗi năm
 python run_hanoi_pilot.py --no-monthly-tif     :: có bảng tháng nhưng không tải ảnh tháng (nhẹ hơn nhiều)
 python run_hanoi_pilot.py --no-monthly         :: chỉ dữ liệu năm
-python run_hanoi_pilot.py --day-sensors landsat --no-tif   :: chỉ bảng số liệu Landsat, không tải ảnh
+python run_hanoi_pilot.py --no-tif                :: chỉ bảng số liệu, không tải ảnh
 ```
 
 Khi chạy xong, màn hình in ra:
@@ -144,7 +146,7 @@ python run_pipeline.py --pipeline init-only                  :: chỉ tạo thư
 | `--mode pilot --pilot-n 3` | Chỉ lấy n huyện đầu để thử nhanh | `full` |
 | `--monthly` | Thêm bảng 12 tháng cho mọi nguồn có ảnh tháng: VIIRS (từ 04/2012), Landsat, Sentinel-2 | tắt (chạy Hà Nội: bật) |
 | `--monthly-tif` | Tải thêm ảnh `.tif` từng tháng | tắt (chạy Hà Nội: bật) |
-| `--day-sensors` | `landsat,sentinel2`, `landsat`, `sentinel2` | cả hai |
+| `--day-sensors` | `auto` (Landsat 2004–2014, Sentinel-2 2015–2025), `landsat`, `sentinel2`, `landsat,sentinel2` | `auto` |
 | `--no-tif` | Chỉ tính bảng, không tải ảnh `.tif` | tải ảnh |
 | `--no-accuracy` | Bỏ qua đánh giá độ chính xác phân lớp | có đánh giá |
 | `--ee-project` | Project ID GEE | biến `VNGIS_EE_PROJECT` |
@@ -210,6 +212,8 @@ Tài khoản chạy task phải là tài khoản đã chạy `earthengine authen
 
 | Kết quả | Đường dẫn |
 |---|---|
+| **CSV chỉ số ảnh đêm (năm + tháng)** | `VN_NTL_Panel_2004_2025\data_processed\vietnam_district_night_indices_2004_2025.csv` |
+| **CSV chỉ số ảnh ngày (năm + tháng)** | `VN_LandCover_Panel_2004_2025\data_processed\vietnam_district_day_indices_2004_2025.csv` |
 | Bảng ánh sáng đêm theo năm | `VN_NTL_Panel_2004_2025\data_processed\vietnam_district_ntl_panel_2004_2025.csv/.xlsx/.dta` |
 | Bảng VIIRS theo tháng | `VN_NTL_Panel_2004_2025\data_processed\vietnam_district_ntl_viirs_monthly.*` |
 | Bảng lớp phủ theo tháng | `VN_LandCover_Panel_2004_2025\data_processed\vietnam_district_landcover_monthly.*` |
@@ -220,6 +224,8 @@ Tài khoản chạy task phải là tài khoản đã chạy `earthengine authen
 | Báo cáo độ chính xác | `VN_LandCover_Panel_2004_2025\docs\BAO_CAO_DO_CHINH_XAC_<NGUON>_<NAM>.md` |
 | Codebook | `metadata\codebook_*.md` và `.xlsx` |
 | Thời gian chạy | `logs\timing_hanoi_*.csv` (chạy thử), `C:\VNGIS_Data\timing\timing_*.csv` (chạy thường) |
+
+**Đọc 2 file CSV chỉ số:** mỗi file chứa cả dòng năm và dòng tháng. Cột `ky` = `Năm` hoặc `Tháng`; cột `thang` để trống ở dòng năm. Lọc theo cột `ky` để lấy riêng từng loại. Trong file ảnh đêm, các năm 2004–2011 chỉ có dòng năm (DMSP), từ 04/2012 có thêm dòng tháng (VIIRS). Ở dòng tháng, `thay_doi_ntl` là % thay đổi so với **cùng tháng năm trước**.
 
 **Đọc file timing:** mỗi dòng là một bước. `pipeline` là `ntl_pipeline` hoặc `landcover_pipeline`. `buoc` là tên bước. `ma_huyen` và `nam` cho biết bước đó chạy cho huyện và năm nào. `giay` là thời gian chạy. `mb` là dung lượng tệp vừa tải. `trang_thai` nhận giá trị `ok` hoặc `loi`. Mở bằng Excel rồi dùng PivotTable theo `buoc` để biết bước nào tốn thời gian nhất.
 

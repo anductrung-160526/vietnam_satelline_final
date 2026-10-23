@@ -3,12 +3,17 @@
 CHẠY HÀ NỘI: lấy bảng .csv và ảnh .tif ban đêm/ban ngày cho tất cả quận/huyện của Hà Nội,
 đo thời gian từng bước và ước tính thời gian, dung lượng để chạy toàn quốc.
 
-Mặc định lấy cả dữ liệu NĂM và 12 THÁNG (bảng + ảnh .tif từng tháng) cho mọi nguồn có ảnh tháng
-(VIIRS, Landsat, Sentinel-2). DMSP-OLS chỉ có ảnh năm. Tắt dữ liệu tháng: --no-monthly.
+Mặc định lấy cả dữ liệu NĂM và 12 THÁNG (bảng + ảnh .tif từng tháng) cho mọi nguồn có ảnh tháng.
+Ảnh ngày: Landsat 2004–2014, Sentinel-2 2015–2025. Ảnh đêm: DMSP (chỉ có năm) + VIIRS (năm + tháng).
+Tắt dữ liệu tháng: --no-monthly.
+
+CSV chỉ số (mỗi file gồm cả dòng năm và dòng tháng, cột 'ky' = Năm/Tháng):
+    VN_LandCover_Panel_2004_2025/data_processed/vietnam_district_day_indices_2004_2025.csv
+    VN_NTL_Panel_2004_2025/data_processed/vietnam_district_night_indices_2004_2025.csv
 
     python run_hanoi_pilot.py                 # mặc định năm 2024
     python run_hanoi_pilot.py --years 2004-2025
-    python run_hanoi_pilot.py --years 2024 --day-sensors landsat --output-dir D:\\VNGIS_Data
+    python run_hanoi_pilot.py --years 2024 --output-dir D:\\VNGIS_Data
 
 Kết quả thời gian: <output>/VN_*/logs/timing_hanoi_<thời điểm>.csv và timing_hanoi_<thời điểm>_tom_tat.txt
 """

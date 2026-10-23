@@ -28,7 +28,8 @@ VN_NTL_Panel_2004_2025/
 ├── raw_data/NTL/DMSP/      DMSP_<ma_huyen>_<nam>.tif   (ảnh gốc, cắt theo huyện)
 ├── raw_data/NTL/VIIRS/     VIIRS_<ma_huyen>_<nam>[_<thang>].tif
 ├── data_intermediate/      NTL_<ma_huyen>_<nam>.tif    (đã lọc nhiễu, quy về thang VIIRS)
-├── data_processed/         vietnam_district_ntl_panel_2004_2025.{csv,xlsx,dta}
+├── data_processed/         vietnam_district_night_indices_2004_2025.{csv,xlsx,dta}  (gộp năm + tháng, cột ky)
+│                           vietnam_district_ntl_panel_2004_2025.{csv,xlsx,dta}
 │                           vietnam_district_ntl_viirs_monthly.{csv,xlsx,dta}
 ├── metadata/               codebook_ntl.{md,xlsx}
 ├── code/                   ntl_pipeline.py

@@ -95,7 +95,8 @@ def build_parser():
     p.add_argument("--monthly", action="store_true",
                    help="Lấy thêm dữ liệu 12 tháng cho nguồn có ảnh tháng: VIIRS, Landsat, Sentinel-2 (DMSP chỉ có năm)")
     p.add_argument("--monthly-tif", action="store_true", help="Tải thêm ảnh .tif từng tháng (cần --monthly)")
-    p.add_argument("--day-sensors", default="landsat,sentinel2", help="landsat,sentinel2 | landsat | sentinel2")
+    p.add_argument("--day-sensors", default="auto",
+                   help="auto (mặc định: Landsat 2004–2014, Sentinel-2 2015–2025) | landsat | sentinel2 | landsat,sentinel2")
     p.add_argument("--no-tif", action="store_true", help="Chỉ tính bảng số liệu, không tải ảnh .tif")
     p.add_argument("--no-accuracy", action="store_true", help="Bỏ qua đánh giá độ chính xác phân lớp")
     p.add_argument("--ee-project", default=DEFAULT_EE_PROJECT, help="Google Cloud Project ID đã đăng ký GEE")
