@@ -10,7 +10,7 @@ Thu thập, tiền xử lý, xử lý dữ liệu viễn thám CẤP HUYỆN t�
 
 Ví dụ:
     python run_pipeline.py --province "Hà Nội" --years 2024
-    python run_pipeline.py --mode full --years 2004-2025 --monthly
+    python run_pipeline.py --mode full --years 2004-2025 --monthly --monthly-tif
 """
 import sys
 import time
@@ -92,8 +92,9 @@ def build_parser():
     p.add_argument("--years", default="", help="Năm cần chạy: 2024 | 2010-2015 | 2004,2024 (mặc định 2004-2025)")
     p.add_argument("--start-year", type=int, default=START_YEAR)
     p.add_argument("--end-year", type=int, default=END_YEAR)
-    p.add_argument("--monthly", action="store_true", help="Lấy thêm bảng VIIRS theo tháng")
-    p.add_argument("--monthly-tif", action="store_true", help="Tải thêm ảnh .tif VIIRS từng tháng")
+    p.add_argument("--monthly", action="store_true",
+                   help="Lấy thêm dữ liệu 12 tháng cho nguồn có ảnh tháng: VIIRS, Landsat, Sentinel-2 (DMSP chỉ có năm)")
+    p.add_argument("--monthly-tif", action="store_true", help="Tải thêm ảnh .tif từng tháng (cần --monthly)")
     p.add_argument("--day-sensors", default="landsat,sentinel2", help="landsat,sentinel2 | landsat | sentinel2")
     p.add_argument("--no-tif", action="store_true", help="Chỉ tính bảng số liệu, không tải ảnh .tif")
     p.add_argument("--no-accuracy", action="store_true", help="Bỏ qua đánh giá độ chính xác phân lớp")
@@ -150,7 +151,8 @@ def run(args, timer=None):
         from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import LandCoverPipeline
         print("\n[*] PIPELINE LỚP PHỦ BỀ MẶT (ẢNH BAN NGÀY)")
         sensors = [s.strip().lower() for s in args.day_sensors.split(",") if s.strip()]
-        lc = LandCoverPipeline(sensors=sensors, accuracy=not args.no_accuracy, **common)
+        lc = LandCoverPipeline(sensors=sensors, accuracy=not args.no_accuracy, monthly=args.monthly,
+                               monthly_tif=args.monthly_tif, **common)
         df = lc.run(districts, years)
         summary["landcover"] = len(df)
         summary["files"] += lc.files_downloaded

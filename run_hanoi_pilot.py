@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-CHẠY THỬ HÀ NỘI: lấy bảng .csv và ảnh .tif ban đêm/ban ngày cho tất cả quận/huyện của Hà Nội,
+CHẠY HÀ NỘI: lấy bảng .csv và ảnh .tif ban đêm/ban ngày cho tất cả quận/huyện của Hà Nội,
 đo thời gian từng bước và ước tính thời gian, dung lượng để chạy toàn quốc.
+
+Mặc định lấy cả dữ liệu NĂM và 12 THÁNG (bảng + ảnh .tif từng tháng) cho mọi nguồn có ảnh tháng
+(VIIRS, Landsat, Sentinel-2). DMSP-OLS chỉ có ảnh năm. Tắt dữ liệu tháng: --no-monthly.
 
     python run_hanoi_pilot.py                 # mặc định năm 2024
     python run_hanoi_pilot.py --years 2004-2025
@@ -68,8 +71,12 @@ def summarize(df, summary):
 
 def main(argv=None):
     parser = build_parser()
+    parser.add_argument("--no-monthly", action="store_true", help="Chỉ lấy dữ liệu năm")
+    parser.add_argument("--no-monthly-tif", action="store_true", help="Lấy bảng tháng nhưng không tải .tif tháng")
     parser.set_defaults(province="Hà Nội", years="2024", mode="full")
     args = parser.parse_args(argv)
+    args.monthly = not args.no_monthly
+    args.monthly_tif = args.monthly and not args.no_monthly_tif
     timer = StepTimer()
     summary = run(args, timer)
 

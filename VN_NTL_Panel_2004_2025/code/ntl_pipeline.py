@@ -6,7 +6,8 @@ Nguồn ảnh (Google Earth Engine):
 - DMSP-OLS tổng hợp năm (NOAA/DMSP-OLS/NIGHTTIME_LIGHTS, band stable_lights), 2004–2013
 - VIIRS DNB tổng hợp năm của EOG (NOAA/VIIRS/DNB/ANNUAL_V21, ANNUAL_V22, band average_masked),
   dự phòng bằng tổng hợp từ ảnh tháng nếu năm đó chưa có bản năm
-- VIIRS DNB hằng tháng (NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG, dự phòng VCMCFG)
+- VIIRS DNB hằng tháng (NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG, dự phòng VCMCFG), từ 04/2012
+- DMSP-OLS chỉ có ảnh năm, không có dữ liệu tháng
 
 Xử lý: lọc nhiễu (mây theo cf_cvg, ánh sáng nền, cháy rừng FIRMS, vùng biển/tàu thuyền bằng ranh giới
 đất liền), hiệu chỉnh liên kết DMSP -> VIIRS bằng hồi quy log-log trên năm chồng lấn 2013 (thống kê,
@@ -14,6 +15,7 @@ không phải machine learning), cắt theo ranh giới huyện, tính chỉ s�
 """
 import sys
 import json
+from datetime import date
 from pathlib import Path
 import pandas as pd
 
@@ -26,6 +28,7 @@ from pipeline_core import ee_utils
 
 VIIRS_ANNUAL_COLLECTIONS = ["NOAA/VIIRS/DNB/ANNUAL_V21", "NOAA/VIIRS/DNB/ANNUAL_V22"]
 VIIRS_MONTHLY_COLLECTIONS = ["NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG", "NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG"]
+VIIRS_MONTHLY_FIRST_YEAR = 2012  # ảnh VIIRS tháng bắt đầu từ 04/2012 (VCMCFG)
 DMSP_COLLECTION = "NOAA/DMSP-OLS/NIGHTTIME_LIGHTS"
 FIRMS_COLLECTION = "FIRMS"
 # Vùng lấy mẫu hiệu chỉnh: toàn lãnh thổ Việt Nam (bbox)
@@ -225,6 +228,8 @@ class NTLPipeline(BasePipeline):
     def process_monthly(self, year, districts):
         ee = self.ee
         for month in range(1, 13):
+            if date(year, month, 1) > date.today():
+                break
             start = f"{year}-{month:02d}-01"
             end = f"{year + (month == 12)}-{(month % 12) + 1:02d}-01"
             todo = [r for _, r in districts.iterrows() if r["ma_huyen_gadm"] in self.geoms and (
@@ -291,7 +296,7 @@ class NTLPipeline(BasePipeline):
         for year in years:
             try:
                 self.process_year(year, districts)
-                if self.monthly and year >= 2014:
+                if self.monthly and year >= VIIRS_MONTHLY_FIRST_YEAR:
                     self.process_monthly(year, districts)
             except Exception as e:
                 self.log("NTL", f"Lỗi năm {year}: {e}", error=True)

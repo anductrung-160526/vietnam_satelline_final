@@ -56,13 +56,26 @@ setx VNGIS_USER "Ho Ten Nguoi Thuc Hien"
 
    `VNGIS_USER` là tên ghi vào cột "Người thực hiện" trong nhật ký cập nhật.
 
+## Nguồn nào có dữ liệu tháng?
+
+| Nguồn | Năm | Tháng | Ghi chú |
+|---|---|---|---|
+| DMSP-OLS (2004–2013) | có | **không** | NOAA chỉ phát hành ảnh năm |
+| VIIRS DNB | có (2013–2025) | có (từ 04/2012) | ảnh tháng tổng hợp sẵn của EOG |
+| Landsat 5/7/8/9 | có (ghép mùa khô) | có (ghép các cảnh trong tháng) | tháng mùa mưa nhiều mây, xem cột `ty_le_quan_sat` |
+| Sentinel-2 (từ 06/2015) | có (ghép mùa khô) | có (ghép các cảnh trong tháng) | như trên |
+
+Nguồn chỉ có ảnh năm thì chỉ lấy theo năm. Nguồn có ảnh tháng thì lấy cả **năm** (theo đúng kế hoạch) **và 12 tháng**. Tháng không có cảnh nào vẫn có một dòng trong bảng, với `so_canh_anh = 0`; pipeline **không tự điền số**. Diện tích đất nông nghiệp chuyển đổi chỉ tính theo năm, vì ảnh tháng thay đổi theo mùa vụ.
+
 ## 3. Chạy thử Hà Nội (đo thời gian)
 
 Cách đơn giản nhất là **bấm đúp `run_hanoi_pilot.bat`** trong thư mục repo. Cách khác là chạy lệnh:
 
 ```bat
-python run_hanoi_pilot.py                      :: năm 2024, mọi quận/huyện Hà Nội, ảnh ngày + đêm
-python run_hanoi_pilot.py --years 2004-2025    :: cả chuỗi 22 năm
+python run_hanoi_pilot.py                      :: năm 2024: dữ liệu năm + 12 tháng, bảng + ảnh tháng
+python run_hanoi_pilot.py --years 2004-2025    :: Hà Nội cả chuỗi, năm + 12 tháng mỗi năm
+python run_hanoi_pilot.py --no-monthly-tif     :: có bảng tháng nhưng không tải ảnh tháng (nhẹ hơn nhiều)
+python run_hanoi_pilot.py --no-monthly         :: chỉ dữ liệu năm
 python run_hanoi_pilot.py --day-sensors landsat --no-tif   :: chỉ bảng số liệu Landsat, không tải ảnh
 ```
 
@@ -74,7 +87,7 @@ Khi chạy xong, màn hình in ra:
 
 Chi tiết từng bước được ghi vào `C:\VNGIS_Data\VN_NTL_Panel_2004_2025\logs\timing_hanoi_<thời điểm>.csv`. File `..._tom_tat.txt` cùng thư mục chứa bản tóm tắt. Bản sao của cả hai file cũng nằm trong thư mục `logs` của gói LandCover.
 
-Sentinel-2 ở độ phân giải 10 m có dung lượng lớn nhất. Hà Nội cần khoảng vài trăm MB mỗi năm. Muốn tải nhẹ hơn, bạn đặt `setx VNGIS_S2_SCALE 20`. Cách này chỉ đổi độ phân giải ảnh tải về; bảng diện tích vẫn tính ở 10 m.
+Ảnh tháng làm dung lượng tăng khoảng 12 lần so với chỉ lấy ảnh năm. Riêng Sentinel-2 10 m của Hà Nội có thể lên tới vài GB mỗi năm, nên cả chuỗi 2015–2025 cần hàng chục GB. Hãy chạy năm 2024 trước để xem dung lượng thực tế. Sentinel-2 ở độ phân giải 10 m có dung lượng lớn nhất. Hà Nội cần khoảng vài trăm MB mỗi năm. Muốn tải nhẹ hơn, bạn đặt `setx VNGIS_S2_SCALE 20`. Cách này chỉ đổi độ phân giải ảnh tải về; bảng diện tích vẫn tính ở 10 m.
 
 ## 4. Chạy theo tỉnh, theo năm hoặc toàn quốc
 
@@ -82,7 +95,7 @@ Sentinel-2 ở độ phân giải 10 m có dung lượng lớn nhất. Hà Nội
 python run_pipeline.py --province "Hà Nội" --years 2024
 python run_pipeline.py --province "Hà Nội,Bắc Ninh" --years 2015-2025
 python run_pipeline.py --districts "Ba Vì,Sóc Sơn" --years 2004,2010,2024
-python run_pipeline.py --years 2004-2025 --monthly           :: toàn quốc, thêm bảng VIIRS tháng
+python run_pipeline.py --years 2004-2025 --monthly           :: toàn quốc, thêm dữ liệu 12 tháng
 python run_pipeline.py --pipeline ntl --years 2013-2025      :: chỉ ánh sáng đêm
 python run_pipeline.py --pipeline landcover --day-sensors landsat
 python run_pipeline.py --pipeline init-only                  :: chỉ tạo thư mục, codebook, điểm mẫu
@@ -96,8 +109,8 @@ python run_pipeline.py --pipeline init-only                  :: chỉ tạo thư
 | `--districts` | Tên hoặc mã huyện (Cục Thống kê / GADM), cách nhau dấu phẩy | tất cả |
 | `--years` | `2024`, `2010-2015`, `2004,2024` | 2004–2025 |
 | `--mode pilot --pilot-n 3` | Chỉ lấy n huyện đầu để thử nhanh | `full` |
-| `--monthly` | Thêm bảng VIIRS theo huyện × tháng (từ 2014) | tắt |
-| `--monthly-tif` | Tải thêm ảnh VIIRS từng tháng | tắt |
+| `--monthly` | Thêm bảng 12 tháng cho mọi nguồn có ảnh tháng: VIIRS (từ 04/2012), Landsat, Sentinel-2 | tắt (chạy Hà Nội: bật) |
+| `--monthly-tif` | Tải thêm ảnh `.tif` từng tháng | tắt (chạy Hà Nội: bật) |
 | `--day-sensors` | `landsat,sentinel2`, `landsat`, `sentinel2` | cả hai |
 | `--no-tif` | Chỉ tính bảng, không tải ảnh `.tif` | tải ảnh |
 | `--no-accuracy` | Bỏ qua đánh giá độ chính xác phân lớp | có đánh giá |
@@ -108,7 +121,7 @@ python run_pipeline.py --pipeline init-only                  :: chỉ tạo thư
 
 Script `run_auto_update.bat` gọi `run_auto_update.py`. Script này tự tìm năm hoặc tháng **chưa có dữ liệu** (dựa vào checkpoint trong `logs\`) rồi chạy tiếp phần còn thiếu:
 
-- `--scope monthly`: lấy ảnh VIIRS tháng của năm nay và năm trước, bổ sung tháng mới vào bảng tháng.
+- `--scope monthly`: lấy dữ liệu tháng (VIIRS, Landsat, Sentinel-2) của năm nay và năm trước, bổ sung tháng mới vào các bảng tháng. Thêm `--monthly-tif` nếu muốn tải cả ảnh tháng.
 - `--scope annual`: lấy NTL và lớp phủ cho mọi năm từ 2004 đến năm mới nhất đã đủ ảnh (từ tháng 6 thì tính cả năm hiện tại, vì ảnh mùa khô kết thúc vào tháng 4).
 - `--scope all`: chạy cả hai.
 
@@ -119,7 +132,7 @@ Có thể thêm `--province "Hà Nội"` để chỉ cập nhật một tỉnh. 
 Thay đường dẫn bằng thư mục repo của bạn:
 
 ```bat
-:: Hằng tháng, ngày 10, lúc 02:00: cập nhật VIIRS tháng
+:: Hằng tháng, ngày 10, lúc 02:00: cập nhật dữ liệu tháng
 schtasks /Create /TN "VNGIS_CapNhat_Thang" /SC MONTHLY /D 10 /ST 02:00 ^
   /TR "\"C:\Users\<tên bạn>\Documents\vietnam_satelline_final\run_auto_update.bat\" --scope monthly"
 
@@ -166,6 +179,7 @@ Tài khoản chạy task phải là tài khoản đã chạy `earthengine authen
 |---|---|
 | Bảng ánh sáng đêm theo năm | `VN_NTL_Panel_2004_2025\data_processed\vietnam_district_ntl_panel_2004_2025.csv/.xlsx/.dta` |
 | Bảng VIIRS theo tháng | `VN_NTL_Panel_2004_2025\data_processed\vietnam_district_ntl_viirs_monthly.*` |
+| Bảng lớp phủ theo tháng | `VN_LandCover_Panel_2004_2025\data_processed\vietnam_district_landcover_monthly.*` |
 | Ảnh đêm gốc / đã xử lý | `raw_data\NTL\DMSP\`, `raw_data\NTL\VIIRS\` / `data_intermediate\NTL_<ma_huyen>_<nam>.tif` |
 | Hệ số hiệu chỉnh DMSP→VIIRS | `VN_NTL_Panel_2004_2025\docs\hieu_chinh_dmsp_viirs.json` |
 | Bảng lớp phủ | `VN_LandCover_Panel_2004_2025\data_processed\vietnam_district_landcover_panel_2004_2025.*` |

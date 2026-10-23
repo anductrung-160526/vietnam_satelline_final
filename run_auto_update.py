@@ -2,7 +2,7 @@
 """
 CẬP NHẬT TỰ ĐỘNG (dùng với Windows Task Scheduler hoặc cron).
 
-    python run_auto_update.py --scope monthly   # VIIRS tháng: năm nay và năm trước
+    python run_auto_update.py --scope monthly   # dữ liệu tháng (VIIRS, Landsat, Sentinel-2): năm nay và năm trước
     python run_auto_update.py --scope annual    # NTL + lớp phủ: mọi năm 2004..năm mới nhất còn thiếu
     python run_auto_update.py --scope all --province "Hà Nội"
 
@@ -25,21 +25,41 @@ def latest_complete_year(today=None):
 
 
 def run_monthly(args, timer):
-    from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline
+    """Bổ sung dữ liệu tháng (năm trước + năm nay) cho mọi nguồn có ảnh tháng: VIIRS, Landsat, Sentinel-2."""
+    this_year = date.today().year
+    args.years = f"{this_year - 1}-{this_year}"
+    args.monthly = True
     out = resolve_output_dir(args.output_dir)
     setup_directory_structure(out)
     check_disk_space(out, args.min_free_gb)
     districts = select_districts(args, out / "_cache")
-    ntl = NTLPipeline(output_dir=out, ee_project=args.ee_project, timer=timer, download_tif=not args.no_tif,
-                      cache_dir=out / "_cache", monthly=True, monthly_tif=args.monthly_tif)
-    d = ntl.prepare_districts(districts)
-    ntl.connect()
-    ntl.load_geometries(d)
-    this_year = date.today().year
-    for year in (this_year - 1, this_year):
-        ntl.log("VIIRS", f"Cập nhật tự động dữ liệu tháng năm {year} cho {len(d)} huyện")
-        ntl.process_monthly(year, d)
-    ntl.export_tables()
+    common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, download_tif=not args.no_tif,
+                  cache_dir=out / "_cache", monthly=True, monthly_tif=args.monthly_tif)
+    years = [this_year - 1, this_year]
+
+    if args.pipeline in ("all", "ntl"):
+        from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline
+        ntl = NTLPipeline(**common)
+        d = ntl.prepare_districts(districts)
+        ntl.connect()
+        ntl.load_geometries(d)
+        for year in years:
+            ntl.log("VIIRS", f"Cập nhật tự động dữ liệu tháng năm {year} cho {len(d)} huyện")
+            ntl.process_monthly(year, d)
+        ntl.export_tables()
+
+    if args.pipeline in ("all", "landcover"):
+        from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import LandCoverPipeline
+        sensors = [s.strip().lower() for s in args.day_sensors.split(",") if s.strip()]
+        lc = LandCoverPipeline(sensors=sensors, accuracy=False, **common)
+        d = lc.prepare_districts(districts)
+        lc.connect()
+        lc.load_geometries(d)
+        for sensor in lc.sensors:
+            for year in years:
+                lc.log(sensor, f"Cập nhật tự động dữ liệu tháng năm {year} cho {len(d)} huyện")
+                lc.process_monthly(sensor, year, d)
+        lc.export_tables()
 
 
 def main(argv=None):
@@ -51,7 +71,10 @@ def main(argv=None):
 
     if args.scope in ("annual", "all"):
         args.years = f"{START_YEAR}-{latest_complete_year()}"
+        monthly = args.monthly
+        args.monthly = args.monthly or args.scope == "all"
         run(args, timer)
+        args.monthly = monthly
     if args.scope in ("monthly", "all"):
         run_monthly(args, timer)
 

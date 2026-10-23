@@ -12,7 +12,7 @@ from pipeline_core.admin_boundaries import attach_gso_codes, filter_districts, m
 from pipeline_core.utils import CheckpointManager, pct_change_consecutive, StepTimer
 from run_pipeline import parse_years, build_parser
 from VN_LandCover_Panel_2004_2025.code.accuracy_assessment import metrics_from_matrix
-from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import season_window, landsat_sources
+from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import season_window, landsat_sources, month_window
 
 
 def districts():
@@ -131,6 +131,19 @@ class EarthEngineHelperTests(unittest.TestCase):
 class LandCoverRuleTests(unittest.TestCase):
     def test_dry_season_window(self):
         self.assertEqual(season_window(2024), ("2023-11-01", "2024-05-01"))
+
+    def test_month_window(self):
+        from datetime import date
+        self.assertEqual(month_window(2024, 12), (date(2024, 12, 1), date(2025, 1, 1)))
+        self.assertEqual(month_window(2024, 2), (date(2024, 2, 1), date(2024, 3, 1)))
+
+    def test_hanoi_defaults_monthly(self):
+        import run_hanoi_pilot
+        with patch.object(run_hanoi_pilot, "run", side_effect=SystemExit) as r:
+            with self.assertRaises(SystemExit):
+                run_hanoi_pilot.main([])
+        args = r.call_args[0][0]
+        self.assertTrue(args.monthly and args.monthly_tif)
 
     def test_landsat_sources(self):
         self.assertEqual(landsat_sources(2005), (["L5"], ["L7"]))

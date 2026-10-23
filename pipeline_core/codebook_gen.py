@@ -63,7 +63,13 @@ LANDCOVER_CODEBOOK_DATA = COMMON_VARS + [
       "dt_nong_nghiep / tong_dien_tich_ha × 100", NUM, "%"),
     v("dt_nn_chuyen_doi", "Diện tích đất nông nghiệp chuyển sang mục đích khác so với năm trước", "Tính toán",
       "Σ diện tích pixel là nông nghiệp năm t−1 và thuộc lớp khác năm t (cùng nguồn ảnh)", NUM, "ha"),
-    v("so_canh_anh", "Số cảnh ảnh dùng ghép ảnh năm", "", "", INT, "cảnh"),
+    v("thang", "Tháng (chỉ có trong bảng theo tháng)", "", "Ảnh trung vị các cảnh trong tháng", INT, "Tháng"),
+    v("ty_le_quan_sat", "Tỷ lệ diện tích huyện có ảnh sạch mây trong tháng (bảng tháng)", "Tính toán",
+      "(tong_dien_tich_ha − dt_khong_quan_sat) / tong_dien_tich_ha × 100", NUM, "%"),
+    v("ndvi_tb", "NDVI trung bình trên phần có ảnh (bảng tháng)", "Ảnh ban ngày", "(NIR−RED)/(NIR+RED)", NUM, ""),
+    v("mndwi_tb", "MNDWI trung bình (bảng tháng)", "Ảnh ban ngày", "(GREEN−SWIR1)/(GREEN+SWIR1)", NUM, ""),
+    v("ndbi_tb", "NDBI trung bình (bảng tháng)", "Ảnh ban ngày", "(SWIR1−NIR)/(SWIR1+NIR)", NUM, ""),
+    v("so_canh_anh", "Số cảnh ảnh dùng ghép ảnh (năm hoặc tháng)", "", "", INT, "cảnh"),
     v("ky_ghep_anh", "Khoảng thời gian ghép ảnh (mùa khô)", "", "01/11 năm trước → 30/04 năm hiện tại", STR, ""),
     v("ghi_chu", "Ghi chú xử lý", "", "", STR, ""),
 ]
@@ -95,7 +101,8 @@ def generate_codebooks(base_dir):
            pd.DataFrame(NTL_CODEBOOK_DATA),
            "## Tệp dữ liệu\n\n"
            "- `data_processed/vietnam_district_ntl_panel_2004_2025.{csv,xlsx,dta}`: bảng năm\n"
-           "- `data_processed/vietnam_district_ntl_viirs_monthly.{csv,xlsx,dta}`: bảng VIIRS theo tháng\n"
+           "- `data_processed/vietnam_district_ntl_viirs_monthly.{csv,xlsx,dta}`: bảng VIIRS theo tháng (từ 04/2012; "
+           "DMSP-OLS chỉ có ảnh năm)\n"
            "- `raw_data/NTL/DMSP/DMSP_<ma_huyen>_<nam>.tif`, `raw_data/NTL/VIIRS/VIIRS_<ma_huyen>_<nam>[_<thang>].tif`: ảnh gốc\n"
            "- `data_intermediate/NTL_<ma_huyen>_<nam>.tif`: ảnh đã lọc nhiễu, quy về thang VIIRS\n\n"
            "## Lọc nhiễu và hiệu chỉnh\n\n"
@@ -114,7 +121,10 @@ def generate_codebooks(base_dir):
            "độ dốc từ SRTM 30 m.\n\n" + df_to_markdown(rules) + "\n\n"
            "Ngưỡng hiện hành:\n\n```json\n" + json.dumps(LANDCOVER_THRESHOLDS, indent=2) + "\n```\n\n"
            "## Tệp dữ liệu\n\n"
-           "- `data_processed/vietnam_district_landcover_panel_2004_2025.{csv,xlsx,dta}`\n"
+           "- `data_processed/vietnam_district_landcover_panel_2004_2025.{csv,xlsx,dta}`: bảng năm (ảnh mùa khô)\n"
+           "- `data_processed/vietnam_district_landcover_monthly.{csv,xlsx,dta}`: bảng 12 tháng; tháng mùa mưa thường "
+           "bị mây che, cần đọc kèm `ty_le_quan_sat` (dt_nn_chuyen_doi chỉ tính theo năm)\n"
+           "- Ảnh tháng: `..._<ma_huyen>_<nam>_<thang>.tif` trong cùng các thư mục dưới đây\n"
            "- `raw_data/DAY/LANDSAT/LANDSAT_<ma_huyen>_<nam>.tif`, `raw_data/DAY/SENTINEL2/SENTINEL2_<ma_huyen>_<nam>.tif`: "
            "ảnh tổng hợp mùa khô đã che mây, 6 kênh BLUE, GREEN, RED, NIR, SWIR1, SWIR2 (phản xạ × 10000, int16)\n"
            "- `data_intermediate/LC_<LANDSAT|SENTINEL2>_<ma_huyen>_<nam>.tif`: bản đồ phân lớp (0 = không quan sát, 1–5)\n\n"
