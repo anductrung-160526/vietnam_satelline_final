@@ -139,6 +139,14 @@ python run_hanoi_pilot.py --level tinh --years 2004-2025 --no-monthly-tif       
 - Checkpoint cấp tỉnh lưu riêng (`logs\*_tinh_checkpoint.jsonl`), nên chạy cấp tỉnh không ảnh hưởng đến dữ liệu cấp huyện đã có.
 - Ảnh `.tif` cấp tỉnh đặt tên theo mã tỉnh, ví dụ `SENTINEL2_01_2024_03.tif` (01 = Hà Nội). Ảnh cả tỉnh lớn nên chương trình tự chia ô để tải rồi ghép lại.
 
+## 3c. Dung lượng ảnh .tif (nén không mất dữ liệu)
+
+Mọi ảnh `.tif` tải về được tự động nén **không mất dữ liệu**: DEFLATE kết hợp predictor, và chia khối 256×256. Giá trị từng pixel giữ nguyên tuyệt đối, định dạng vẫn là GeoTIFF, mở được bằng QGIS, ArcGIS, GDAL và R. Với các ảnh đã tải từ trước, chạy lệnh sau một lần để nén lại:
+
+```bat
+python nen_tif_da_tai.py
+```
+
 ## 4. Chạy theo tỉnh, theo năm hoặc toàn quốc
 
 ```bat

@@ -121,17 +121,56 @@ def _download_tile(ee, image, bbox, scale, dest, crs):
     _download_url(url, dest)
 
 
+def lossless_profile(meta):
+    """Nén KHÔNG MẤT DỮ LIỆU: DEFLATE + predictor (2: số nguyên, 3: số thực), lưu theo khối 256x256.
+    Mở được bằng QGIS, ArcGIS, GDAL, rasterio, R terra."""
+    meta = meta.copy()
+    is_float = str(meta.get("dtype", "")).startswith("float")
+    meta.update(driver="GTiff", compress="deflate", zlevel=9, predictor=3 if is_float else 2,
+                tiled=True, blockxsize=256, blockysize=256, BIGTIFF="IF_SAFER")
+    return meta
+
+
+def compress_tif(path):
+    """Ghi lại tệp .tif với nén không mất dữ liệu (giá trị pixel giữ nguyên tuyệt đối)."""
+    try:
+        import rasterio
+    except ImportError:
+        return path
+    path = Path(path)
+    tmp = path.with_suffix(".cmp.tif")
+    try:
+        _rewrite(rasterio, path, tmp)
+    except Exception:
+        tmp.unlink(missing_ok=True)  # giữ nguyên tệp gốc nếu không nén được
+        return path
+    tmp.replace(path)
+    return path
+
+
+def _rewrite(rasterio, path, tmp):
+    with rasterio.open(path) as src:
+        meta = lossless_profile(src.meta)
+        if src.width < 256 or src.height < 256:  # ảnh nhỏ: không chia khối
+            meta.update(tiled=False)
+            meta.pop("blockxsize", None)
+            meta.pop("blockysize", None)
+        with rasterio.open(tmp, "w", **meta) as out:
+            out.write(src.read())
+            out.descriptions = src.descriptions
+
+
 def merge_tifs(parts, dest):
     import rasterio
     from rasterio.merge import merge
     srcs = [rasterio.open(p) for p in parts]
     try:
         mosaic, transform = merge(srcs)
-        meta = srcs[0].meta.copy()
-        meta.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform,
-                    compress="deflate", driver="GTiff")
+        meta = lossless_profile(srcs[0].meta)
+        meta.update(height=mosaic.shape[1], width=mosaic.shape[2], transform=transform)
         with rasterio.open(dest, "w", **meta) as out:
             out.write(mosaic)
+            out.descriptions = srcs[0].descriptions
     finally:
         for s in srcs:
             s.close()
@@ -155,6 +194,7 @@ def download_image(ee, image, geom_geojson, scale, dest, n_bands=1, dtype="float
     if len(queue) == 1:
         try:
             _download_tile(ee, image, queue[0], scale, dest, crs)
+            compress_tif(dest)
             return dest.stat().st_size
         except Exception as e:
             if not is_too_large(e):

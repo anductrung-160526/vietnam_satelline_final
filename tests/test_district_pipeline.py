@@ -150,6 +150,33 @@ class EarthEngineHelperTests(unittest.TestCase):
         self.assertEqual(size, len(b"merged") * 4)
 
 
+class CompressionTests(unittest.TestCase):
+    def test_lossless_compression_keeps_pixels(self):
+        import numpy as np
+        import rasterio
+        from rasterio.transform import from_origin
+        y, x = np.mgrid[0:300, 0:300]
+        arr = np.stack([(1500 + 500 * np.sin(x / 30) + i).astype(np.int16) for i in range(6)])
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "a.tif"
+            with rasterio.open(f, "w", driver="GTiff", height=300, width=300, count=6, dtype="int16",
+                               crs="EPSG:4326", transform=from_origin(105, 21, 1e-4, 1e-4)) as o:
+                o.write(arr)
+            before = f.stat().st_size
+            ee_utils.compress_tif(f)
+            with rasterio.open(f) as r:
+                self.assertTrue(np.array_equal(r.read(), arr))
+                self.assertEqual(r.compression.value.lower(), "deflate")
+            self.assertLess(f.stat().st_size, before)
+
+    def test_compress_ignores_unreadable_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "bad.tif"
+            f.write_bytes(b"x")
+            ee_utils.compress_tif(f)
+            self.assertEqual(f.read_bytes(), b"x")
+
+
 class LandCoverRuleTests(unittest.TestCase):
     def test_dry_season_window(self):
         self.assertEqual(season_window(2024), ("2023-11-01", "2024-05-01"))
