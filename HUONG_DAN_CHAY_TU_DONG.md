@@ -37,6 +37,39 @@ pip install -r requirements.txt
 
 Nếu cài `rasterio` bị lỗi, chạy `pip install --only-binary=:all: rasterio`. Thư viện này chỉ cần khi ảnh quá lớn và phải chia ô rồi ghép lại.
 
+**Lưu ý khi gõ lệnh:** mỗi lệnh chạy **riêng một dòng**. Dán một dòng, bấm Enter, đợi chạy xong rồi mới dán dòng tiếp theo. Nếu dán nhiều lệnh dính liền thành một dòng, Windows sẽ báo lỗi `unrecognized arguments`.
+
+**Repo nằm trong OneDrive:** thư mục `.venv` có hàng nghìn tệp nhỏ, nên OneDrive có thể khóa tệp khi đang cài. Nếu `pip install` báo *Access is denied* hoặc *file in use*, hãy tạm dừng OneDrive (biểu tượng đám mây, chọn Pause syncing) rồi chạy lại. Dữ liệu đầu ra ghi vào `C:\VNGIS_Data`, nằm ngoài OneDrive.
+
+### Chạy trong terminal của Antigravity / VS Code (PowerShell)
+
+Terminal của Antigravity trên Windows mặc định là **PowerShell**, còn các lệnh trong tài liệu này viết cho **Command Prompt (cmd)**. Có hai cách:
+
+- **Cách 1 (dễ nhất):** trong panel Terminal, bấm mũi tên **˅** cạnh dấu **+**, chọn **Command Prompt**. Khi đó mọi lệnh trong tài liệu chạy y nguyên.
+- **Cách 2:** giữ PowerShell và đổi các lệnh sau:
+
+| Command Prompt | PowerShell |
+|---|---|
+| `cd /d "C:\...\vietnam_satelline_final"` | `cd "C:\...\vietnam_satelline_final"` |
+| `.venv\Scripts\activate` | `.\.venv\Scripts\Activate.ps1` |
+| `run_hanoi_pilot.bat` | `.\run_hanoi_pilot.bat` |
+| ghi chú `:: ...` | ghi chú `# ...` |
+| xuống dòng bằng `^` | xuống dòng bằng `` ` `` (hoặc viết trên một dòng) |
+
+Nếu PowerShell báo *running scripts is disabled* khi kích hoạt `.venv`, chạy một lần lệnh `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. Biến đặt bằng `setx` chỉ có tác dụng ở terminal **mở sau đó**. Muốn dùng ngay trong phiên hiện tại thì chạy `$env:VNGIS_EE_PROJECT = "vngis-ee-2"`. Nếu `earthengine authenticate` không mở được trình duyệt, chạy `earthengine authenticate --auth_mode=notebook`, mở link được in ra rồi dán mã xác thực vào terminal.
+
+Toàn bộ các bước trong PowerShell:
+
+```powershell
+cd "C:\Users\<tên bạn>\Documents\vietnam_satelline_final"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+earthengine authenticate
+$env:VNGIS_EE_PROJECT = "vngis-ee-2"
+python run_hanoi_pilot.py
+```
+
 ## 2. Đăng ký và xác thực Google Earth Engine (làm một lần)
 
 1. Đăng ký Earth Engine tại https://earthengine.google.com/ rồi tạo (hoặc chọn) một **Google Cloud Project** đã bật Earth Engine API. Ghi lại **Project ID**.
@@ -134,7 +167,7 @@ Thay đường dẫn bằng thư mục repo của bạn:
 ```bat
 :: Hằng tháng, ngày 10, lúc 02:00: cập nhật dữ liệu tháng
 schtasks /Create /TN "VNGIS_CapNhat_Thang" /SC MONTHLY /D 10 /ST 02:00 ^
-  /TR "\"C:\Users\<tên bạn>\Documents\vietnam_satelline_final\run_auto_update.bat\" --scope monthly"
+  /TR "\"C:\Users\<tên bạn>\Documents\vietnam_satelline_final\run_auto_update.bat\" --scope monthly --monthly-tif"
 
 :: Hằng năm, ngày 15/06, lúc 01:00: cập nhật năm mới (NTL + lớp phủ)
 :: (schtasks không có lịch YEARLY: dùng MONTHLY chỉ với tháng 6)
@@ -146,7 +179,7 @@ schtasks /Create /TN "VNGIS_CapNhat_Nam" /SC MONTHLY /M JUN /D 15 /ST 01:00 ^
 
 1. Mở **Task Scheduler**, chọn **Create Basic Task...**
 2. Đặt tên, ví dụ `VNGIS_CapNhat_Thang`. Trigger chọn **Monthly**, ngày 10, giờ 02:00.
-3. Action chọn **Start a program**. Program/script trỏ tới `run_auto_update.bat`. *Add arguments* điền `--scope monthly`. *Start in* điền thư mục repo.
+3. Action chọn **Start a program**. Program/script trỏ tới `run_auto_update.bat`. *Add arguments* điền `--scope monthly --monthly-tif`. *Start in* điền thư mục repo.
 4. Trong Properties, tích **Run whether user is logged on or not** và **Wake the computer to run this task** (tab Conditions).
 5. Lặp lại các bước trên với `--scope annual` cho lịch hằng năm.
 
