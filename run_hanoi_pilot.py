@@ -47,7 +47,9 @@ def summarize(df, summary):
         f"Số quận/huyện: {summary['districts']} | Năm: {summary['years'][0]}–{summary['years'][-1]}",
         f"Tổng thời gian: {fmt_duration(summary['seconds'])}",
         f"Số tệp .tif đã tải: {summary['files']} | Dung lượng: {summary['bytes'] / 1024 ** 2:.1f} MB",
-        f"Bảng NTL: {summary['ntl']} dòng | Bảng lớp phủ: {summary['landcover']} dòng",
+        f"Diện tích các huyện đã chạy: {summary.get('area_km2') or 0:.1f} km²",
+        f"Bảng năm: NTL {summary['ntl']} dòng | lớp phủ {summary['landcover']} dòng "
+        f"(bảng tháng nằm trong *_monthly.csv)",
         "",
         "Thời gian theo bước (giây):",
     ]
@@ -57,7 +59,9 @@ def summarize(df, summary):
         per_unit = df[df["ma_huyen"].astype(str) != ""]["giay"].sum() / (n_d * n_y)
         setup = df[df["ma_huyen"].astype(str) == ""]["giay"].sum() / n_y
         est_sec = per_unit * NATIONAL_DISTRICTS * NATIONAL_YEARS + setup * NATIONAL_YEARS
-        est_gb = summary["bytes"] / (n_y * HANOI_AREA_KM2) * VN_AREA_KM2 * NATIONAL_YEARS / 1024 ** 3
+        # Dung lượng tỷ lệ với diện tích THỰC TẾ của các huyện vừa chạy (không phải cả Hà Nội)
+        area = summary.get("area_km2") or HANOI_AREA_KM2
+        est_gb = summary["bytes"] / (n_y * area) * VN_AREA_KM2 * NATIONAL_YEARS / 1024 ** 3
         lines += [
             "",
             "ƯỚC TÍNH TOÀN QUỐC (~705 huyện × 22 năm, chạy tuần tự, cùng tùy chọn):",

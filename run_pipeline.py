@@ -144,6 +144,9 @@ def run(args, timer=None):
         ntl = NTLPipeline(monthly=args.monthly, monthly_tif=args.monthly_tif, **common)
         df = ntl.run(districts, years)
         summary["ntl"] = len(df)
+        if not df.empty:
+            ran = df[df["ma_huyen_gadm"].isin(districts["ma_huyen"])].drop_duplicates("ma_huyen_gadm")
+            summary["area_km2"] = float(ran["dien_tich_km2"].sum())
         summary["files"] += ntl.files_downloaded
         summary["bytes"] += ntl.bytes_downloaded
 
@@ -155,6 +158,9 @@ def run(args, timer=None):
                                monthly_tif=args.monthly_tif, **common)
         df = lc.run(districts, years)
         summary["landcover"] = len(df)
+        if not df.empty and not summary.get("area_km2"):
+            ran = df[df["ma_huyen_gadm"].isin(districts["ma_huyen"])].drop_duplicates("ma_huyen_gadm")
+            summary["area_km2"] = float(ran["tong_dien_tich_ha"].sum()) / 100
         summary["files"] += lc.files_downloaded
         summary["bytes"] += lc.bytes_downloaded
 
