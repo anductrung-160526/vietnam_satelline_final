@@ -103,6 +103,7 @@ def build_parser():
     p.add_argument("--no-accuracy", action="store_true", help="Bỏ qua đánh giá độ chính xác phân lớp")
     p.add_argument("--ee-project", default=DEFAULT_EE_PROJECT, help="Google Cloud Project ID đã đăng ký GEE")
     p.add_argument("--min-free-gb", type=float, default=5.0, help="Cảnh báo nếu ổ đĩa còn trống ít hơn (GB)")
+    p.add_argument("--cache-dir", default="", help="Thư mục cache ranh giới GADM dùng chung (mặc định <output>/_cache)")
     return p
 
 
@@ -131,7 +132,7 @@ def run(args, timer=None):
         return summary
 
     years = parse_years(args.years, args.start_year, args.end_year)
-    cache = out / "_cache"
+    cache = Path(args.cache_dir) if getattr(args, "cache_dir", "") else out / "_cache"
     with timer.step("chung", "tai_danh_muc_ranh_gioi"):
         districts = select_districts(args, cache)
     summary["districts"] = len(districts)

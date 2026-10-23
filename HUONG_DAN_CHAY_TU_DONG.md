@@ -139,6 +139,22 @@ python run_hanoi_pilot.py --level tinh --years 2004-2025 --no-monthly-tif       
 - Checkpoint cấp tỉnh lưu riêng (`logs\*_tinh_checkpoint.jsonl`), nên chạy cấp tỉnh không ảnh hưởng đến dữ liệu cấp huyện đã có.
 - Ảnh `.tif` cấp tỉnh đặt tên theo mã tỉnh, ví dụ `SENTINEL2_01_2024_03.tif` (01 = Hà Nội). Ảnh cả tỉnh lớn nên chương trình tự chia ô để tải rồi ghép lại.
 
+## 3b-2. Chạy SONG SONG nhiều tỉnh (cả nước)
+
+`run_parallel.py` chạy nhiều tỉnh cùng lúc (mặc định 8). Mỗi tỉnh lưu vào thư mục riêng `C:\VNGIS_Data\tinh\<mã>_<tên>\` (có checkpoint, log, ảnh `.tif` riêng). Khi xong, chương trình tự gộp thành bảng toàn quốc trong `C:\VNGIS_Data\VN_*_Panel_2004_2025\data_processed\vietnam_province_*.csv`.
+
+```bat
+python run_parallel.py --workers 8 --years 2004-2025 --monthly --no-tif   :: chỉ bảng CSV năm + tháng (nhanh nhất)
+python run_parallel.py --workers 8 --years 2004-2025 --monthly            :: bảng + ảnh năm
+python run_parallel.py --workers 8 --provinces "01,79,48" --years 2024 --monthly   :: chỉ vài tỉnh (mã hoặc tên)
+python run_parallel.py --merge-only                                       :: gộp lại bảng từ các tỉnh đã có
+```
+
+- Màn hình in tiến độ sau mỗi tỉnh xong: số tỉnh đã xong, thời gian đã chạy và thời gian còn lại ước tính.
+- Log chi tiết của từng tỉnh nằm ở `C:\VNGIS_Data\tinh\<mã>_<tên>\console.log`.
+- Tỉnh bị lỗi sẽ được thử lại 1 lần. Muốn làm tiếp phần còn thiếu thì chạy lại đúng lệnh cũ.
+- Nên để 6–10 tiến trình. Nhiều hơn thì GEE báo quá tải (`429`) và mạng bị nghẽn, nên không nhanh hơn.
+
 ## 3c. Dung lượng ảnh .tif (nén không mất dữ liệu)
 
 Mọi ảnh `.tif` tải về được tự động nén **không mất dữ liệu**: DEFLATE kết hợp predictor, và chia khối 256×256. Giá trị từng pixel giữ nguyên tuyệt đối, định dạng vẫn là GeoTIFF, mở được bằng QGIS, ArcGIS, GDAL và R. Với các ảnh đã tải từ trước, chạy lệnh sau một lần để nén lại:
