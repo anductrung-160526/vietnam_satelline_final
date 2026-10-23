@@ -1,0 +1,51 @@
+﻿lon,lat,class,class_name,region
+105.82,20.45,1,Đất nông nghiệp,Đồng bằng sông Hồng (Hà Nam)
+106.12,20.35,1,Đất nông nghiệp,Đồng bằng sông Hồng (Nam Định)
+106.35,20.52,1,Đất nông nghiệp,Đồng bằng sông Hồng (Thái Bình)
+105.45,10.35,1,Đất nông nghiệp,Đồng bằng sông Cửu Long (An Giang)
+105.75,10.05,1,Đất nông nghiệp,Đồng bằng sông Cửu Long (Cần Thơ)
+105.65,10.55,1,Đất nông nghiệp,Đồng bằng sông Cửu Long (Đồng Tháp)
+107.98,12.65,1,Đất nông nghiệp,Tây Nguyên (Cà phê Đắk Lắk)
+108.02,13.98,1,Đất nông nghiệp,Tây Nguyên (Hồ tiêu Gia Lai)
+105.78,19.82,1,Đất nông nghiệp,Bắc Trung Bộ (Thanh Hóa)
+108.85,15.25,1,Đất nông nghiệp,Duyên hải miền Trung (Quảng Ngãi)
+105.85,21.03,2,Đô thị và dịch vụ,Hà Nội (Khu vực trung tâm)
+105.78,21.01,2,Đô thị và dịch vụ,Hà Nội (Khu vực Cầu Giấy/Nam Từ Liêm)
+106.68,10.77,2,Đô thị và dịch vụ,TP. Hồ Chí Minh (Quận 1)
+106.72,10.82,2,Đô thị và dịch vụ,TP. Hồ Chí Minh (TP. Thủ Đức)
+108.22,16.06,2,Đô thị và dịch vụ,Đà Nẵng (Hải Châu)
+106.68,20.86,2,Đô thị và dịch vụ,Hải Phòng (Hồng Bàng)
+106.75,10.95,2,Đô thị và dịch vụ,Bình Dương (Khu công nghiệp VSIP)
+106.9,10.95,2,Đô thị và dịch vụ,Đồng Nai (Khu công nghiệp Biên Hòa)
+107.08,20.95,2,Đô thị và dịch vụ,Quảng Ninh (Hạ Long)
+105.78,10.03,2,Đô thị và dịch vụ,Cần Thơ (Ninh Kiều)
+103.85,22.35,3,Rừng,Tây Bắc (Vườn quốc gia Hoàng Liên Sơn)
+104.95,21.95,3,Rừng,Đông Bắc (Rừng Yên Bái)
+105.71,20.32,3,Rừng,Rừng Cúc Phương (Ninh Bình)
+106.25,17.52,3,Rừng,Vườn quốc gia Phong Nha - Kẻ Bàng
+107.85,16.2,3,Rừng,Vườn quốc gia Bạch Mã (Thừa Thiên Huế)
+108.35,14.5,3,Rừng,Tây Nguyên (Vườn quốc gia Kon Ka Kinh)
+108.45,12.15,3,Rừng,Tây Nguyên (Vườn quốc gia Bidoup Núi Bà)
+107.42,11.45,3,Rừng,Đông Nam Bộ (Vườn quốc gia Cát Tiên)
+104.98,19.35,3,Rừng,"Bắc Trung Bộ (Vườn quốc gia Pù Mát, Nghệ An)"
+105.02,8.65,3,Rừng,Đồng bằng sông Cửu Long (Vườn quốc gia Mũi Cà Mau)
+105.15,21.8,4,Mặt nước,Hồ Thác Bà (Yên Bái)
+105.25,20.85,4,Mặt nước,Hồ Hòa Bình
+105.72,19.65,4,Mặt nước,Hồ Cửa Đạt (Thanh Hóa)
+107.02,11.35,4,Mặt nước,Hồ Trị An (Đồng Nai)
+106.18,11.35,4,Mặt nước,Hồ Dầu Tiếng (Tây Ninh)
+105.9,21.05,4,Mặt nước,Sông Hồng (Đoạn qua Hà Nội)
+105.95,10.25,4,Mặt nước,Sông Tiền (Vĩnh Long)
+105.52,9.95,4,Mặt nước,Sông Hậu (Cần Thơ)
+107.6,16.55,4,Mặt nước,Đầm phá Tam Giang - Cầu Hai (Huế)
+107.05,20.85,4,Mặt nước,Vịnh Hạ Long (Quảng Ninh)
+108.55,11.6,5,Đất khác,Đồi cát ven biển Ninh Thuận
+108.35,11.05,5,Đất khác,Đồi cát Mũi Né (Bình Thuận)
+106.65,17.55,5,Đất khác,Bãi cát ven biển Quảng Bình
+103.55,22.45,5,Đất khác,Núi đá trơ trọi vùng cao Lai Châu
+105.25,23.25,5,Đất khác,Cao nguyên đá Đồng Văn (Hà Giang)
+107.35,21.45,5,Đất khác,Bãi bồi cửa sông Quảng Ninh
+106.85,10.45,5,Đất khác,Bãi cát biển Cần Giờ
+109.15,12.35,5,Đất khác,Bán đảo Cam Ranh (Khánh Hòa)
+108.75,14.15,5,Đất khác,Đất trống sau khai thác mỏ Gia Lai
+105.95,20.25,5,Đất khác,Vùng mỏ đá Tam Điệp (Ninh Bình)

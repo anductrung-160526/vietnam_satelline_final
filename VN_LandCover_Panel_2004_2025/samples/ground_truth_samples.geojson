@@ -1,0 +1,762 @@
+{
+  "type": "FeatureCollection",
+  "name": "Vietnam_LandCover_GroundTruth_5Classes",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.82,
+          20.45
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Hồng (Hà Nam)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.12,
+          20.35
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Hồng (Nam Định)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.35,
+          20.52
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Hồng (Thái Bình)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.45,
+          10.35
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Cửu Long (An Giang)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.75,
+          10.05
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Cửu Long (Cần Thơ)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.65,
+          10.55
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Đồng bằng sông Cửu Long (Đồng Tháp)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.98,
+          12.65
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Tây Nguyên (Cà phê Đắk Lắk)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.02,
+          13.98
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Tây Nguyên (Hồ tiêu Gia Lai)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.78,
+          19.82
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Bắc Trung Bộ (Thanh Hóa)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.85,
+          15.25
+        ]
+      },
+      "properties": {
+        "class": 1,
+        "class_name": "Đất nông nghiệp",
+        "region": "Duyên hải miền Trung (Quảng Ngãi)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.85,
+          21.03
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Hà Nội (Khu vực trung tâm)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.78,
+          21.01
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Hà Nội (Khu vực Cầu Giấy/Nam Từ Liêm)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.68,
+          10.77
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "TP. Hồ Chí Minh (Quận 1)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.72,
+          10.82
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "TP. Hồ Chí Minh (TP. Thủ Đức)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.22,
+          16.06
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Đà Nẵng (Hải Châu)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.68,
+          20.86
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Hải Phòng (Hồng Bàng)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.75,
+          10.95
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Bình Dương (Khu công nghiệp VSIP)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.9,
+          10.95
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Đồng Nai (Khu công nghiệp Biên Hòa)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.08,
+          20.95
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Quảng Ninh (Hạ Long)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.78,
+          10.03
+        ]
+      },
+      "properties": {
+        "class": 2,
+        "class_name": "Đô thị và dịch vụ",
+        "region": "Cần Thơ (Ninh Kiều)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          103.85,
+          22.35
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Tây Bắc (Vườn quốc gia Hoàng Liên Sơn)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          104.95,
+          21.95
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Đông Bắc (Rừng Yên Bái)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.71,
+          20.32
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Rừng Cúc Phương (Ninh Bình)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.25,
+          17.52
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Vườn quốc gia Phong Nha - Kẻ Bàng"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.85,
+          16.2
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Vườn quốc gia Bạch Mã (Thừa Thiên Huế)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.35,
+          14.5
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Tây Nguyên (Vườn quốc gia Kon Ka Kinh)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.45,
+          12.15
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Tây Nguyên (Vườn quốc gia Bidoup Núi Bà)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.42,
+          11.45
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Đông Nam Bộ (Vườn quốc gia Cát Tiên)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          104.98,
+          19.35
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Bắc Trung Bộ (Vườn quốc gia Pù Mát, Nghệ An)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.02,
+          8.65
+        ]
+      },
+      "properties": {
+        "class": 3,
+        "class_name": "Rừng",
+        "region": "Đồng bằng sông Cửu Long (Vườn quốc gia Mũi Cà Mau)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.15,
+          21.8
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Hồ Thác Bà (Yên Bái)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.25,
+          20.85
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Hồ Hòa Bình"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.72,
+          19.65
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Hồ Cửa Đạt (Thanh Hóa)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.02,
+          11.35
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Hồ Trị An (Đồng Nai)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.18,
+          11.35
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Hồ Dầu Tiếng (Tây Ninh)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.9,
+          21.05
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Sông Hồng (Đoạn qua Hà Nội)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.95,
+          10.25
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Sông Tiền (Vĩnh Long)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.52,
+          9.95
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Sông Hậu (Cần Thơ)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.6,
+          16.55
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Đầm phá Tam Giang - Cầu Hai (Huế)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.05,
+          20.85
+        ]
+      },
+      "properties": {
+        "class": 4,
+        "class_name": "Mặt nước",
+        "region": "Vịnh Hạ Long (Quảng Ninh)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.55,
+          11.6
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Đồi cát ven biển Ninh Thuận"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.35,
+          11.05
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Đồi cát Mũi Né (Bình Thuận)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.65,
+          17.55
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Bãi cát ven biển Quảng Bình"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          103.55,
+          22.45
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Núi đá trơ trọi vùng cao Lai Châu"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.25,
+          23.25
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Cao nguyên đá Đồng Văn (Hà Giang)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          107.35,
+          21.45
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Bãi bồi cửa sông Quảng Ninh"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          106.85,
+          10.45
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Bãi cát biển Cần Giờ"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          109.15,
+          12.35
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Bán đảo Cam Ranh (Khánh Hòa)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          108.75,
+          14.15
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Đất trống sau khai thác mỏ Gia Lai"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          105.95,
+          20.25
+        ]
+      },
+      "properties": {
+        "class": 5,
+        "class_name": "Đất khác",
+        "region": "Vùng mỏ đá Tam Điệp (Ninh Bình)"
+      }
+    }
+  ]
+}
