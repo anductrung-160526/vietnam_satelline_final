@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from .config import DEFAULT_EE_PROJECT, resolve_output_dir
-from .admin_boundaries import load_district_geometries
+from .admin_boundaries import load_district_geometries, province_folder_name
 from .utils import setup_pipeline_logger, log_audit, CheckpointManager, StepTimer, export_multiformat_table
 from . import ee_utils
 
@@ -20,13 +20,15 @@ class BasePipeline:
     SUBDIRS = ()
 
     def __init__(self, output_dir=None, ee_project=None, timer=None, download_tif=True, cache_dir=None,
-                 level="huyen"):
+                 level="huyen", tif_dir=None):
         self.output_dir = resolve_output_dir(output_dir)
         self.pkg_dir = self.output_dir / self.PACKAGE
+        # Ảnh .tif có thể ghi vào cây thư mục khác (run_parallel: ảnh về cây chung, bảng/log về thư mục từng tỉnh)
+        self.tif_pkg_dir = (Path(tif_dir) / self.PACKAGE) if tif_dir else self.pkg_dir
         for sub in self.SUBDIRS:
             (self.pkg_dir / sub).mkdir(parents=True, exist_ok=True)
         self.processed_dir = self.pkg_dir / "data_processed"
-        self.intermediate_dir = self.pkg_dir / "data_intermediate"
+        self.intermediate_dir = self.tif_pkg_dir / "data_intermediate"
         self.logs_dir = self.pkg_dir / "logs"
         self.docs_dir = self.pkg_dir / "docs"
         self.cache_dir = cache_dir
@@ -83,10 +85,12 @@ class BasePipeline:
         if not self.download_tif:
             return
         dest = Path(dest)
+        step = f"tai_tif_{dest.parent.name.lower()}"
+        dest = dest.parent / province_folder_name(row) / dest.name  # ...\<thư mục nguồn>\<Tên tỉnh>\ảnh.tif
         if dest.is_file():
             return
         geom = self.geoms[row["ma_huyen_gadm"]]
-        with self.timer.step(self.NAME, f"tai_tif_{dest.parent.name.lower()}", row["ma_huyen_gadm"], year,
+        with self.timer.step(self.NAME, step, row["ma_huyen_gadm"], year,
                              tep=dest.name) as _:
             size = ee_utils.download_image(self.ee, image, geom, scale, dest, n_bands=n_bands, dtype=dtype)
         self.bytes_downloaded += size

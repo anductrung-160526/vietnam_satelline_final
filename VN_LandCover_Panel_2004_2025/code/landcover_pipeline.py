@@ -94,8 +94,8 @@ class LandCoverPipeline(BasePipeline):
 
     def __init__(self, *args, sensors=SENSORS, accuracy=True, monthly=False, monthly_tif=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.raw_dir = {"landsat": self.pkg_dir / "raw_data" / "DAY" / "LANDSAT",
-                        "sentinel2": self.pkg_dir / "raw_data" / "DAY" / "SENTINEL2"}
+        self.raw_dir = {"landsat": self.tif_pkg_dir / "raw_data" / "DAY" / "LANDSAT",
+                        "sentinel2": self.tif_pkg_dir / "raw_data" / "DAY" / "SENTINEL2"}
         self.sensors = tuple(sensors)
         self.auto = self.sensors == ("auto",)
         self.accuracy = accuracy

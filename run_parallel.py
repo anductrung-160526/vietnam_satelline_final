@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
+r"""
 CHẠY SONG SONG NHIỀU TỈNH (cấp tỉnh).
 
-Mỗi tỉnh chạy trong một tiến trình riêng, ghi vào thư mục riêng <output>/tinh/<mã>_<tên>/ (checkpoint,
-log, ảnh .tif riêng nên không ghi đè nhau). Xong thì gộp bảng của mọi tỉnh vào
-<output>/VN_*_Panel_2004_2025/data_processed/vietnam_province_*.csv.
+Mặc định lưu vào E:\VNGIS_Data (nếu máy có ổ E). Mỗi tỉnh chạy trong một tiến trình riêng:
+- ảnh .tif về cây thư mục chung, mỗi tỉnh một thư mục tên tỉnh, vd
+  E:\VNGIS_Data\VN_NTL_Panel_2004_2025\raw_data\NTL\VIIRS\Hà Nội\VIIRS_01_2024_03.tif
+- checkpoint, log, bảng tạm của từng tỉnh ở <output>/_tien_do_tinh/<mã>_<tên>/ (không ghi đè nhau)
+Xong thì gộp bảng mọi tỉnh vào <output>/VN_*_Panel_2004_2025/data_processed/vietnam_province_*.csv.
 
+    python run_parallel.py --workers 8 --years 2004-2025 --monthly --monthly-tif --tif night   # CSV ngày+đêm, ảnh đêm
+    python run_parallel.py --workers 8 --years 2004-2025 --monthly --tif day                   # sau đó: ảnh ngày năm
     python run_parallel.py --workers 8 --years 2004-2025 --monthly --no-tif     # chỉ bảng CSV (nhanh nhất)
-    python run_parallel.py --workers 8 --years 2004-2025 --monthly              # bảng + ảnh năm
     python run_parallel.py --workers 8 --provinces "01,79,48" --years 2024      # chỉ vài tỉnh (mã hoặc tên)
     python run_parallel.py --merge-only                                         # chỉ gộp bảng đã có
 
@@ -28,9 +31,11 @@ import pandas as pd
 from pipeline_core.config import resolve_output_dir, NTL_PACKAGE, LANDCOVER_PACKAGE, DEFAULT_EE_PROJECT
 from pipeline_core.admin_boundaries import load_province_boundaries, normalize_text
 from pipeline_core.utils import export_multiformat_table
+from run_pipeline import setup_directory_structure
 
 REPO = Path(__file__).resolve().parent
 PRINT_LOCK = threading.Lock()
+WORK = "_tien_do_tinh"  # thư mục làm việc từng tỉnh (checkpoint, log, bảng tạm)
 
 
 def say(msg):
@@ -40,7 +45,7 @@ def say(msg):
 
 def province_dir(base, row):
     code = row["ma_tinh_tk"] or normalize_text(row["ma_tinh"])
-    return base / "tinh" / f"{code}_{normalize_text(row['ten_tinh'])}"
+    return base / WORK / f"{code}_{normalize_text(row['ten_tinh'])}"
 
 
 def run_one(row, base, args, passthrough):
@@ -49,7 +54,8 @@ def run_one(row, base, args, passthrough):
     out.mkdir(parents=True, exist_ok=True)
     key = row["ma_tinh_tk"] or row["ma_tinh"]
     cmd = [sys.executable, str(REPO / "run_pipeline.py"), "--level", "tinh", "--province", key,
-           "--output-dir", str(out), "--cache-dir", str(base / "_cache"), "--min-free-gb", "0", *passthrough]
+           "--output-dir", str(out), "--tif-dir", str(base), "--cache-dir", str(base / "_cache"),
+           "--min-free-gb", "0", *passthrough]
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     for attempt in (1, 2):
         t0 = time.perf_counter()
@@ -69,10 +75,10 @@ def merge_tables(base):
     """Gộp mọi bảng vietnam_province_*.csv của từng tỉnh thành bảng toàn quốc."""
     merged = []
     for pkg in (NTL_PACKAGE, LANDCOVER_PACKAGE):
-        names = sorted({f.name for f in (base / "tinh").glob(f"*/{pkg}/data_processed/vietnam_province_*.csv")})
+        names = sorted({f.name for f in (base / WORK).glob(f"*/{pkg}/data_processed/vietnam_province_*.csv")})
         for name in names:
             parts = [pd.read_csv(f, dtype={"ma_tinh": str}, encoding="utf-8-sig")
-                     for f in (base / "tinh").glob(f"*/{pkg}/data_processed/{name}")]
+                     for f in (base / WORK).glob(f"*/{pkg}/data_processed/{name}")]
             df = pd.concat(parts, ignore_index=True)
             sort = [c for c in ("ma_tinh", "nam", "ky", "thang") if c in df.columns]
             if "ky" in df.columns:
@@ -105,6 +111,7 @@ def main(argv=None):
     if not any(a.startswith("--ee-project") for a in passthrough):
         passthrough += ["--ee-project", DEFAULT_EE_PROJECT]
 
+    setup_directory_structure(base)
     provinces = load_province_boundaries(base / "_cache")
     if args.provinces:
         wanted = [w.strip() for w in args.provinces.split(",") if w.strip()]
@@ -114,7 +121,8 @@ def main(argv=None):
     provinces = provinces.reset_index(drop=True)
     total = len(provinces)
     say(f"Bắt đầu {total} tỉnh, {args.workers} tiến trình song song. Tham số: {' '.join(passthrough)}")
-    say(f"Dữ liệu từng tỉnh: {base / 'tinh'}  |  Log từng tỉnh: <thư mục tỉnh>\\console.log")
+    say(f"Ảnh .tif: {base}\\VN_*\\raw_data|data_intermediate\\...\\<Tên tỉnh>\\  |  "
+        f"Log từng tỉnh: {base / WORK}\\<mã>_<tên>\\console.log")
 
     t0 = time.perf_counter()
     done, failed = [], []

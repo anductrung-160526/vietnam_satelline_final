@@ -18,8 +18,11 @@ DEFAULT_EE_PROJECT = os.environ.get("VNGIS_EE_PROJECT", "vngis-ee-2")
 # Đường dẫn GADM 4.1 cho Việt Nam (ranh giới huyện trước sáp nhập)
 GADM_VNM_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/shp/gadm41_VNM_shp.zip"
 
-# Thư mục gốc mặc định: ổ C trên Windows, thư mục home trên Linux/macOS
-DEFAULT_OUTPUT_ROOT = r"C:\VNGIS_Data" if sys.platform == "win32" else str(Path.home() / "VNGIS_Data")
+# Thư mục gốc mặc định: ổ E trên Windows (nếu máy có ổ E), không có thì ổ C; Linux/macOS: thư mục home
+if sys.platform == "win32":
+    DEFAULT_OUTPUT_ROOT = r"E:\VNGIS_Data" if Path("E:\\").exists() else r"C:\VNGIS_Data"
+else:
+    DEFAULT_OUTPUT_ROOT = str(Path.home() / "VNGIS_Data")
 
 NTL_PACKAGE = "VN_NTL_Panel_2004_2025"
 LANDCOVER_PACKAGE = "VN_LandCover_Panel_2004_2025"
@@ -76,7 +79,7 @@ def resolve_output_dir(custom_path=None):
     Xác định đường dẫn lưu trữ gốc:
     1. Tham số dòng lệnh custom_path
     2. Biến môi trường OUTPUT_ROOT
-    3. Mặc định C:\\VNGIS_Data (Windows) hoặc ~/VNGIS_Data
+    3. Mặc định E:\\VNGIS_Data (Windows, nếu có ổ E; không thì C:\\VNGIS_Data) hoặc ~/VNGIS_Data
     """
     if custom_path and str(custom_path).strip():
         p = Path(custom_path).expanduser().resolve()

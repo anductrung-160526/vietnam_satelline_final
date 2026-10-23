@@ -34,6 +34,7 @@ def run_monthly(args, timer):
     check_disk_space(out, args.min_free_gb)
     districts = select_districts(args, out / "_cache")
     common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, download_tif=not args.no_tif,
+                  tif_dir=args.tif_dir or None,
                   level=args.level,
                   cache_dir=out / "_cache", monthly=True, monthly_tif=args.monthly_tif)
     years = [this_year - 1, this_year]

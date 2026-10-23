@@ -51,8 +51,8 @@ class NTLPipeline(BasePipeline):
 
     def __init__(self, *args, monthly=False, monthly_tif=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.raw_dmsp_dir = self.pkg_dir / "raw_data" / "NTL" / "DMSP"
-        self.raw_viirs_dir = self.pkg_dir / "raw_data" / "NTL" / "VIIRS"
+        self.raw_dmsp_dir = self.tif_pkg_dir / "raw_data" / "NTL" / "DMSP"
+        self.raw_viirs_dir = self.tif_pkg_dir / "raw_data" / "NTL" / "VIIRS"
         self.monthly = monthly
         self.monthly_tif = monthly_tif
         self.calibration = None

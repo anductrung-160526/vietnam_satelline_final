@@ -51,6 +51,16 @@ class ProvinceLevelTests(unittest.TestCase):
         self.assertEqual(codes[match_key("HồChíMinh")], "79")
         self.assertEqual(codes[match_key("BàRịa-VũngTàu")], "77")
 
+    def test_image_folder_is_province_name(self):
+        from pipeline_core.admin_boundaries import province_folder_name
+        self.assertEqual(province_folder_name({"ma_tinh_tk": "01", "ten_tinh": "HàNội"}), "Hà Nội")
+        self.assertEqual(province_folder_name({"ma_tinh_tk": "79", "ten_tinh": "HồChíMinh"}), "Hồ Chí Minh")
+
+    def test_tif_selector(self):
+        from run_pipeline import build_parser
+        a = build_parser().parse_args(["--tif", "night", "--tif-dir", "E:/VNGIS_Data"])
+        self.assertEqual((a.tif, a.tif_dir), ("night", "E:/VNGIS_Data"))
+
     def test_province_export_renames_columns(self):
         from pipeline_core.base_pipeline import BasePipeline
         p = BasePipeline.__new__(BasePipeline)

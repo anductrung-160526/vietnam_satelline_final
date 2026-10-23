@@ -11,6 +11,7 @@ import struct
 import zipfile
 import unicodedata
 import requests
+from functools import lru_cache
 import pandas as pd
 from pathlib import Path
 from .config import GADM_VNM_URL
@@ -144,6 +145,21 @@ def _read_level_dbf(cache_dir, level):
         if raw and raw.upper().replace("-", "") != "UTF8":
             enc = raw
     return read_dbf(shp.with_suffix(".dbf"), enc)
+
+
+@lru_cache(maxsize=1)
+def province_names():
+    """{mã tỉnh Cục Thống kê: tên tỉnh có dấu, có khoảng trắng} để đặt tên thư mục ảnh."""
+    if not GSO_PROVINCE_CSV.is_file():
+        return {}
+    df = pd.read_csv(GSO_PROVINCE_CSV, dtype=str, keep_default_na=False, comment="#")
+    return dict(zip(df["ma_tinh_tk"], df["ten_tinh_tk"]))
+
+
+def province_folder_name(row):
+    """Tên thư mục tỉnh cho ảnh: tên chuẩn của Cục Thống kê (vd 'Hà Nội'), thiếu mã thì dùng tên GADM."""
+    name = province_names().get(str(row.get("ma_tinh_tk") or ""), "") or str(row.get("ten_tinh") or "khac")
+    return re.sub(r'[<>:"/\\|?*]', "-", name).strip() or "khac"
 
 
 def load_province_boundaries(cache_dir=None):

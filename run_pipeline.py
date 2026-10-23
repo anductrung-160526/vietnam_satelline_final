@@ -100,6 +100,9 @@ def build_parser():
     p.add_argument("--day-sensors", default="auto",
                    help="auto (mặc định: Landsat 2004–2014, Sentinel-2 2015–2025) | landsat | sentinel2 | landsat,sentinel2")
     p.add_argument("--no-tif", action="store_true", help="Chỉ tính bảng số liệu, không tải ảnh .tif")
+    p.add_argument("--tif", choices=["all", "night", "day", "none"], default="all",
+                   help="Tải ảnh nào: all (ngày + đêm), night (chỉ ảnh đêm), day (chỉ ảnh ngày), none")
+    p.add_argument("--tif-dir", default="", help="Cây thư mục lưu ảnh .tif (mặc định = --output-dir)")
     p.add_argument("--no-accuracy", action="store_true", help="Bỏ qua đánh giá độ chính xác phân lớp")
     p.add_argument("--ee-project", default=DEFAULT_EE_PROJECT, help="Google Cloud Project ID đã đăng ký GEE")
     p.add_argument("--min-free-gb", type=float, default=5.0, help="Cảnh báo nếu ổ đĩa còn trống ít hơn (GB)")
@@ -142,13 +145,15 @@ def run(args, timer=None):
           f"{' ...' if len(districts) > 40 else ''}")
     print(f"[*] Năm: {years[0]}–{years[-1]} ({len(years)} năm)")
 
-    common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, download_tif=not args.no_tif,
+    tif_mode = "none" if args.no_tif else args.tif
+    common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, tif_dir=args.tif_dir or None,
                   level=args.level,
                   cache_dir=cache)
     if args.pipeline in ("all", "ntl"):
         from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline
         print("\n[*] PIPELINE ÁNH SÁNG BAN ĐÊM (NTL)")
-        ntl = NTLPipeline(monthly=args.monthly, monthly_tif=args.monthly_tif, **common)
+        ntl = NTLPipeline(monthly=args.monthly, monthly_tif=args.monthly_tif,
+                          download_tif=tif_mode in ("all", "night"), **common)
         df = ntl.run(districts, years)
         summary["ntl"] = len(df)
         if not df.empty:
@@ -162,7 +167,7 @@ def run(args, timer=None):
         print("\n[*] PIPELINE LỚP PHỦ BỀ MẶT (ẢNH BAN NGÀY)")
         sensors = [s.strip().lower() for s in args.day_sensors.split(",") if s.strip()]
         lc = LandCoverPipeline(sensors=sensors, accuracy=not args.no_accuracy, monthly=args.monthly,
-                               monthly_tif=args.monthly_tif, **common)
+                               monthly_tif=args.monthly_tif, download_tif=tif_mode in ("all", "day"), **common)
         df = lc.run(districts, years)
         summary["landcover"] = len(df)
         if not df.empty and not summary.get("area_km2"):
