@@ -1,43 +1,7 @@
-# HƯỚNG DẪN CẬP NHẬT DỮ LIỆU LỚP PHỦ BỀ MẶT CHO CÁC NĂM TIẾP THEO
+# Hướng dẫn cập nhật ảnh vệ tinh ban ngày cho các năm sau
 
-Tài liệu này quy định quy trình chuẩn để cập nhật định kỳ bản đồ và chỉ số diện tích lớp phủ bề mặt cấp huyện cho các năm tiếp theo (từ 2026 trở đi).
-
----
-
-## 1. NGUYÊN TẮC CẬP NHẬT
-1. **Tính nhất quán phân loại:**
-   - Sử dụng thống nhất 5 lớp phủ chuẩn: Đất nông nghiệp, Đô thị/dịch vụ, Rừng, Mặt nước, Đất khác.
-   - Giữ nguyên cấu trúc bảng dữ liệu, tên biến và đơn vị tính (hecta, %).
-2. **Nguồn ảnh:**
-   - Tiếp tục khai thác dữ liệu ảnh Landsat 8/9 kết hợp Sentinel-2 từ kho lưu trữ Google Earth Engine.
-   - Ưu tiên cửa sổ quan sát mùa khô (tháng 11 năm trước đến tháng 4 năm hiện tại) để giảm thiểu tỷ lệ che phủ mây.
-3. **Quy chuẩn nhật ký (`logs/`):**
-   - Mọi hoạt động cập nhật phải ghi vào file log:
-     `[YYYY-MM-DD HH:MM:SS] | Người thực hiện | Landsat/Sentinel-2 | Nội dung chi tiết...`
-
----
-
-## 2. QUY TRÌNH THỰC HIỆN 4 BƯỚC
-
-### Bước 1: Kiểm tra ảnh viễn thám
-Sau khi kết thúc mùa khô hàng năm (khoảng tháng 5), kiểm tra bộ sưu tập Landsat 9 và Sentinel-2 đã cập nhật đầy đủ ảnh Surface Reflectance trên GEE.
-
-### Bước 2: Chạy script phân loại và trích xuất diện tích
-Chạy lệnh cho năm mới:
-```bash
-python code/landcover_pipeline.py --years 2026
-```
-
-### Bước 3: Đánh giá độ chính xác phân loại
-Chạy kiểm định độ chính xác trên tập mẫu kiểm chứng:
-```bash
-python code/accuracy_assessment.py
-```
-Kiểm tra báo cáo tại `docs/BAO_CAO_DO_CHINH_XAC.md`, đảm bảo Overall Accuracy $\ge 85\%$ và Kappa $\ge 0.80$.
-
-### Bước 4: Kiểm tra và xuất bảng số liệu
-Xác nhận dữ liệu năm mới đã được nối vào các bảng kết quả:
-- `data_processed/vietnam_district_landcover_panel_2004_2025.csv`
-- `data_processed/vietnam_district_landcover_panel_2004_2025.xlsx`
-- `data_processed/vietnam_district_landcover_panel_2004_2025.dta`
-Kiểm tra biến `dt_nn_chuyen_doi` để xác định biến động đất nông nghiệp của từng huyện so với năm trước.
+1. **Thời điểm:** ảnh năm N được ghép từ mùa khô 01/11/(N−1) đến 30/04/N, nên chỉ chạy năm N sau tháng 5/N. Lịch tự động hằng năm (`run_auto_update.py --scope annual`) đặt vào 15/06.
+2. **Giữ nguyên kiến trúc:** không đổi thư mục, tên tệp, tên cột hay **ngưỡng phân lớp**. Nếu buộc phải đổi ngưỡng trong `pipeline_core/config.py`, phải xóa checkpoint `logs/landcover_pipeline_checkpoint.jsonl` và các bản đồ trong `data_intermediate/`, rồi chạy lại cả chuỗi để số liệu các năm nhất quán. Ghi lý do vào nhật ký.
+3. **Diện tích chuyển đổi** của năm N cần ảnh năm N−1. Pipeline tự tính lại ảnh năm N−1 trên GEE nên không cần chạy lại năm cũ.
+4. **Độ chính xác:** sau mỗi lần cập nhật, kiểm tra báo cáo `docs/BAO_CAO_DO_CHINH_XAC_<NGUON>_<NAM>.md` của năm mới. Nên bổ sung điểm mẫu có năm quan sát vào `samples/ground_truth_samples.csv` (cột `lon, lat, class`).
+5. **Nhật ký:** tự ghi vào `logs/nhat_ky_cap_nhat.txt` theo mẫu `Ngày cập nhật | Người thực hiện | Loại ảnh (Landsat/Sentinel-2) | Nội dung`.

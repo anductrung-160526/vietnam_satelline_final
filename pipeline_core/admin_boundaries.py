@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Xử lý dữ liệu ranh giới hành chính cấp Huyện (GADM Level 2) tại Việt Nam
+Ranh giới hành chính cấp huyện (GADM 4.1 Level 2, địa giới trước sáp nhập) và mã Cục Thống kê.
+
+- Danh mục huyện đọc từ tệp .dbf, hình học đọc từ tệp .shp (thư viện pyshp, thuần Python).
+- Mã Cục Thống kê (ma_tinh_tk, ma_huyen_tk) tra từ pipeline_core/data/gso_district_codes.csv.
+  Huyện không khớp được mã sẽ để trống và ghi vào log, KHÔNG tự sinh mã.
 """
-import os
 import re
 import struct
 import zipfile
@@ -13,15 +16,25 @@ from pathlib import Path
 from .config import GADM_VNM_URL
 
 DISTRICT_COLS = ["GID_1", "NAME_1", "GID_2", "NAME_2", "TYPE_2", "ENGTYPE_2"]
+GSO_CODES_CSV = Path(__file__).resolve().parent / "data" / "gso_district_codes.csv"
+SHP_BASENAME = "gadm41_VNM_2"
+
 
 def normalize_text(s):
-    if not s or pd.isna(s):
+    if s is None or (not isinstance(s, str) and pd.isna(s)):
         return ""
     s = unicodedata.normalize("NFD", str(s))
     s = re.sub(r"[̀-ͯ]", "", s)
     s = s.replace("đ", "d").replace("Đ", "d")
     s = re.sub(r"[^a-zA-Z0-9]+", "_", s)
     return s.strip("_").lower()
+
+
+def match_key(s):
+    """Khóa so khớp tên: bỏ dấu, bỏ khoảng trắng (GADM hay viết liền 'HàNội').
+    Tên trong gso_district_codes.csv ghi KHÔNG kèm tiền tố 'Quận/Huyện/Thị xã'."""
+    return normalize_text(s).replace("_", "")
+
 
 def read_dbf(path, encoding="utf-8"):
     """Đọc tệp thuộc tính DBF thuần Python không phụ thuộc thư viện ngoài C-extension."""
@@ -49,20 +62,19 @@ def read_dbf(path, encoding="utf-8"):
             rows.append(row)
     return pd.DataFrame(rows)
 
-def load_district_boundaries(cache_dir=None):
-    """
-    Tải và xử lý bảng danh mục toàn bộ ~705 quận/huyện/thị xã Việt Nam từ GADM 4.1 Level 2
-    """
-    if cache_dir is None:
-        cache_dir = Path.home() / "vngis_data" / "_cache"
-    else:
-        cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    csv_cache = cache_dir / "vietnam_districts_l2.csv"
-    if csv_cache.is_file():
-        df = pd.read_csv(csv_cache, dtype=str, keep_default_na=False)
-        return df
+def default_cache_dir():
+    from .config import resolve_output_dir
+    return resolve_output_dir() / "_cache"
+
+
+def ensure_gadm_shapefile(cache_dir=None):
+    """Tải (một lần) gói GADM 4.1 và giải nén bộ tệp Level 2 (.shp/.shx/.dbf/.cpg)."""
+    cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    shp = cache_dir / f"{SHP_BASENAME}.shp"
+    if shp.is_file() and (cache_dir / f"{SHP_BASENAME}.dbf").is_file():
+        return shp
 
     zip_path = cache_dir / "gadm41_VNM_shp.zip"
     if not zip_path.is_file():
@@ -78,60 +90,112 @@ def load_district_boundaries(cache_dir=None):
         print("[*] Tải dữ liệu ranh giới hoàn tất.")
 
     with zipfile.ZipFile(zip_path) as z:
-        z.extract("gadm41_VNM_2.dbf", cache_dir)
-        cpg_file = "gadm41_VNM_2.cpg"
-        enc = "utf-8"
-        if cpg_file in z.namelist():
-            enc_raw = z.read(cpg_file).decode().strip()
-            if enc_raw.upper().replace("-", "") in ("UTF8", ""):
-                enc = "utf-8"
-            else:
-                enc = enc_raw
+        for ext in (".shp", ".shx", ".dbf", ".cpg", ".prj"):
+            name = SHP_BASENAME + ext
+            if name in z.namelist():
+                z.extract(name, cache_dir)
+    return shp
 
-    dbf_file = cache_dir / "gadm41_VNM_2.dbf"
-    df_raw = read_dbf(dbf_file, enc)
 
-    # Lọc cột và chuẩn hóa
-    cols = [c for c in DISTRICT_COLS if c in df_raw.columns]
-    df = df_raw[cols].drop_duplicates("GID_2").reset_index(drop=True)
-
-    # Thêm các cột chuẩn hóa
-    df["ma_tinh"] = df["GID_1"]
-    df["ten_tinh"] = df["NAME_1"]
-    df["ma_huyen"] = df["GID_2"]
-    df["ten_huyen"] = df["NAME_2"]
-    df["loai_huyen"] = df["TYPE_2"] if "TYPE_2" in df.columns else ""
-    df["slug_tinh"] = df["NAME_1"].apply(normalize_text)
-    df["slug_huyen"] = df["NAME_2"].apply(normalize_text)
-
-    df.to_csv(csv_cache, index=False, encoding="utf-8-sig")
+def load_gso_codes(path=GSO_CODES_CSV):
+    if not Path(path).is_file():
+        return pd.DataFrame(columns=["ma_tinh_tk", "ten_tinh_tk", "ma_huyen_tk", "ten_huyen_tk"])
+    df = pd.read_csv(path, dtype=str, keep_default_na=False, comment="#")
+    df["k_tinh"] = df["ten_tinh_tk"].apply(match_key)
+    df["k_huyen"] = df["ten_huyen_tk"].apply(match_key)
     return df
 
+
+def attach_gso_codes(df, gso=None):
+    """Gắn mã Cục Thống kê theo tên tỉnh + tên huyện đã chuẩn hóa. Không khớp -> để trống."""
+    gso = load_gso_codes() if gso is None else gso
+    df = df.copy()
+    df["k_tinh"] = df["ten_tinh"].apply(match_key)
+    df["k_huyen"] = df["ten_huyen"].apply(match_key)
+    look = gso.drop_duplicates(["k_tinh", "k_huyen"]).set_index(["k_tinh", "k_huyen"])
+    tinh_look = gso.drop_duplicates("k_tinh").set_index("k_tinh")["ma_tinh_tk"]
+    ma_huyen_tk, ma_tinh_tk = [], []
+    for kt, kh in zip(df["k_tinh"], df["k_huyen"]):
+        ma_huyen_tk.append(look["ma_huyen_tk"].get((kt, kh), "") if not look.empty else "")
+        ma_tinh_tk.append(tinh_look.get(kt, "") if not tinh_look.empty else "")
+    df["ma_tinh_tk"] = ma_tinh_tk
+    df["ma_huyen_tk"] = ma_huyen_tk
+    return df.drop(columns=["k_tinh", "k_huyen"])
+
+
+def load_district_boundaries(cache_dir=None):
+    """
+    Bảng danh mục ~705 quận/huyện/thị xã Việt Nam từ GADM 4.1 Level 2, kèm mã Cục Thống kê.
+    Cột chính: ma_tinh, ten_tinh, ma_huyen (GID_2, khớp hình học), ten_huyen, ma_tinh_tk, ma_huyen_tk.
+    """
+    cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
+    csv_cache = cache_dir / "vietnam_districts_l2.csv"
+    if csv_cache.is_file():
+        df = pd.read_csv(csv_cache, dtype=str, keep_default_na=False)
+    else:
+        shp = ensure_gadm_shapefile(cache_dir)
+        enc = "utf-8"
+        cpg = shp.with_suffix(".cpg")
+        if cpg.is_file():
+            raw = cpg.read_text().strip()
+            if raw and raw.upper().replace("-", "") != "UTF8":
+                enc = raw
+        df_raw = read_dbf(shp.with_suffix(".dbf"), enc)
+        cols = [c for c in DISTRICT_COLS if c in df_raw.columns]
+        df = df_raw[cols].drop_duplicates("GID_2").reset_index(drop=True)
+        df["ma_tinh"] = df["GID_1"]
+        df["ten_tinh"] = df["NAME_1"]
+        df["ma_huyen"] = df["GID_2"]
+        df["ten_huyen"] = df["NAME_2"]
+        df["loai_huyen"] = df["TYPE_2"] if "TYPE_2" in df.columns else ""
+        df.to_csv(csv_cache, index=False, encoding="utf-8-sig")
+    return attach_gso_codes(df)
+
+
+def filter_districts(df, province=None, districts=None):
+    """Lọc theo tên tỉnh (vd 'Hà Nội') và/hoặc danh sách tên/mã huyện."""
+    out = df
+    if province:
+        keys = {match_key(p) for p in str(province).split(",") if p.strip()}
+        out = out[out["ten_tinh"].apply(match_key).isin(keys) | out["ma_tinh_tk"].isin(
+            [p.strip() for p in str(province).split(",")])]
+    if districts:
+        wanted = [d.strip() for d in (districts.split(",") if isinstance(districts, str) else districts) if d.strip()]
+        keys = {match_key(d) for d in wanted}
+        out = out[out["ten_huyen"].apply(match_key).isin(keys) | out["ma_huyen"].isin(wanted)
+                  | out["ma_huyen_tk"].isin(wanted)]
+    return out.reset_index(drop=True)
+
+
 def get_pilot_districts(df_districts, n=3):
-    """
-    Chọn n huyện thí điểm tiêu biểu:
-    - Đại diện khu vực đô thị (Quận/Thành phố)
-    - Đại diện khu vực nông thôn đồng bằng (Huyện)
-    - Đại diện khu vực miền núi/rừng
-    """
+    """Chọn n huyện thí điểm: ưu tiên quận đô thị và huyện nông thôn."""
     types = df_districts["loai_huyen"].str.lower()
-    urban_pool = df_districts[types.str.contains("quận|thành phố|thị xã", na=False)]
-    rural_pool = df_districts[types.str.contains("huyện", na=False)]
+    urban = df_districts[types.str.contains("quận|thành phố|thị xã", na=False)]
+    rural = df_districts[types.str.contains("huyện", na=False)]
+    picked = pd.concat([urban.head(1), rural.head(1), df_districts]).drop_duplicates("ma_huyen")
+    return picked.head(n).reset_index(drop=True)
 
-    selected = []
-    if not urban_pool.empty:
-        selected.append(urban_pool.iloc[0])
-    if not rural_pool.empty:
-        selected.append(rural_pool.iloc[0])
-    if len(rural_pool) > 10:
-        selected.append(rural_pool.iloc[len(rural_pool) // 2])
 
-    remaining_needed = n - len(selected)
-    if remaining_needed > 0:
-        for _, row in df_districts.iterrows():
-            if row["ma_huyen"] not in [x["ma_huyen"] for x in selected]:
-                selected.append(row)
-                if len(selected) >= n:
-                    break
+def _round_coords(obj, nd=5):
+    if isinstance(obj, (list, tuple)):
+        if obj and isinstance(obj[0], (int, float)):
+            return [round(float(v), nd) for v in obj]
+        return [_round_coords(o, nd) for o in obj]
+    return obj
 
-    return pd.DataFrame(selected[:n]).reset_index(drop=True)
+
+def load_district_geometries(gids, cache_dir=None):
+    """Trả về {ma_huyen(GID_2): geojson geometry} cho các huyện yêu cầu."""
+    import shapefile  # pyshp
+    shp = ensure_gadm_shapefile(cache_dir)
+    wanted = set(gids)
+    out = {}
+    with shapefile.Reader(str(shp), encoding="utf-8") as r:
+        names = [f[0] for f in r.fields[1:]]
+        gid_idx = names.index("GID_2")
+        for sr in r.iterShapeRecords():
+            gid = sr.record[gid_idx]
+            if gid in wanted:
+                geo = sr.shape.__geo_interface__
+                out[gid] = {"type": geo["type"], "coordinates": _round_coords(geo["coordinates"])}
+    return out

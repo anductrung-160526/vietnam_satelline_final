@@ -1,262 +1,298 @@
 # -*- coding: utf-8 -*-
 """
-Pipeline xử lý dữ liệu Ánh sáng ban đêm (NTL) cấp huyện tại Việt Nam giai đoạn 2004–2025
-Hỗ trợ DMSP-OLS (2004–2013) và SNPP-VIIRS DNB (2013–2025), hiệu chỉnh liên kết và trích xuất chỉ số.
+Pipeline ánh sáng ban đêm (NTL) cấp huyện, Việt Nam 2004–2025.
+
+Nguồn ảnh (Google Earth Engine):
+- DMSP-OLS tổng hợp năm (NOAA/DMSP-OLS/NIGHTTIME_LIGHTS, band stable_lights), 2004–2013
+- VIIRS DNB tổng hợp năm của EOG (NOAA/VIIRS/DNB/ANNUAL_V21, ANNUAL_V22, band average_masked),
+  dự phòng bằng tổng hợp từ ảnh tháng nếu năm đó chưa có bản năm
+- VIIRS DNB hằng tháng (NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG, dự phòng VCMCFG)
+
+Xử lý: lọc nhiễu (mây theo cf_cvg, ánh sáng nền, cháy rừng FIRMS, vùng biển/tàu thuyền bằng ranh giới
+đất liền), hiệu chỉnh liên kết DMSP -> VIIRS bằng hồi quy log-log trên năm chồng lấn 2013 (thống kê,
+không phải machine learning), cắt theo ranh giới huyện, tính chỉ số và xuất bảng + ảnh .tif.
 """
-import os
 import sys
-import time
+import json
 from pathlib import Path
-import numpy as np
 import pandas as pd
 
-# Cho phép import pipeline_core
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from pipeline_core.config import YEARS, DEFAULT_EE_PROJECT, resolve_output_dir
-from pipeline_core.admin_boundaries import load_district_boundaries, get_pilot_districts
-from pipeline_core.utils import setup_pipeline_logger, log_audit, CheckpointManager, export_multiformat_table
+from pipeline_core.config import (YEARS, NTL_PACKAGE, SCALE, DMSP_LAST_YEAR, VIIRS_FIRST_YEAR,
+                                  VIIRS_BACKGROUND_THRESHOLD, DMSP_BACKGROUND_DN, VIIRS_MAX_RADIANCE)
+from pipeline_core.base_pipeline import BasePipeline, ID_COLS
+from pipeline_core.utils import export_multiformat_table, pct_change_consecutive
+from pipeline_core import ee_utils
 
-# Hệ số hiệu chuẩn nội bộ DMSP-OLS (Wu et al. / Elvidge et al.) đưa về chuẩn F18
-DMSP_CALIBRATION_COEFFS = {
-    2004: {"a": 0.0028, "b": 0.8931, "c": 0.12}, # F15 / F16 composite
-    2005: {"a": 0.0025, "b": 0.9024, "c": 0.15},
-    2006: {"a": 0.0022, "b": 0.9145, "c": 0.10},
-    2007: {"a": 0.0024, "b": 0.9080, "c": 0.08},
-    2008: {"a": 0.0019, "b": 0.9320, "c": 0.05},
-    2009: {"a": 0.0018, "b": 0.9410, "c": 0.04},
-    2010: {"a": 0.0000, "b": 1.0000, "c": 0.00}, # Chuẩn F18
-    2011: {"a": 0.0000, "b": 1.0000, "c": 0.00},
-    2012: {"a": 0.0000, "b": 1.0000, "c": 0.00},
-    2013: {"a": 0.0000, "b": 1.0000, "c": 0.00}
-}
+VIIRS_ANNUAL_COLLECTIONS = ["NOAA/VIIRS/DNB/ANNUAL_V21", "NOAA/VIIRS/DNB/ANNUAL_V22"]
+VIIRS_MONTHLY_COLLECTIONS = ["NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG", "NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG"]
+DMSP_COLLECTION = "NOAA/DMSP-OLS/NIGHTTIME_LIGHTS"
+FIRMS_COLLECTION = "FIRMS"
+# Vùng lấy mẫu hiệu chỉnh: toàn lãnh thổ Việt Nam (bbox)
+VN_BBOX = [102.1, 8.4, 109.5, 23.4]
 
-class NTLPipeline:
-    def __init__(self, output_dir=None, ee_project=None):
-        self.output_dir = resolve_output_dir(output_dir)
-        self.pkg_dir = self.output_dir / "VN_NTL_Panel_2004_2025"
+ANNUAL_TABLE = "vietnam_district_ntl_panel_2004_2025"
+MONTHLY_TABLE = "vietnam_district_ntl_viirs_monthly"
+ANNUAL_COLS = ID_COLS + ["nam", "nguon_anh", "sol_ntl", "mat_do_ntl", "thay_doi_ntl",
+                         "dien_tich_km2", "sol_ntl_goc", "don_vi_goc", "so_pixel", "ghi_chu"]
+MONTHLY_COLS = ID_COLS + ["nam", "thang", "nguon_anh", "sol_ntl", "mat_do_ntl", "cf_cvg_tb",
+                          "dien_tich_km2", "ghi_chu"]
+
+
+class NTLPipeline(BasePipeline):
+    PACKAGE = NTL_PACKAGE
+    NAME = "ntl_pipeline"
+    SUBDIRS = ("raw_data/NTL/DMSP", "raw_data/NTL/VIIRS", "data_intermediate", "data_processed",
+               "metadata", "code", "docs", "logs", "dashboard")
+
+    def __init__(self, *args, monthly=False, monthly_tif=False, **kwargs):
+        super().__init__(*args, **kwargs)
         self.raw_dmsp_dir = self.pkg_dir / "raw_data" / "NTL" / "DMSP"
         self.raw_viirs_dir = self.pkg_dir / "raw_data" / "NTL" / "VIIRS"
-        self.intermediate_dir = self.pkg_dir / "data_intermediate"
-        self.processed_dir = self.pkg_dir / "data_processed"
-        self.logs_dir = self.pkg_dir / "logs"
+        self.monthly = monthly
+        self.monthly_tif = monthly_tif
+        self.calibration = None
 
-        for d in [self.raw_dmsp_dir, self.raw_viirs_dir, self.intermediate_dir, self.processed_dir, self.logs_dir]:
-            d.mkdir(parents=True, exist_ok=True)
+    # ------------------------------------------------------------------ ảnh nguồn
+    def first_nonempty(self, collection_ids, start, end):
+        ee = self.ee
+        for cid in collection_ids:
+            col = ee.ImageCollection(cid).filterDate(start, end)
+            if ee_utils.get_info(col.size()) > 0:
+                return cid, col
+        return None, None
 
-        self.logger, self.log_file = setup_pipeline_logger(self.logs_dir, "ntl_pipeline")
-        self.checkpoint = CheckpointManager(self.logs_dir / "ntl_checkpoint.jsonl")
-        self.ee_project = ee_project or DEFAULT_EE_PROJECT
-        self.ee_initialized = False
+    def dmsp_raw(self, year):
+        ee = self.ee
+        col = ee.ImageCollection(DMSP_COLLECTION).filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+        if ee_utils.get_info(col.size()) == 0:
+            raise RuntimeError(f"Không có ảnh DMSP-OLS năm {year}")
+        # Năm có 2 vệ tinh -> lấy trung bình các vệ tinh
+        proj = col.first().select("stable_lights").projection()
+        return col.select("stable_lights").mean().rename("dn").setDefaultProjection(proj)
 
-    def init_ee(self):
-        """Khởi tạo kết nối Google Earth Engine"""
-        if self.ee_initialized:
-            return True
-        try:
-            import ee
+    def dmsp_clean(self, raw):
+        """DN <= ngưỡng nền -> 0 (stable_lights đã loại cháy rừng/ánh sáng tạm thời theo NOAA)."""
+        return raw.where(raw.lte(DMSP_BACKGROUND_DN), 0).rename("dn")
+
+    def fire_mask(self, start, end):
+        """1 = không có điểm cháy FIRMS trong kỳ (đệm 1 km)."""
+        ee = self.ee
+        col = ee.ImageCollection(FIRMS_COLLECTION).filterDate(start, end).select("T21")
+        fires = col.count().setDefaultProjection(col.first().projection())
+        fire_px = fires.gt(0).focalMax(1000, "circle", "meters").unmask(0)
+        return fire_px.Not()
+
+    def viirs_from_monthly(self, start, end):
+        """Tổng hợp từ ảnh tháng, trọng số theo số lượt quan sát không mây (cf_cvg)."""
+        cid, col = self.first_nonempty(VIIRS_MONTHLY_COLLECTIONS, start, end)
+        if col is None:
+            raise RuntimeError(f"Không có ảnh VIIRS tháng trong {start}..{end}")
+        rad_sum = col.map(lambda im: im.select("avg_rad").max(0).multiply(im.select("cf_cvg"))).sum()
+        cf_sum = col.select("cf_cvg").sum()
+        raw = rad_sum.divide(cf_sum.max(1)).updateMask(cf_sum.gt(0)).rename("rad") \
+            .setDefaultProjection(col.first().projection())
+        return raw, cid.split("/")[-1], col
+
+    def viirs_clean(self, raw, start, end):
+        clean = raw.where(raw.lt(VIIRS_BACKGROUND_THRESHOLD), 0).min(VIIRS_MAX_RADIANCE)
+        return clean.multiply(self.fire_mask(start, end)).rename("rad")
+
+    def viirs_annual(self, year):
+        """Trả về (ảnh thô, ảnh sạch, nhãn nguồn)."""
+        start, end = f"{year}-01-01", f"{year + 1}-01-01"
+        cid, col = self.first_nonempty(VIIRS_ANNUAL_COLLECTIONS, start, end)
+        if col is not None:
+            img = col.first()
+            raw = img.select("average").rename("rad")
+            # average_masked: EOG đã loại ánh sáng nền, cháy rừng và điểm ngoại lai
+            clean = img.select("average_masked").unmask(0).max(0).min(VIIRS_MAX_RADIANCE)
+            clean = clean.multiply(self.fire_mask(start, end)).rename("rad")
+            return raw, clean, f"SNPP-VIIRS ({cid.split('/')[-1]})"
+        raw, label, _ = self.viirs_from_monthly(start, end)
+        return raw, self.viirs_clean(raw, start, end), f"SNPP-VIIRS (tổng hợp tháng {label})"
+
+    # ------------------------------------------------------------------ hiệu chỉnh liên kết
+    def calibration_file(self):
+        return self.docs_dir / "hieu_chinh_dmsp_viirs.json"
+
+    def get_calibration(self):
+        """ln(VIIRS) = a + b*ln(DN_DMSP) ước lượng trên các pixel sáng năm chồng lấn 2013."""
+        if self.calibration:
+            return self.calibration
+        f = self.calibration_file()
+        if f.is_file():
+            self.calibration = json.loads(f.read_text(encoding="utf-8"))
+            return self.calibration
+        ee = self.ee
+        with self.timer.step(self.NAME, "hieu_chinh_dmsp_viirs"):
+            year = VIIRS_FIRST_YEAR
+            dmsp = self.dmsp_clean(self.dmsp_raw(year))
+            cid, col = self.first_nonempty(VIIRS_ANNUAL_COLLECTIONS, f"{year}-01-01", f"{year + 1}-01-01")
+            if col is None:
+                raise RuntimeError(f"Không có ảnh VIIRS năm {year} để hiệu chỉnh liên kết")
+            viirs = col.first().select("average_masked").unmask(0).max(0)
+            label = cid.split("/")[-1]
+            viirs_1km = viirs.reduceResolution(ee.Reducer.mean(), maxPixels=64).reproject(dmsp.projection())
+            pair = dmsp.log().rename("x").addBands(viirs_1km.max(0.01).log().rename("y")) \
+                .updateMask(dmsp.gt(0).And(viirs_1km.gt(0)))
+            pair = pair.addBands(ee.Image.constant(1).rename("c")).select(["c", "x", "y"])
+            region = ee.Geometry.Rectangle(VN_BBOX)
+            fit = pair.reduceRegion(ee.Reducer.linearRegression(numX=2, numY=1), region,
+                                    scale=SCALE["DMSP"], maxPixels=1e9, bestEffort=True)
+            coef = ee_utils.get_info(fit.get("coefficients"))
+            n = ee_utils.get_info(pair.select("x").reduceRegion(ee.Reducer.count(), region,
+                                                                 scale=SCALE["DMSP"], maxPixels=1e9,
+                                                                 bestEffort=True).get("x"))
+        self.calibration = {
+            "mo_hinh": "ln(VIIRS) = a + b * ln(DN_DMSP), chỉ áp dụng cho pixel DN > 0",
+            "nam_chong_lan": year, "nguon_viirs": label,
+            "a": float(coef[0][0]), "b": float(coef[1][0]), "so_pixel": int(n or 0),
+            "pham_vi": "Toàn lãnh thổ Việt Nam (bbox), độ phân giải 1 km",
+        }
+        f.write_text(json.dumps(self.calibration, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.log("DMSP/VIIRS", f"Hệ số hiệu chỉnh liên kết: a={self.calibration['a']:.4f}, "
+                               f"b={self.calibration['b']:.4f} (n={self.calibration['so_pixel']}) -> {f}")
+        return self.calibration
+
+    def dmsp_to_viirs(self, dmsp_clean):
+        c = self.get_calibration()
+        eq = dmsp_clean.max(1).log().multiply(c["b"]).add(c["a"]).exp()
+        return eq.where(dmsp_clean.lte(0), 0).rename("rad")
+
+    # ------------------------------------------------------------------ thống kê vùng
+    def zonal(self, img, geom, scale):
+        """SOL = Σ(bức xạ × diện tích pixel km²): không phụ thuộc độ phân giải -> so sánh được DMSP/VIIRS."""
+        ee = self.ee
+        area = ee.Image.pixelArea().divide(1e6)
+        stack = img.multiply(area).rename("sol").addBands(ee.Image.constant(1).rename("n"))
+        res = ee_utils.get_info(stack.reduceRegion(reducer=ee.Reducer.sum(), geometry=geom, scale=scale,
+                                                   maxPixels=1e10))
+        return res.get("sol") or 0.0, round(res.get("n") or 0)
+
+    def district_area_km2(self, gid):
+        ee = self.ee
+        return ee_utils.get_info(ee.Geometry(self.geoms[gid]).area(maxError=1)) / 1e6
+
+    # ------------------------------------------------------------------ chạy theo năm
+    def process_year(self, year, districts):
+        is_dmsp = year < VIIRS_FIRST_YEAR
+        start, end = f"{year}-01-01", f"{year + 1}-01-01"
+        with self.timer.step(self.NAME, "chuan_bi_anh_nam", nam=year):
+            if is_dmsp:
+                raw = self.dmsp_raw(year)
+                clean_dn = self.dmsp_clean(raw)
+                clean = self.dmsp_to_viirs(clean_dn)
+                sensor, label, scale = "DMSP", "DMSP-OLS (hiệu chỉnh về VIIRS)", SCALE["DMSP"]
+            else:
+                raw, clean, label = self.viirs_annual(year)
+                sensor, scale = "VIIRS", SCALE["VIIRS"]
+            # Năm chồng lấn: lưu thêm ảnh DMSP thô để kiểm tra hiệu chỉnh
+            dmsp_overlap = self.dmsp_raw(year) if (not is_dmsp and year <= DMSP_LAST_YEAR) else None
+
+        for _, row in districts.iterrows():
+            gid = row["ma_huyen_gadm"]
+            if gid not in self.geoms:
+                continue
+            fid = self.file_id(row)
             try:
-                ee.Initialize(project=self.ee_project)
-                self.ee_initialized = True
-                log_audit(self.logger, "System/Pipeline", "EarthEngine", f"Khởi tạo EE thành công với project: {self.ee_project}")
-                return True
+                task = "ntl_annual"
+                if not self.checkpoint.is_completed(gid, year, task):
+                    geom = self.ee.Geometry(self.geoms[gid])
+                    with self.timer.step(self.NAME, "thong_ke_vung", gid, year):
+                        area = self.district_area_km2(gid)
+                        sol, n_px = self.zonal(clean, geom, scale)
+                        sol_raw, _ = self.zonal(raw, geom, scale)
+                    rec = {**self.id_fields(row), "nam": year, "nguon_anh": label,
+                           "sol_ntl": round(sol, 4), "mat_do_ntl": round(sol / area, 4) if area else None,
+                           "dien_tich_km2": round(area, 3), "sol_ntl_goc": round(sol_raw, 4),
+                           "don_vi_goc": "DN·km²" if is_dmsp else "nW/cm²/sr·km²",
+                           "so_pixel": int(n_px), "ghi_chu": ""}
+                    self.checkpoint.mark_completed(gid, year, task, rec)
+                    self.log(sensor, f"{row['ten_huyen']} {year}: SOL={sol:.2f}")
+
+                raw_dir = self.raw_dmsp_dir if is_dmsp else self.raw_viirs_dir
+                self.save_tif(raw.toFloat(), row, raw_dir / f"{sensor}_{fid}_{year}.tif", scale, 1, "float",
+                              sensor, year)
+                if dmsp_overlap is not None:
+                    self.save_tif(dmsp_overlap.toFloat(), row, self.raw_dmsp_dir / f"DMSP_{fid}_{year}.tif",
+                                  SCALE["DMSP"], 1, "float", "DMSP", year)
+                self.save_tif(clean.toFloat(), row, self.intermediate_dir / f"NTL_{fid}_{year}.tif", scale, 1,
+                              "float", sensor, year)
             except Exception as e:
-                # Thử authenticate nếu chưa có
-                log_audit(self.logger, "System/Pipeline", "EarthEngine", f"Cần xác thực GEE hoặc kiểm tra service account: {e}")
-                return False
-        except ImportError:
-            log_audit(self.logger, "System/Pipeline", "EarthEngine", "Thư viện 'earthengine-api' chưa được cài đặt.")
-            return False
+                self.log(sensor, f"Lỗi huyện {row['ten_huyen']} ({gid}) năm {year}: {e}", error=True)
 
-    def get_dmsp_composite(self, year):
-        """
-        Lấy ảnh DMSP-OLS tổng hợp năm, lọc nhiễu nền và hiệu chỉnh liên chuẩn
-        """
-        import ee
-        collection = ee.ImageCollection("NOAA/DMSP-OLS/NIGHTTIME_LIGHTS")
-        img = collection.filter(ee.Filter.date(f"{year}-01-01", f"{year}-12-31")).select("stable_lights").mean()
+    def process_monthly(self, year, districts):
+        ee = self.ee
+        for month in range(1, 13):
+            start = f"{year}-{month:02d}-01"
+            end = f"{year + (month == 12)}-{(month % 12) + 1:02d}-01"
+            todo = [r for _, r in districts.iterrows() if r["ma_huyen_gadm"] in self.geoms and (
+                not self.checkpoint.is_completed(r["ma_huyen_gadm"], year, f"ntl_month_{month:02d}")
+                or self.monthly_tif)]
+            if not todo:
+                continue
+            cid, col = self.first_nonempty(VIIRS_MONTHLY_COLLECTIONS, start, end)
+            if col is None:
+                self.log("VIIRS", f"Chưa có ảnh VIIRS tháng {month:02d}/{year}")
+                continue
+            img = col.first()
+            raw = img.select("avg_rad").rename("rad")
+            clean = self.viirs_clean(raw.updateMask(img.select("cf_cvg").gt(0)), start, end)
+            label = f"SNPP-VIIRS ({cid.split('/')[-1]})"
+            for row in todo:
+                gid = row["ma_huyen_gadm"]
+                task = f"ntl_month_{month:02d}"
+                try:
+                    geom = ee.Geometry(self.geoms[gid])
+                    if not self.checkpoint.is_completed(gid, year, task):
+                        with self.timer.step(self.NAME, "thong_ke_vung_thang", gid, year, thang=month):
+                            area = self.district_area_km2(gid)
+                            sol, _ = self.zonal(clean, geom, SCALE["VIIRS"])
+                            cf = ee_utils.get_info(img.select("cf_cvg").reduceRegion(
+                                ee.Reducer.mean(), geom, SCALE["VIIRS"], maxPixels=1e9).get("cf_cvg"))
+                        rec = {**self.id_fields(row), "nam": year, "thang": month, "nguon_anh": label,
+                               "sol_ntl": round(sol, 4), "mat_do_ntl": round(sol / area, 4) if area else None,
+                               "cf_cvg_tb": round(cf, 2) if cf is not None else None,
+                               "dien_tich_km2": round(area, 3), "ghi_chu": ""}
+                        self.checkpoint.mark_completed(gid, year, task, rec)
+                    if self.monthly_tif:
+                        self.save_tif(raw.toFloat(), row,
+                                      self.raw_viirs_dir / f"VIIRS_{self.file_id(row)}_{year}_{month:02d}.tif",
+                                      SCALE["VIIRS"], 1, "float", "VIIRS", year)
+                except Exception as e:
+                    self.log("VIIRS", f"Lỗi huyện {row['ten_huyen']} ({gid}) {month:02d}/{year}: {e}", error=True)
 
-        # Hiệu chuẩn polynomial nội bộ theo chuẩn F18
-        coeff = DMSP_CALIBRATION_COEFFS.get(year, {"a": 0.0, "b": 1.0, "c": 0.0})
-        a, b, c = coeff["a"], coeff["b"], coeff["c"]
+    # ------------------------------------------------------------------ xuất bảng
+    def export_tables(self):
+        written = []
+        annual = pd.DataFrame(self.checkpoint.results("ntl_annual"))
+        if not annual.empty:
+            annual = annual.sort_values(["ma_huyen_gadm", "nam"]).reset_index(drop=True)
+            annual["thay_doi_ntl"] = pct_change_consecutive(annual, "ma_huyen_gadm", "sol_ntl")
+            annual = annual.reindex(columns=ANNUAL_COLS)
+            with self.timer.step(self.NAME, "xuat_bang"):
+                written += export_multiformat_table(annual, self.processed_dir / ANNUAL_TABLE, logger=self.logger)
+        monthly = pd.DataFrame(self.checkpoint.results("ntl_month_"))
+        if not monthly.empty:
+            monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reindex(columns=MONTHLY_COLS)
+            written += export_multiformat_table(monthly, self.processed_dir / MONTHLY_TABLE, logger=self.logger)
+        for f in written:
+            self.log("NTL", f"Xuất bảng {f}")
+        return annual
 
-        calibrated = img.expression(
-            "a * b(0) * b(0) + b * b(0) + c",
-            {"a": a, "b": b, "c": c}
-        )
-
-        # Lọc nhiễu nền DN < 3
-        cleaned = calibrated.updateMask(calibrated.gte(3.0))
-
-        # Quy đổi thang DMSP sang tương đương VIIRS (Cross-sensor scaling)
-        # Power-law calibration: simulated_viirs = 0.05 * (calibrated_dn ** 1.35)
-        simulated_viirs = cleaned.expression("0.05 * (b(0) ** 1.35)").rename("radiance")
-        return simulated_viirs
-
-    def get_viirs_composite(self, year):
-        """
-        Lấy ảnh SNPP-VIIRS tổng hợp năm có trọng số từ 12 tháng, khử ánh sáng nền và tàu thuyền
-        """
-        import ee
-        start_date = f"{year}-01-01"
-        end_date = f"{year}-12-31"
-
-        try:
-            # Ưu tiên bộ lọc lạc sáng (stray light corrected)
-            collection = ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG").filterDate(start_date, end_date)
-            if collection.size().getInfo() == 0:
-                collection = ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG").filterDate(start_date, end_date)
-        except Exception:
-            collection = ee.ImageCollection("NOAA/VIIRS/DNB/MONTHLY_V1/VCMCFG").filterDate(start_date, end_date)
-
-        # Trọng số theo số ngày không mây (cf_cvg)
-        def weight_month(img):
-            rad = img.select("avg_rad")
-            cf = img.select("cf_cvg")
-            # Khử giá trị âm và nhiễu nền nhỏ (< 0.5 nW/cm2/sr)
-            rad_clean = rad.where(rad.lt(0.5), 0.0)
-            return rad_clean.multiply(cf).addBands(cf)
-
-        weighted_col = collection.map(weight_month)
-        sum_weighted = weighted_col.select("avg_rad").sum()
-        sum_cf = weighted_col.select("cf_cvg").sum()
-
-        annual_rad = sum_weighted.divide(sum_cf.max(1.0)).rename("radiance")
-        # Giới hạn ngưỡng trên để khử điểm lóa cục bộ
-        annual_rad_capped = annual_rad.clamp(0, 300)
-        return annual_rad_capped
-
-    def compute_district_ntl(self, districts_df, years=None):
-        """
-        Tính toán Zonal Statistics (Sum of Light) cho toàn bộ danh sách huyện
-        """
-        if years is None:
-            years = YEARS
-
-        has_ee = self.init_ee()
-        results = []
-
-        log_audit(self.logger, "System/Pipeline", "NTL", f"Bắt đầu trích xuất chỉ số NTL cho {len(districts_df)} huyện, giai đoạn {min(years)}–{max(years)}...")
-
-        if has_ee:
-            import ee
-            # Nạp ranh giới GAUL Level 2 hoặc ranh giới polygon từ VN
-            vietnam_l2 = ee.FeatureCollection("FAO/GAUL/2015/level2").filter(ee.Filter.eq("ADM0_NAME", "Viet Nam"))
-
-            for year in years:
-                sensor = "DMSP-OLS" if year <= 2012 else "SNPP-VIIRS"
-                log_audit(self.logger, "System/Pipeline", sensor, f"Xử lý năm {year}...")
-
-                if year <= 2012:
-                    composite = self.get_dmsp_composite(year)
-                else:
-                    composite = self.get_viirs_composite(year)
-
-                for idx, row in districts_df.iterrows():
-                    ma_huyen = row["ma_huyen"]
-                    ten_huyen = row["ten_huyen"]
-                    ma_tinh = row["ma_tinh"]
-                    ten_tinh = row["ten_tinh"]
-
-                    if self.checkpoint.is_completed(ma_huyen, year, "ntl_extract"):
-                        continue
-
-                    try:
-                        # Lọc hình học của huyện
-                        # Tìm trong GAUL hoặc dùng buffer/bbox fallback
-                        huyen_fc = vietnam_l2.filter(ee.Filter.stringContains("ADM2_NAME", row["ten_huyen"]))
-                        if huyen_fc.size().getInfo() > 0:
-                            geom = huyen_fc.geometry()
-                            area_km2 = geom.area().divide(1e6).getInfo()
-                        else:
-                            geom = ee.Geometry.Point([105.8, 21.0]).buffer(15000) # Fallback diện tích trung bình
-                            area_km2 = 470.0
-
-                        # Tính sum of light trên server GEE
-                        stats = composite.reduceRegion(
-                            reducer=ee.Reducer.sum(),
-                            geometry=geom,
-                            scale=500 if sensor == "SNPP-VIIRS" else 1000,
-                            maxPixels=1e9
-                        ).getInfo()
-
-                        sol = stats.get("radiance", 0.0) or 0.0
-                        mat_do = sol / max(area_km2, 1.0)
-
-                        record = {
-                            "ma_tinh": ma_tinh,
-                            "ten_tinh": ten_tinh,
-                            "ma_huyen": ma_huyen,
-                            "ten_huyen": ten_huyen,
-                            "nam": year,
-                            "nguon_anh": sensor,
-                            "sol_ntl": round(float(sol), 4),
-                            "mat_do_ntl": round(float(mat_do), 4),
-                            "dien_tich_huyen_km2": round(float(area_km2), 2)
-                        }
-                        results.append(record)
-                        self.checkpoint.mark_completed(ma_huyen, year, "ntl_extract")
-                    except Exception as e:
-                        log_audit(self.logger, "System/Pipeline", sensor, f"Lỗi tính toán huyện {ten_huyen} ({ma_huyen}) năm {year}: {e}")
-
-        else:
-            # Fallback mô phỏng khoa học chuẩn nếu môi trường offline/chưa gán key
-            log_audit(self.logger, "System/Pipeline", "Simulation", "Môi trường GEE offline: Khởi chạy mô hình ngoại suy dữ liệu chuẩn hóa thống kê...")
-            for year in years:
-                sensor = "DMSP-OLS" if year <= 2012 else "SNPP-VIIRS"
-                for idx, row in districts_df.iterrows():
-                    ma_huyen = row["ma_huyen"]
-                    if self.checkpoint.is_completed(ma_huyen, year, "ntl_extract"):
-                        continue
-
-                    # Mô phỏng tăng trưởng tự nhiên 5-8%/năm của kinh tế đêm các huyện
-                    base_sol = 1500.0 if "quận" in row.get("loai_huyen", "").lower() else 350.0
-                    growth = (1 + 0.065) ** (year - 2004)
-                    noise = (hash(f"{ma_huyen}_{year}") % 100) / 1000.0
-                    sol = base_sol * growth * (1 + noise)
-                    area_km2 = 450.0 + (hash(ma_huyen) % 300)
-                    mat_do = sol / area_km2
-
-                    record = {
-                        "ma_tinh": row["ma_tinh"],
-                        "ten_tinh": row["ten_tinh"],
-                        "ma_huyen": ma_huyen,
-                        "ten_huyen": row["ten_huyen"],
-                        "nam": year,
-                        "nguon_anh": sensor,
-                        "sol_ntl": round(float(sol), 4),
-                        "mat_do_ntl": round(float(mat_do), 4),
-                        "dien_tich_huyen_km2": round(float(area_km2), 2)
-                    }
-                    results.append(record)
-                    self.checkpoint.mark_completed(ma_huyen, year, "ntl_extract")
-
-        df_out = pd.DataFrame(results)
-        if not df_out.empty:
-            # Sắp xếp và tính tốc độ tăng trưởng thay_doi_ntl
-            df_out = df_out.sort_values(["ma_huyen", "nam"]).reset_index(drop=True)
-            df_out["thay_doi_ntl"] = df_out.groupby("ma_huyen")["sol_ntl"].pct_change() * 100.0
-            df_out["thay_doi_ntl"] = df_out["thay_doi_ntl"].fillna(0.0).round(2)
-
-            # Xuất bảng ra 3 định dạng: .csv, .xlsx, .dta
-            out_base = self.processed_dir / "vietnam_district_ntl_panel_2004_2025"
-            export_multiformat_table(df_out, out_base, formats=("csv", "xlsx", "dta"))
-            log_audit(self.logger, "System/Pipeline", "NTL", f"Hoàn tất xuất bảng dữ liệu NTL Panel ra {out_base} (.csv, .xlsx, .dta)")
-
-        return df_out
-
-    def run(self, mode="pilot", pilot_n=3, years=None):
-        """Hàm thực thi chính cho NTL Pipeline"""
-        df_districts = load_district_boundaries()
-        if mode == "pilot":
-            targets = get_pilot_districts(df_districts, n=pilot_n)
-            log_audit(self.logger, "System/Pipeline", "NTL", f"Chế độ PILOT: Chạy cho {len(targets)} huyện đại diện: {', '.join(targets['ten_huyen'])}")
-        else:
-            targets = df_districts
-            log_audit(self.logger, "System/Pipeline", "NTL", f"Chế độ FULL: Chạy cho toàn bộ {len(targets)} huyện trên cả nước.")
-
-        df_result = self.compute_district_ntl(targets, years=years)
-        return df_result
-
-if __name__ == "__main__":
-    pipeline = NTLPipeline()
-    pipeline.run(mode="pilot", pilot_n=3)
+    def run(self, districts_df, years=None):
+        years = sorted(years or YEARS)
+        districts = self.prepare_districts(districts_df)
+        self.log("NTL", f"Bắt đầu: {len(districts)} huyện, năm {years[0]}–{years[-1]}"
+                        f"{', có dữ liệu tháng' if self.monthly else ''}")
+        self.connect()
+        self.load_geometries(districts)
+        for year in years:
+            try:
+                self.process_year(year, districts)
+                if self.monthly and year >= 2014:
+                    self.process_monthly(year, districts)
+            except Exception as e:
+                self.log("NTL", f"Lỗi năm {year}: {e}", error=True)
+        return self.export_tables()

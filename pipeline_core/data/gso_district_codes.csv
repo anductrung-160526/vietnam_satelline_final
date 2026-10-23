@@ -1,0 +1,35 @@
+# Danh mục mã đơn vị hành chính của Cục Thống kê (bộ mã trước sáp nhập 2025).
+# Ghi tên KHÔNG kèm tiền tố Quận/Huyện/Thị xã/Thành phố. Hiện có Hà Nội; bổ sung các tỉnh khác
+# bằng cách thêm dòng (tải danh mục tại https://danhmuchanhchinh.gso.gov.vn). Huyện chưa có mã
+# sẽ để trống cột ma_huyen_tk và được liệt kê trong logs/, pipeline vẫn chạy bằng mã GADM.
+ma_tinh_tk,ten_tinh_tk,ma_huyen_tk,ten_huyen_tk
+01,Hà Nội,001,Ba Đình
+01,Hà Nội,002,Hoàn Kiếm
+01,Hà Nội,003,Tây Hồ
+01,Hà Nội,004,Long Biên
+01,Hà Nội,005,Cầu Giấy
+01,Hà Nội,006,Đống Đa
+01,Hà Nội,007,Hai Bà Trưng
+01,Hà Nội,008,Hoàng Mai
+01,Hà Nội,009,Thanh Xuân
+01,Hà Nội,016,Sóc Sơn
+01,Hà Nội,017,Đông Anh
+01,Hà Nội,018,Gia Lâm
+01,Hà Nội,019,Nam Từ Liêm
+01,Hà Nội,020,Thanh Trì
+01,Hà Nội,021,Bắc Từ Liêm
+01,Hà Nội,250,Mê Linh
+01,Hà Nội,268,Hà Đông
+01,Hà Nội,269,Sơn Tây
+01,Hà Nội,271,Ba Vì
+01,Hà Nội,272,Phúc Thọ
+01,Hà Nội,273,Đan Phượng
+01,Hà Nội,274,Hoài Đức
+01,Hà Nội,275,Quốc Oai
+01,Hà Nội,276,Thạch Thất
+01,Hà Nội,277,Chương Mỹ
+01,Hà Nội,278,Thanh Oai
+01,Hà Nội,279,Thường Tín
+01,Hà Nội,280,Phú Xuyên
+01,Hà Nội,281,Ứng Hòa
+01,Hà Nội,282,Mỹ Đức
