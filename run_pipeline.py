@@ -1,21 +1,24 @@
 # -*- coding: utf-8 -*-
 """
 TRÌNH ĐIỀU PHỐI TRUNG TÂM (MASTER PIPELINE RUNNER)
-Xử lý dữ liệu viễn thám cấp Huyện tại Việt Nam (2004–2025)
-Hỗ trợ:
-- Tùy biến thư mục lưu trữ trên bất kỳ ổ cứng nào (--output-dir)
-- Tự động thiết lập cấu trúc 2 gói dữ liệu độc lập
-- Sinh Codebook (MD & XLSX) và bộ mẫu kiểm chứng mặt đất
-- Chạy Pipeline Ánh sáng ban đêm (NTL) và Lớp phủ bề mặt (Land Cover)
-- Hỗ trợ chế độ Thử nghiệm (--mode pilot) và Toàn quốc (--mode full)
+Thu thập, tiền xử lý, xử lý dữ liệu viễn thám CẤP HUYỆN tại Việt Nam (2004–2025).
+
+- Đầu ra mặc định: C:\\VNGIS_Data (Windows), đổi bằng --output-dir hoặc biến môi trường OUTPUT_ROOT
+- Tự tạo cấu trúc 2 gói dữ liệu VN_NTL_Panel_2004_2025 và VN_LandCover_Panel_2004_2025
+- Ánh sáng ban đêm (DMSP/VIIRS) và lớp phủ ảnh ban ngày (Landsat/Sentinel-2, phân lớp theo ngưỡng, không ML)
+- Bảng .csv/.xlsx/.dta + ảnh .tif theo từng huyện; chạy tiếp được khi bị ngắt (checkpoint)
+
+Ví dụ:
+    python run_pipeline.py --province "Hà Nội" --years 2024
+    python run_pipeline.py --mode full --years 2004-2025 --monthly --monthly-tif
 """
-import os
 import sys
+import time
 import shutil
 import argparse
+from datetime import datetime
 from pathlib import Path
 
-# Đảm bảo mã hóa UTF-8 trên Windows console
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -23,165 +26,171 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Nạp các mô-đun cốt lõi
-from pipeline_core.config import START_YEAR, END_YEAR, resolve_output_dir
-from pipeline_core.admin_boundaries import load_district_boundaries, get_pilot_districts
+from pipeline_core.config import (START_YEAR, END_YEAR, NTL_PACKAGE, LANDCOVER_PACKAGE, DEFAULT_EE_PROJECT,
+                                  resolve_output_dir)
+from pipeline_core.admin_boundaries import load_units, filter_districts, get_pilot_districts
 from pipeline_core.codebook_gen import generate_codebooks
 from pipeline_core.samples_gen import generate_sample_dataset
-from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline
-from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import LandCoverPipeline
-from VN_LandCover_Panel_2004_2025.code.accuracy_assessment import evaluate_classification_accuracy
+from pipeline_core.utils import StepTimer, check_disk_space
+
+REPO_DIR = Path(__file__).resolve().parent
+PACKAGE_DIRS = {
+    NTL_PACKAGE: ["raw_data/NTL/DMSP", "raw_data/NTL/VIIRS", "data_intermediate", "data_processed",
+                  "metadata", "code", "dashboard", "docs", "logs"],
+    LANDCOVER_PACKAGE: ["raw_data/DAY/LANDSAT", "raw_data/DAY/SENTINEL2", "data_intermediate", "data_processed",
+                        "metadata", "samples", "code", "dashboard", "docs", "logs"],
+}
+
 
 def setup_directory_structure(output_dir):
-    """
-    Tự động khởi tạo đầy đủ hệ thống cây thư mục cho 2 gói dữ liệu trên ổ đĩa được chỉ định
-    """
+    """Tạo cây thư mục 2 gói dữ liệu, chép README/code/docs, sinh codebook và bộ điểm mẫu."""
     output_dir = Path(output_dir).resolve()
-    print(f"\n==================================================================")
-    print(f"[*] KHỞI TẠO CẤU TRÚC THƯ MỤC TẠI: {output_dir}")
-    print(f"==================================================================")
-
-    # 1. Gói NTL
-    ntl_pkg = output_dir / "VN_NTL_Panel_2004_2025"
-    ntl_subdirs = [
-        ntl_pkg / "raw_data" / "NTL" / "DMSP",
-        ntl_pkg / "raw_data" / "NTL" / "VIIRS",
-        ntl_pkg / "data_intermediate",
-        ntl_pkg / "data_processed",
-        ntl_pkg / "metadata",
-        ntl_pkg / "code",
-        ntl_pkg / "docs",
-        ntl_pkg / "logs"
-    ]
-    for d in ntl_subdirs:
-        d.mkdir(parents=True, exist_ok=True)
-
-    # 2. Gói Land Cover
-    lc_pkg = output_dir / "VN_LandCover_Panel_2004_2025"
-    lc_subdirs = [
-        lc_pkg / "raw_data" / "DAY" / "LANDSAT",
-        lc_pkg / "raw_data" / "DAY" / "SENTINEL2",
-        lc_pkg / "data_intermediate",
-        lc_pkg / "data_processed",
-        lc_pkg / "metadata",
-        lc_pkg / "samples",
-        lc_pkg / "code",
-        lc_pkg / "docs",
-        lc_pkg / "logs"
-    ]
-    for d in lc_subdirs:
-        d.mkdir(parents=True, exist_ok=True)
-
-    # Sao chép các tệp tài liệu và script vào gói dữ liệu nếu output_dir khác thư mục hiện tại
-    cur_dir = Path(__file__).resolve().parent
-    if output_dir != cur_dir:
-        # Đồng bộ tài liệu và mã nguồn
-        for pkg_name in ["VN_NTL_Panel_2004_2025", "VN_LandCover_Panel_2004_2025"]:
-            src_pkg = cur_dir / pkg_name
-            dst_pkg = output_dir / pkg_name
-            if src_pkg.exists():
-                for item in src_pkg.iterdir():
-                    if item.is_file():
-                        shutil.copy2(item, dst_pkg / item.name)
-                    elif item.is_dir() and item.name in ["code", "docs", "samples"]:
-                        shutil.copytree(item, dst_pkg / item.name, dirs_exist_ok=True)
-
-    # Sinh Codebooks và Samples tự động
+    print(f"[*] Thư mục dữ liệu: {output_dir}")
+    for pkg, subdirs in PACKAGE_DIRS.items():
+        for sub in subdirs:
+            (output_dir / pkg / sub).mkdir(parents=True, exist_ok=True)
+        src = REPO_DIR / pkg
+        if src.exists() and src.resolve() != (output_dir / pkg).resolve():
+            for item in src.iterdir():
+                if item.is_file() and item.suffix in (".md",):
+                    shutil.copy2(item, output_dir / pkg / item.name)
+                elif item.is_dir() and item.name in ("code", "docs"):
+                    shutil.copytree(item, output_dir / pkg / item.name, dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns("__pycache__"))
     generate_codebooks(output_dir)
-    generate_sample_dataset(lc_pkg / "samples")
-    evaluate_classification_accuracy(output_dir)
+    generate_sample_dataset(output_dir / LANDCOVER_PACKAGE / "samples")
+    return output_dir
 
-    print("[*] Hoàn tất thiết lập cấu trúc 2 gói dữ liệu.")
-    return ntl_pkg, lc_pkg
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Master Pipeline điều phối trích xuất dữ liệu viễn thám cấp Huyện Việt Nam (2004–2025)"
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="",
-        help="Đường dẫn thư mục lưu trữ trên ổ cứng (mặc định lấy thư mục dự án hoặc biến môi trường OUTPUT_ROOT)"
-    )
-    parser.add_argument(
-        "--pipeline",
-        type=str,
-        choices=["all", "ntl", "landcover", "init-only"],
-        default="all",
-        help="Chọn pipeline cần chạy: all (cả hai), ntl (chỉ ảnh đêm), landcover (chỉ lớp phủ), init-only (chỉ tạo cấu trúc thư mục)"
-    )
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["pilot", "full"],
-        default="pilot",
-        help="Chế độ chạy: pilot (thử nghiệm vài huyện) hoặc full (toàn bộ ~705 huyện)"
-    )
-    parser.add_argument(
-        "--pilot-n",
-        type=int,
-        default=3,
-        help="Số lượng huyện chạy thử ở chế độ pilot (mặc định 3)"
-    )
-    parser.add_argument(
-        "--start-year",
-        type=int,
-        default=START_YEAR,
-        help=f"Năm bắt đầu (mặc định {START_YEAR})"
-    )
-    parser.add_argument(
-        "--end-year",
-        type=int,
-        default=END_YEAR,
-        help=f"Năm kết thúc (mặc định {END_YEAR})"
-    )
-    parser.add_argument(
-        "--ee-project",
-        type=str,
-        default="",
-        help="Google Cloud Project ID đã đăng ký Google Earth Engine"
-    )
+def parse_years(text, start=START_YEAR, end=END_YEAR):
+    """'2024' | '2010-2015' | '2004,2010,2024' -> danh sách năm."""
+    if not text:
+        return list(range(start, end + 1))
+    years = set()
+    for part in str(text).split(","):
+        part = part.strip()
+        if "-" in part:
+            a, b = part.split("-", 1)
+            years.update(range(int(a), int(b) + 1))
+        elif part:
+            years.add(int(part))
+    bad = [y for y in years if y < START_YEAR or y > END_YEAR + 5]
+    if bad:
+        raise ValueError(f"Năm không hợp lệ: {bad}")
+    return sorted(years)
 
-    args = parser.parse_args()
 
-    # 1. Xác định đường dẫn đích và khởi tạo cấu trúc thư mục
-    target_output_dir = resolve_output_dir(args.output_dir)
-    setup_directory_structure(target_output_dir)
+def build_parser():
+    p = argparse.ArgumentParser(description="Pipeline dữ liệu viễn thám cấp huyện Việt Nam (2004–2025)")
+    p.add_argument("--output-dir", default="", help="Thư mục gốc lưu dữ liệu (mặc định C:\\VNGIS_Data)")
+    p.add_argument("--pipeline", choices=["all", "ntl", "landcover", "init-only"], default="all")
+    p.add_argument("--level", choices=["huyen", "tinh"], default="huyen",
+                   help="Đơn vị tổng hợp: huyen (quận/huyện, mặc định) hoặc tinh (63 tỉnh/thành)")
+    p.add_argument("--province", default="", help='Lọc theo tỉnh, vd "Hà Nội" (nhiều tỉnh cách nhau dấu phẩy)')
+    p.add_argument("--districts", default="", help="Lọc theo tên/mã huyện, cách nhau dấu phẩy")
+    p.add_argument("--mode", choices=["pilot", "full"], default="full",
+                   help="full: mọi huyện sau khi lọc; pilot: chỉ lấy --pilot-n huyện đầu")
+    p.add_argument("--pilot-n", type=int, default=3)
+    p.add_argument("--years", default="", help="Năm cần chạy: 2024 | 2010-2015 | 2004,2024 (mặc định 2004-2025)")
+    p.add_argument("--start-year", type=int, default=START_YEAR)
+    p.add_argument("--end-year", type=int, default=END_YEAR)
+    p.add_argument("--monthly", action="store_true",
+                   help="Lấy thêm dữ liệu 12 tháng cho nguồn có ảnh tháng: VIIRS, Landsat, Sentinel-2 (DMSP chỉ có năm)")
+    p.add_argument("--monthly-tif", action="store_true", help="Tải thêm ảnh .tif từng tháng (cần --monthly)")
+    p.add_argument("--day-sensors", default="auto",
+                   help="auto (mặc định: Landsat 2004–2014, Sentinel-2 2015–2025) | landsat | sentinel2 | landsat,sentinel2")
+    p.add_argument("--no-tif", action="store_true", help="Chỉ tính bảng số liệu, không tải ảnh .tif")
+    p.add_argument("--tif", choices=["all", "night", "day", "none"], default="all",
+                   help="Tải ảnh nào: all (ngày + đêm), night (chỉ ảnh đêm), day (chỉ ảnh ngày), none")
+    p.add_argument("--tif-dir", default="", help="Cây thư mục lưu ảnh .tif (mặc định = --output-dir)")
+    p.add_argument("--no-accuracy", action="store_true", help="Bỏ qua đánh giá độ chính xác phân lớp")
+    p.add_argument("--ee-project", default=DEFAULT_EE_PROJECT, help="Google Cloud Project ID đã đăng ký GEE")
+    p.add_argument("--min-free-gb", type=float, default=5.0, help="Cảnh báo nếu ổ đĩa còn trống ít hơn (GB)")
+    p.add_argument("--cache-dir", default="", help="Thư mục cache ranh giới GADM dùng chung (mặc định <output>/_cache)")
+    return p
 
+
+def select_districts(args, cache_dir):
+    df = load_units(getattr(args, "level", "huyen"), cache_dir)
+    df = filter_districts(df, province=args.province or None,
+                          districts=(args.districts or None) if getattr(args, "level", "huyen") == "huyen" else None)
+    if df.empty:
+        raise SystemExit(f"[!] Không tìm thấy huyện nào khớp --province '{args.province}' "
+                         f"--districts '{args.districts}'")
+    if args.mode == "pilot":
+        df = get_pilot_districts(df, n=args.pilot_n)
+    return df
+
+
+def run(args, timer=None):
+    """Chạy theo tham số; trả về dict tóm tắt (dùng chung cho run_hanoi_pilot.py, run_auto_update.py)."""
+    timer = timer or StepTimer()
+    t0 = time.perf_counter()
+    out = resolve_output_dir(args.output_dir)
+    setup_directory_structure(out)
+    free_gb = check_disk_space(out, args.min_free_gb)
+    print(f"[*] Ổ đĩa còn trống: {free_gb:.1f} GB")
+    summary = {"output_dir": str(out), "ntl": None, "landcover": None, "files": 0, "bytes": 0, "districts": 0}
     if args.pipeline == "init-only":
-        print("[*] Đã hoàn thành khởi tạo cấu trúc thư mục và tài liệu. Dừng theo yêu cầu --pipeline init-only.")
-        return 0
+        return summary
 
-    years_to_run = list(range(args.start_year, args.end_year + 1))
-    print(f"\n[*] CHUỖI THỜI GIAN XỬ LÝ: {args.start_year} -> {args.end_year} ({len(years_to_run)} năm)")
-    print(f"[*] CHẾ ĐỘ THỰC THI: {args.mode.upper()} (Số huyện: {args.pilot_n if args.mode == 'pilot' else 'Toàn quốc'})")
+    years = parse_years(args.years, args.start_year, args.end_year)
+    cache = Path(args.cache_dir) if getattr(args, "cache_dir", "") else out / "_cache"
+    with timer.step("chung", "tai_danh_muc_ranh_gioi"):
+        districts = select_districts(args, cache)
+    summary["districts"] = len(districts)
+    summary["level"] = args.level
+    summary["years"] = years
+    print(f"[*] {len(districts)} huyện: {', '.join(districts['ten_huyen'].head(40))}"
+          f"{' ...' if len(districts) > 40 else ''}")
+    print(f"[*] Năm: {years[0]}–{years[-1]} ({len(years)} năm)")
 
-    # 2. Chạy Pipeline Ánh sáng ban đêm (NTL)
-    if args.pipeline in ["all", "ntl"]:
-        print(f"\n------------------------------------------------------------------")
-        print(f"[*] KÍCH HOẠT: PIPELINE ÁNH SÁNG BAN ĐÊM (NTL)")
-        print(f"------------------------------------------------------------------")
-        ntl_runner = NTLPipeline(output_dir=target_output_dir, ee_project=args.ee_project)
-        df_ntl = ntl_runner.run(mode=args.mode, pilot_n=args.pilot_n, years=years_to_run)
-        print(f"[*] Kết quả NTL: Đã xuất {len(df_ntl)} dòng dữ liệu bảng.")
+    tif_mode = "none" if args.no_tif else args.tif
+    common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, tif_dir=args.tif_dir or None,
+                  level=args.level,
+                  cache_dir=cache)
+    if args.pipeline in ("all", "ntl"):
+        from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline
+        print("\n[*] PIPELINE ÁNH SÁNG BAN ĐÊM (NTL)")
+        ntl = NTLPipeline(monthly=args.monthly, monthly_tif=args.monthly_tif,
+                          download_tif=tif_mode in ("all", "night"), **common)
+        df = ntl.run(districts, years)
+        summary["ntl"] = len(df)
+        if not df.empty:
+            ran = df[df["ma_huyen_gadm"].isin(districts["ma_huyen"])].drop_duplicates("ma_huyen_gadm")
+            summary["area_km2"] = float(ran["dien_tich_km2"].sum())
+        summary["files"] += ntl.files_downloaded
+        summary["bytes"] += ntl.bytes_downloaded
 
-    # 3. Chạy Pipeline Lớp phủ bề mặt (Land Cover)
-    if args.pipeline in ["all", "landcover"]:
-        print(f"\n------------------------------------------------------------------")
-        print(f"[*] KÍCH HOẠT: PIPELINE LỚP PHỦ BỀ MẶT (LAND COVER)")
-        print(f"------------------------------------------------------------------")
-        lc_runner = LandCoverPipeline(output_dir=target_output_dir, ee_project=args.ee_project)
-        df_lc = lc_runner.run(mode=args.mode, pilot_n=args.pilot_n, years=years_to_run)
-        print(f"[*] Kết quả Land Cover: Đã xuất {len(df_lc)} dòng dữ liệu bảng.")
+    if args.pipeline in ("all", "landcover"):
+        from VN_LandCover_Panel_2004_2025.code.landcover_pipeline import LandCoverPipeline
+        print("\n[*] PIPELINE LỚP PHỦ BỀ MẶT (ẢNH BAN NGÀY)")
+        sensors = [s.strip().lower() for s in args.day_sensors.split(",") if s.strip()]
+        lc = LandCoverPipeline(sensors=sensors, accuracy=not args.no_accuracy, monthly=args.monthly,
+                               monthly_tif=args.monthly_tif, download_tif=tif_mode in ("all", "day"), **common)
+        df = lc.run(districts, years)
+        summary["landcover"] = len(df)
+        if not df.empty and not summary.get("area_km2"):
+            ran = df[df["ma_huyen_gadm"].isin(districts["ma_huyen"])].drop_duplicates("ma_huyen_gadm")
+            summary["area_km2"] = float(ran["tong_dien_tich_ha"].sum()) / 100
+        summary["files"] += lc.files_downloaded
+        summary["bytes"] += lc.bytes_downloaded
 
-    print(f"\n==================================================================")
-    print(f"[✓] HOÀN TẤT THỰC THI TOÀN BỘ YÊU CẦU PIPELINE!")
-    print(f"[✓] Bảng số liệu hoàn chỉnh đã sẵn sàng tại:")
-    print(f"    - NTL: {target_output_dir / 'VN_NTL_Panel_2004_2025' / 'data_processed'}")
-    print(f"    - Land Cover: {target_output_dir / 'VN_LandCover_Panel_2004_2025' / 'data_processed'}")
-    print(f"==================================================================\n")
+    summary["seconds"] = round(time.perf_counter() - t0, 1)
+    return summary
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    timer = StepTimer()
+    s = run(args, timer)
+    if args.pipeline != "init-only":
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timer.save(Path(s["output_dir"]) / "timing" / f"timing_{stamp}.csv")
+        print(f"\n[✓] Xong sau {s['seconds']:.0f} giây. Bảng NTL: {s['ntl']} dòng, lớp phủ: {s['landcover']} dòng, "
+              f"{s['files']} tệp .tif ({s['bytes'] / 1024 ** 2:.1f} MB) tại {s['output_dir']}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

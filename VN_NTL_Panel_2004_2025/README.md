@@ -1,63 +1,45 @@
-# GÓI DỮ LIỆU: BẢNG CHUỖI THỜI GIAN KINH TẾ ĐÊM CẤP HUYỆN VIỆT NAM (2004–2025)
-**Mã gói:** `VN_NTL_Panel_2004_2025`
+# VN_NTL_Panel_2004_2025: Kinh tế đêm cấp huyện Việt Nam (2004–2025)
 
----
+Bộ dữ liệu ảnh vệ tinh ánh sáng ban đêm và chỉ số kinh tế đêm của **~705 quận/huyện/thị xã** (địa giới trước sáp nhập), giai đoạn 2004–2025. Khóa chính là `ma_huyen + nam`.
 
-## 1. MÔ TẢ TỔNG QUAN
-Gói dữ liệu cung cấp chuỗi thời gian dạng bảng (Panel Data) và ảnh vệ tinh viễn thám ánh sáng ban đêm (Nighttime Light - NTL) cho toàn bộ các đơn vị hành chính **cấp huyện** tại Việt Nam (~705 quận, huyện, thị xã, thành phố thuộc tỉnh trước sáp nhập) xuyên suốt giai đoạn 22 năm từ **2004 đến 2025**.
+## Nguồn ảnh (truy xuất qua Google Earth Engine)
 
-Dữ liệu được hiệu chuẩn liên chuẩn đồng nhất (Harmonized) giữa hai thế hệ cảm biến vệ tinh DMSP-OLS và SNPP-VIIRS, cho phép thực hiện các nghiên cứu kinh tế lượng, theo dõi tăng trưởng kinh tế, đô thị hóa và tiêu thụ năng lượng ở cấp địa phương.
+| Nguồn | Giai đoạn | GEE collection | Độ phân giải |
+|---|---|---|---|
+| DMSP-OLS tổng hợp năm | 2004–2013 | `NOAA/DMSP-OLS/NIGHTTIME_LIGHTS` (`stable_lights`) | ~1 km |
+| VIIRS DNB tổng hợp năm (EOG VNL) | 2013–2025 | `NOAA/VIIRS/DNB/ANNUAL_V21`, `ANNUAL_V22` (`average_masked`) | ~500 m |
+| VIIRS DNB hằng tháng | 04/2012–nay | `NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG` (dự phòng `VCMCFG`) | ~500 m |
+| Ranh giới huyện | — | GADM 4.1 Level 2 (tải về máy) | — |
+| Điểm cháy | — | `FIRMS` | 1 km |
 
----
+DMSP-OLS chỉ có ảnh năm, nên giai đoạn 2004–2011 không có dữ liệu tháng. Nếu một năm VIIRS chưa có bản tổng hợp năm, pipeline tự ghép từ ảnh tháng (có trọng số theo `cf_cvg`).
 
-## 2. NGUỒN DỮ LIỆU VÀ CẢM BIẾN
-1. **DMSP-OLS (2004–2013):**
-   - Nguồn: Cảm biến Operational Linescan System thuộc Chương trình Vệ tinh Khí tượng Quốc phòng Hoa Kỳ (DMSP), cung cấp bởi NOAA/NCEI và Earth Observation Group (EOG).
-   - Sản phẩm: Ảnh tổng hợp hằng năm không mây (Version 4 DMSP-OLS Nighttime Lights).
-   - Độ phân giải: 30 arc-seconds (~1 km).
-2. **SNPP-VIIRS DNB (2013–2025):**
-   - Nguồn: Cảm biến Day/Night Band trên vệ tinh Suomi NPP, cung cấp bởi NOAA/EOG.
-   - Sản phẩm: Ảnh tổng hợp tháng và năm đã khử lạc sáng (Stray Light Corrected - VCMSLCFG).
-   - Độ phân giải: 15 arc-seconds (~500 m).
+## Xử lý
 
----
+1. Lọc nhiễu: ánh sáng nền (VIIRS < 0,5 nW/cm²/sr; DMSP DN ≤ 6), mây (`cf_cvg`), cháy rừng (FIRMS, đệm 1 km), tàu thuyền và đốt khí ngoài khơi (cắt theo ranh giới đất liền).
+2. Hiệu chỉnh liên kết DMSP → VIIRS: `ln(VIIRS) = a + b·ln(DN)` ước lượng trên các pixel năm chồng lấn 2013. Đây là hồi quy thống kê, không phải machine learning. Hệ số lưu tại `docs/hieu_chinh_dmsp_viirs.json`.
+3. Cắt theo ranh giới huyện, tính `sol_ntl` (Σ bức xạ × diện tích pixel), `mat_do_ntl` và `thay_doi_ntl`.
 
-## 3. CẤU TRÚC THƯ MỤC
+## Cấu trúc thư mục
+
 ```
 VN_NTL_Panel_2004_2025/
-├── README.md                  # Tài liệu hướng dẫn tổng quan bộ dữ liệu
-├── raw_data/
-│   └── NTL/
-│       ├── DMSP/              # Ảnh GeoTIFF thô .tif giai đoạn 2004–2013
-│       └── VIIRS/             # Ảnh GeoTIFF thô .tif giai đoạn 2013–2025
-├── data_intermediate/         # Ảnh GeoTIFF sau khi lọc nhiễu, chuẩn hóa và cắt theo huyện
-├── data_processed/            # Bảng chỉ số hoàn chỉnh (.csv, .xlsx, .dta) theo mã huyện và năm
-├── metadata/
-│   ├── codebook_ntl.md        # Từ điển dữ liệu chi tiết dạng Markdown
-│   └── codebook_ntl.xlsx      # Từ điển dữ liệu chi tiết dạng Excel
-├── code/
-│   └── ntl_pipeline.py        # Mã nguồn Python xử lý và trích xuất chỉ số
-├── docs/
-│   ├── HUONG_DAN_CAP_NHAT.md  # Hướng dẫn bổ sung dữ liệu các năm tiếp theo
-│   └── BIEN_BAN_KIEM_TRA.md   # Biên bản kiểm tra tính toàn vẹn và độ lệch số liệu
-└── logs/                      # Nhật ký chi tiết tiến trình tải và lỗi phát sinh
+├── README.md
+├── raw_data/NTL/DMSP/      DMSP_<ma_huyen>_<nam>.tif   (ảnh gốc, cắt theo huyện)
+├── raw_data/NTL/VIIRS/     VIIRS_<ma_huyen>_<nam>[_<thang>].tif
+├── data_intermediate/      NTL_<ma_huyen>_<nam>.tif    (đã lọc nhiễu, quy về thang VIIRS)
+├── data_processed/         vietnam_district_night_indices_2004_2025.{csv,xlsx,dta}  (gộp năm + tháng, cột ky)
+│                           vietnam_district_ntl_panel_2004_2025.{csv,xlsx,dta}
+│                           vietnam_district_ntl_viirs_monthly.{csv,xlsx,dta}
+├── metadata/               codebook_ntl.{md,xlsx}
+├── code/                   ntl_pipeline.py
+├── dashboard/              (dành cho dashboard, không thuộc phạm vi pipeline)
+├── docs/                   HUONG_DAN_CAP_NHAT.md, BIEN_BAN_KIEM_TRA.md, hieu_chinh_dmsp_viirs.json
+└── logs/                   nhat_ky_cap_nhat.txt, log từng lượt chạy, lỗi, checkpoint, timing
 ```
 
----
+`<ma_huyen>` là mã huyện của Cục Thống kê, hoặc mã GADM nếu huyện chưa có trong danh mục mã.
 
-## 4. BẢNG BIẾN CHÍNH TRONG `data_processed/`
-- Khóa chính kết hợp: `ma_huyen` + `nam`
-- `sol_ntl`: Quy mô kinh tế đêm (Sum of Light - Tổng bức xạ ánh sáng, nW/cm²/sr).
-- `mat_do_ntl`: Mật độ kinh tế đêm (Bức xạ trung bình trên mỗi km² diện tích tự nhiên).
-- `thay_doi_ntl`: Tốc độ tăng trưởng quy mô kinh tế đêm so với năm trước (%).
+## Môi trường chạy
 
----
-
-## 5. HƯỚNG DẪN MÔI TRƯỜNG CHẠY MÃ XỬ LÝ
-- Python 3.10 trở lên.
-- Cài đặt thư viện: `pip install -r requirements.txt`.
-- Đăng nhập xác thực Google Earth Engine: `earthengine authenticate`.
-- Chạy trích xuất dữ liệu:
-  ```bash
-  python code/ntl_pipeline.py
-  ```
+Xem `HUONG_DAN_CHAY_TU_DONG.md` ở thư mục gốc repo. Tóm tắt các bước: cài Python 3.10+, chạy `pip install -r requirements.txt`, chạy `earthengine authenticate`, rồi chạy `python run_pipeline.py --pipeline ntl --province "Hà Nội" --years 2024 --monthly --monthly-tif`.

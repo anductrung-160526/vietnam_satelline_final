@@ -1,59 +1,48 @@
-# GÓI DỮ LIỆU: BẢNG CHUỖI THỜI GIAN LỚP PHỦ BỀ MẶT CẤP HUYỆN VIỆT NAM (2004–2025)
-**Mã gói:** `VN_LandCover_Panel_2004_2025`
+# VN_LandCover_Panel_2004_2025: Lớp phủ bề mặt cấp huyện Việt Nam (2004–2025)
 
----
+Bộ dữ liệu ảnh vệ tinh ban ngày, bản đồ lớp phủ 5 lớp và bảng diện tích theo **~705 quận/huyện/thị xã** (địa giới trước sáp nhập), giai đoạn 2004–2025. Khóa chính là `ma_huyen + nam`, và mỗi dòng ghi rõ nguồn ảnh (`nguon_anh`: Landsat hoặc Sentinel-2).
 
-## 1. MÔ TẢ TỔNG QUAN
-Gói dữ liệu cung cấp chuỗi thời gian dạng bảng (Panel Data) và bản đồ phân loại viễn thám về hiện trạng lớp phủ bề mặt (Land Cover) cho toàn bộ các đơn vị hành chính **cấp huyện** tại Việt Nam (~705 quận, huyện, thị xã, thành phố thuộc tỉnh) giai đoạn **2004 đến 2025** (22 năm).
+## Nguồn ảnh (qua Google Earth Engine)
 
-Dữ liệu tập trung vào theo dõi động thái sử dụng đất, đặc biệt là **diện tích đất nông nghiệp** và **diện tích đất nông nghiệp bị chuyển sang mục đích khác** (đô thị hóa, xây dựng, công nghiệp) theo từng địa phương.
+Mặc định mỗi năm dùng một nguồn: **Landsat cho 2004–2014, Sentinel-2 cho 2015–2025**.
 
----
+| Nguồn | Giai đoạn | GEE collection | Độ phân giải |
+|---|---|---|---|
+| Landsat 5 TM | 2004–2011 | `LANDSAT/LT05/C02/T1_L2` | 30 m |
+| Landsat 7 ETM+ | 2012, và lấp chỗ trống các năm khác | `LANDSAT/LE07/C02/T1_L2` | 30 m |
+| Landsat 8 / 9 | 2013–2025 / 2022–2025 | `LANDSAT/LC08/C02/T1_L2`, `LANDSAT/LC09/C02/T1_L2` | 30 m |
+| Sentinel-2 | 2015–2025 | `COPERNICUS/S2_SR_HARMONIZED` (từ 04/2017), `COPERNICUS/S2_HARMONIZED` | 10 m |
+| Độ dốc | — | `USGS/SRTMGL1_003` | 30 m |
 
-## 2. NGUỒN DỮ LIỆU VÀ PHƯƠNG PHÁP XỬ LÝ
-1. **Dữ liệu viễn thám:**
-   - Landsat 5 TM (2004–2011), Landsat 7 ETM+ (2012), Landsat 8 OLI (2013–2021), Landsat 9 OLI-2 (2022–2025) độ phân giải 30m.
-   - Bổ sung Sentinel-2 MSI (từ 2015) độ phân giải 10m.
-   - Ưu tiên cửa sổ thời gian mùa khô ít mây, áp dụng thuật toán lọc mây `QA_PIXEL`.
-2. **Mô hình học máy phân loại 5 lớp phủ:**
-   - Thuật toán: Random Forest (50 cây quyết định trên Google Earth Engine).
-   - 5 lớp phủ chuẩn:
-     1. `dt_nong_nghiep`: Đất nông nghiệp
-     2. `dt_do_thi`: Đất đô thị và dịch vụ, công nghiệp, xây dựng
-     3. `dt_rung`: Đất lâm nghiệp, rừng tự nhiên và rừng trồng
-     4. `dt_mat_nuoc`: Sông, hồ, đầm phá, mặt nước
-     5. `dt_khac`: Đất trống, đồi núi trọc, bãi cát
-   - Đánh giá chất lượng phân loại qua ma trận nhầm lẫn dựa trên tập mẫu kiểm chứng mặt đất (`samples/`).
+## Xử lý (không dùng machine learning)
 
----
+1. Ghép ảnh năm: lấy ảnh **mùa khô** (01/11 năm trước → 30/04), bỏ cảnh có > 60% mây, che mây và bóng mây theo pixel (`QA_PIXEL` / `SCL` / `QA60`), rồi lấy trung vị.
+2. Phân lớp theo **ngưỡng chỉ số phổ**, áp theo thứ tự ưu tiên: mặt nước (MNDWI), đô thị (NDBI), rừng (NDVI cao, hoặc NDVI khá trên đất dốc), nông nghiệp (NDVI trung bình, đất dốc < 15°), còn lại là đất khác. Ngưỡng nằm trong `pipeline_core/config.py` và được ghi trong codebook.
+3. Diện tích từng lớp theo huyện (ha). Diện tích chuyển đổi đất nông nghiệp tính bằng **chồng xếp pixel**: pixel là nông nghiệp ở năm t−1 và thuộc lớp khác ở năm t.
+4. **Dữ liệu 12 tháng** (khi bật `--monthly`): ghép các cảnh trong từng tháng, rồi tính diện tích 5 lớp, tỷ lệ diện tích có ảnh sạch mây (`ty_le_quan_sat`) và NDVI/MNDWI/NDBI trung bình. Tháng không có cảnh nào vẫn có một dòng với `so_canh_anh = 0`, không điền số.
+5. Đánh giá độ chính xác bằng bộ điểm `samples/`. Bộ điểm chỉ dùng để kiểm chứng, không dùng để huấn luyện. Chỉ các điểm nằm trong vùng đang chạy mới được đánh giá. Báo cáo lưu tại `docs/BAO_CAO_DO_CHINH_XAC_<NGUON>_<NAM>.md`.
 
-## 3. CẤU TRÚC THƯ MỤC
+Phân lớp theo ngưỡng minh bạch và dễ giải thích, nhưng thường kém chính xác hơn phương pháp học máy khi phải tách nông nghiệp với rừng thưa hoặc đất trống. Vì vậy cần đọc kèm báo cáo độ chính xác.
+
+## Cấu trúc thư mục
+
 ```
 VN_LandCover_Panel_2004_2025/
-├── README.md                  # Hướng dẫn tổng quan bộ dữ liệu lớp phủ
-├── raw_data/
-│   └── DAY/
-│       ├── LANDSAT/           # Ảnh tổng hợp năm .tif (2004–2025)
-│       └── SENTINEL2/         # Ảnh tổng hợp năm .tif (2015–2025)
-├── data_intermediate/         # Bản đồ phân loại lớp phủ bề mặt 5 lớp (.tif)
-├── data_processed/            # Bảng diện tích và chuyển đổi đất (.csv, .xlsx, .dta)
-├── metadata/
-│   ├── codebook_landcover.md  # Từ điển dữ liệu chi tiết dạng Markdown
-│   └── codebook_landcover.xlsx# Từ điển dữ liệu chi tiết dạng Excel
-├── samples/                   # Bộ điểm mẫu kiểm chứng mặt đất (GeoJSON, CSV)
-├── code/
-│   ├── landcover_pipeline.py  # Mã nguồn Python xử lý và trích xuất diện tích
-│   └── accuracy_assessment.py # Mã nguồn đánh giá độ chính xác phân loại
-├── docs/
-│   ├── HUONG_DAN_CAP_NHAT.md  # Quy trình bổ sung dữ liệu các năm tiếp theo
-│   └── BAO_CAO_DO_CHINH_XAC.md# Báo cáo Confusion Matrix và hệ số Kappa
-└── logs/                      # Nhật ký tải và xử lý dữ liệu
+├── README.md
+├── raw_data/DAY/LANDSAT/     LANDSAT_<ma_huyen>_<nam>[_<thang>].tif  (ảnh tổng hợp đã che mây, 6 kênh, ×10000)
+├── raw_data/DAY/SENTINEL2/   SENTINEL2_<ma_huyen>_<nam>[_<thang>].tif
+├── data_intermediate/        LC_<LANDSAT|SENTINEL2>_<ma_huyen>_<nam>[_<thang>].tif (bản đồ phân lớp)
+├── data_processed/           vietnam_district_day_indices_2004_2025.{csv,xlsx,dta}      (gộp năm + tháng, cột ky)
+│                             vietnam_district_landcover_panel_2004_2025.{csv,xlsx,dta}  (năm)
+│                             vietnam_district_landcover_monthly.{csv,xlsx,dta}         (12 tháng)
+├── metadata/                 codebook_landcover.{md,xlsx}
+├── samples/                  ground_truth_samples.{csv,geojson}
+├── code/                     landcover_pipeline.py, accuracy_assessment.py
+├── dashboard/                (không thuộc phạm vi pipeline)
+├── docs/                     HUONG_DAN_CAP_NHAT.md, báo cáo độ chính xác
+└── logs/
 ```
 
----
+## Môi trường chạy
 
-## 4. BẢNG BIẾN CHÍNH TRONG `data_processed/`
-- Khóa chính kết hợp: `ma_huyen` + `nam`
-- `dt_nong_nghiep`, `dt_do_thi`, `dt_rung`, `dt_mat_nuoc`, `dt_khac`: Diện tích từng lớp (ha).
-- `ty_le_nong_nghiep`: Tỷ lệ đất nông nghiệp trên tổng diện tích tự nhiên của huyện (%).
-- `dt_nn_chuyen_doi`: Diện tích đất nông nghiệp bị chuyển sang mục đích khác so với năm liền kề trước đó (ha).
+Xem `HUONG_DAN_CHAY_TU_DONG.md` ở thư mục gốc repo. Ví dụ: `python run_pipeline.py --pipeline landcover --province "Hà Nội" --years 2024 --monthly --monthly-tif`.

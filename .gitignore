@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.tif
+*.part
+_cache/
+timing/
+VN_*/data_processed/
+VN_*/data_intermediate/
+VN_*/raw_data/
+VN_*/logs/

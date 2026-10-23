@@ -1,106 +1,95 @@
 # -*- coding: utf-8 -*-
 """
-Mô-đun đánh giá độ chính xác phân loại lớp phủ bề mặt (Accuracy Assessment)
-Tính toán Confusion Matrix, Overall Accuracy, Producer's & User's Accuracy và hệ số Kappa.
-Tự động xuất báo cáo chuẩn tại VN_LandCover_Panel_2004_2025/docs/BAO_CAO_DO_CHINH_XAC.md
+Đánh giá độ chính xác phân lớp lớp phủ bằng bộ điểm mẫu kiểm chứng (samples/).
+Điểm mẫu CHỈ dùng để kiểm chứng, không dùng huấn luyện (phân lớp theo ngưỡng, không ML).
+Kết quả lấy thật từ ảnh phân lớp trên Google Earth Engine: ma trận nhầm lẫn, OA, Kappa, PA/UA.
 """
 import sys
+import json
+from datetime import datetime
 from pathlib import Path
-import numpy as np
 import pandas as pd
-from sklearn.metrics import confusion_matrix, cohen_kappa_score, accuracy_score
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from pipeline_core.config import resolve_output_dir, LANDCOVER_CLASSES
+from pipeline_core.config import LANDCOVER_CLASSES, LANDCOVER_THRESHOLDS
 from pipeline_core.samples_gen import SAMPLE_POINTS
-from pipeline_core.utils import df_to_markdown
+from pipeline_core.utils import df_to_markdown, log_audit
+from pipeline_core import ee_utils
 
-def evaluate_classification_accuracy(output_dir=None, y_true=None, y_pred=None):
-    """
-    Thực hiện đánh giá độ chính xác phân loại bằng Ma trận nhầm lẫn và hệ số Kappa
-    """
-    output_dir = resolve_output_dir(output_dir)
-    docs_dir = output_dir / "VN_LandCover_Panel_2004_2025" / "docs"
-    docs_dir.mkdir(parents=True, exist_ok=True)
+CLASS_IDS = list(LANDCOVER_CLASSES)
 
-    class_ids = [1, 2, 3, 4, 5]
-    class_names = [LANDCOVER_CLASSES[c]["name"] for c in class_ids]
 
-    # Nếu chưa có y_true / y_pred thực tế từ GEE, tạo tập kiểm chứng thực tế dựa trên sample points
-    if y_true is None or y_pred is None:
-        np.random.seed(42)
-        y_true = np.array([pt["class"] for pt in SAMPLE_POINTS])
-        # Mô phỏng phân loại Random Forest đạt độ chính xác cao ~88-92%
-        y_pred = y_true.copy()
-        error_indices = np.random.choice(len(y_pred), size=int(len(y_pred) * 0.10), replace=False)
-        for idx in error_indices:
-            # Nhầm lẫn nhẹ giữa Đất nông nghiệp và Đất khác, hoặc Đô thị và Đất khác
-            cur = y_pred[idx]
-            if cur == 1:
-                y_pred[idx] = 5
-            elif cur == 2:
-                y_pred[idx] = 5
-            elif cur == 3:
-                y_pred[idx] = 1
-            else:
-                y_pred[idx] = 1
+def load_samples(pkg_dir):
+    f = Path(pkg_dir) / "samples" / "ground_truth_samples.csv"
+    if f.is_file():
+        df = pd.read_csv(f)
+        return df[["lon", "lat", "class"]].to_dict("records")
+    return [{"lon": p["lon"], "lat": p["lat"], "class": p["class"]} for p in SAMPLE_POINTS]
 
-    cm = confusion_matrix(y_true, y_pred, labels=class_ids)
-    overall_acc = accuracy_score(y_true, y_pred)
-    kappa = cohen_kappa_score(y_true, y_pred)
 
-    # Tính Producer's Accuracy (Recall) và User's Accuracy (Precision)
-    producers_acc = []
-    users_acc = []
-    for i in range(len(class_ids)):
-        prod = cm[i, i] / max(cm[i, :].sum(), 1)
-        user = cm[i, i] / max(cm[:, i].sum(), 1)
-        producers_acc.append(prod)
-        users_acc.append(user)
+def metrics_from_matrix(matrix):
+    """matrix[i][j]: hàng = lớp thực tế, cột = lớp phân loại (theo thứ tự CLASS_IDS)."""
+    n = sum(sum(r) for r in matrix)
+    if n == 0:
+        raise ValueError("Không có điểm mẫu nào nằm trong vùng ảnh có dữ liệu")
+    diag = sum(matrix[i][i] for i in range(len(matrix)))
+    oa = diag / n
+    rows = [sum(r) for r in matrix]
+    cols = [sum(matrix[i][j] for i in range(len(matrix))) for j in range(len(matrix))]
+    pe = sum(r * c for r, c in zip(rows, cols)) / (n * n)
+    kappa = (oa - pe) / (1 - pe) if pe < 1 else 1.0
+    pa = [matrix[i][i] / rows[i] if rows[i] else None for i in range(len(matrix))]
+    ua = [matrix[i][i] / cols[i] if cols[i] else None for i in range(len(matrix))]
+    return {"n": n, "oa": oa, "kappa": kappa, "pa": pa, "ua": ua}
 
-    # Tạo bảng Confusion Matrix dạng DataFrame
-    df_cm = pd.DataFrame(cm, index=[f"Thực tế: {n}" for n in class_names],
-                             columns=[f"Dự báo: {n}" for n in class_names])
-    df_cm["Tổng thực tế"] = cm.sum(axis=1)
-    df_cm["Producer's Accuracy (%)"] = [round(p * 100, 2) for p in producers_acc]
 
-    df_user = pd.DataFrame([users_acc], columns=[f"Dự báo: {n}" for n in class_names], index=["User's Accuracy (%)"])
-    df_user = df_user.map(lambda x: f"{x * 100:.2f}%")
+def evaluate_classification_accuracy(ee, classified, pkg_dir, sensor, year, logger=None):
+    pts = load_samples(pkg_dir)
+    fc = ee.FeatureCollection([ee.Feature(ee.Geometry.Point([p["lon"], p["lat"]]), {"lop_thuc": int(p["class"])})
+                               for p in pts])
+    sampled = classified.sampleRegions(collection=fc, properties=["lop_thuc"], scale=30, geometries=False)
+    rows = ee_utils.get_info(sampled.reduceColumns(ee.Reducer.toList(2), ["lop_thuc", "classification"]))["list"]
 
-    # Soạn thảo báo cáo Markdown chi tiết
-    report_path = docs_dir / "BAO_CAO_DO_CHINH_XAC.md"
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write("# BÁO CÁO ĐÁNH GIÁ ĐỘ CHÍNH XÁC PHÂN LOẠI LỚP PHỦ BỀ MẶT (LAND COVER)\n\n")
-        f.write("## 1. TỔNG QUAN PHƯƠNG PHÁP ĐÁNH GIÁ\n")
-        f.write("- **Mô hình học máy:** Random Forest (50 cây quyết định, huấn luyện trên GEE)\n")
-        f.write("- **Dữ liệu ảnh:** Landsat 5, 7, 8, 9 và Sentinel-2 (lọc mây mùa khô)\n")
-        f.write(f"- **Số lượng điểm kiểm chứng:** {len(y_true)} điểm mẫu phân bố khắp 5 vùng sinh thái Việt Nam\n")
-        f.write("- **5 lớp phủ bề mặt:** Đất nông nghiệp, Đô thị và dịch vụ, Rừng, Mặt nước, Đất khác\n\n")
+    idx = {c: i for i, c in enumerate(CLASS_IDS)}
+    matrix = [[0] * len(CLASS_IDS) for _ in CLASS_IDS]
+    for truth, pred in rows:
+        if int(truth) in idx and int(pred) in idx:
+            matrix[idx[int(truth)]][idx[int(pred)]] += 1
+    m = metrics_from_matrix(matrix)
 
-        f.write("## 2. CÁC CHỈ SỐ ĐỘ CHÍNH XÁC TỔNG THỂ\n")
-        f.write(f"- **Độ chính xác tổng thể (Overall Accuracy):** **{overall_acc * 100:.2f}%**\n")
-        f.write(f"- **Hệ số tin cậy Kappa (Kappa Coefficient):** **{kappa:.4f}** (Mức độ tương đồng rất cao theo chuẩn Landis & Koch)\n\n")
+    names = [LANDCOVER_CLASSES[c]["name"] for c in CLASS_IDS]
+    cm = pd.DataFrame(matrix, index=names, columns=names)
+    per_class = pd.DataFrame({
+        "Lớp": names,
+        "Số điểm thực tế": [sum(r) for r in matrix],
+        "Producer's accuracy (%)": [round(v * 100, 1) if v is not None else "" for v in m["pa"]],
+        "User's accuracy (%)": [round(v * 100, 1) if v is not None else "" for v in m["ua"]],
+    })
 
-        f.write("## 3. MA TRẬN NHẦM LẪN (CONFUSION MATRIX)\n\n")
+    docs = Path(pkg_dir) / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    tag = f"{sensor.upper()}_{year}"
+    (docs / f"do_chinh_xac_{tag}.json").write_text(json.dumps({
+        "nguon_anh": sensor, "nam": year, "so_diem": m["n"], "so_diem_tong": len(pts),
+        "overall_accuracy": m["oa"], "kappa": m["kappa"], "ma_tran": matrix, "lop": names,
+        "nguong": LANDCOVER_THRESHOLDS,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        f.write(df_to_markdown(df_cm, index=True))
-        f.write("\n\n**User's Accuracy theo từng lớp:**\n\n")
-        f.write(df_to_markdown(df_user, index=True))
-
-        f.write("\n\n## 4. KẾT LUẬN & ĐÁNH GIÁ ĐỘ TIN CẬY\n")
-        f.write("- Các lớp có phổ phản xạ đặc trưng cao như **Mặt nước** và **Rừng** đạt độ chính xác trên 90%.\n")
-        f.write("- Lớp **Đất nông nghiệp** và **Đất khác/Đô thị** có một tỷ lệ nhỏ nhầm lẫn do hiện tượng đất để ải sau thu hoạch có tín hiệu phổ tương tự đất trống.\n")
-        f.write("- Kết quả phân loại hoàn toàn đáp ứng độ tin cậy để tính toán biến động diện tích đất nông nghiệp chuyển sang mục đích khác (`dt_nn_chuyen_doi`).\n")
-
-    print(f"[*] Đã xuất Báo cáo đánh giá độ chính xác tại: {report_path}")
-    return overall_acc, kappa
-
-if __name__ == "__main__":
-    evaluate_classification_accuracy()
+    report = docs / f"BAO_CAO_DO_CHINH_XAC_{tag}.md"
+    with open(report, "w", encoding="utf-8") as f:
+        f.write(f"# Báo cáo độ chính xác phân lớp lớp phủ: {sensor} năm {year}\n\n")
+        f.write(f"- Ngày tạo: {datetime.now():%Y-%m-%d %H:%M}\n")
+        f.write("- Phương pháp phân lớp: luật ngưỡng chỉ số phổ NDVI/MNDWI/NDBI + độ dốc SRTM "
+                "(không dùng machine learning)\n")
+        f.write(f"- Số điểm kiểm chứng có dữ liệu ảnh: {m['n']} / {len(pts)}\n\n")
+        f.write(f"**Overall Accuracy:** {m['oa'] * 100:.2f}%  \n**Kappa:** {m['kappa']:.3f}\n\n")
+        f.write("## Ma trận nhầm lẫn (hàng = thực tế, cột = phân lớp)\n\n")
+        f.write(df_to_markdown(cm, index=True) + "\n\n")
+        f.write("## Độ chính xác theo lớp\n\n" + df_to_markdown(per_class) + "\n\n")
+        f.write("## Ngưỡng đã dùng\n\n```json\n" + json.dumps(LANDCOVER_THRESHOLDS, indent=2) + "\n```\n\n")
+        f.write("Lưu ý: bộ điểm mẫu hiện còn nhỏ và không gắn năm quan sát; điểm được giả định đúng cho "
+                "năm đánh giá. Nên bổ sung điểm mẫu theo năm, nhất là trong phạm vi tỉnh đang xử lý.\n")
+    if logger:
+        log_audit(logger, sensor_type=sensor, content=f"Độ chính xác {year}: OA={m['oa'] * 100:.1f}%, "
+                                                       f"Kappa={m['kappa']:.3f} (n={m['n']}) -> {report}")
+    return m
