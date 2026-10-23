@@ -28,7 +28,7 @@ if sys.platform == "win32":
 
 from pipeline_core.config import (START_YEAR, END_YEAR, NTL_PACKAGE, LANDCOVER_PACKAGE, DEFAULT_EE_PROJECT,
                                   resolve_output_dir)
-from pipeline_core.admin_boundaries import load_district_boundaries, filter_districts, get_pilot_districts
+from pipeline_core.admin_boundaries import load_units, filter_districts, get_pilot_districts
 from pipeline_core.codebook_gen import generate_codebooks
 from pipeline_core.samples_gen import generate_sample_dataset
 from pipeline_core.utils import StepTimer, check_disk_space
@@ -84,6 +84,8 @@ def build_parser():
     p = argparse.ArgumentParser(description="Pipeline dữ liệu viễn thám cấp huyện Việt Nam (2004–2025)")
     p.add_argument("--output-dir", default="", help="Thư mục gốc lưu dữ liệu (mặc định C:\\VNGIS_Data)")
     p.add_argument("--pipeline", choices=["all", "ntl", "landcover", "init-only"], default="all")
+    p.add_argument("--level", choices=["huyen", "tinh"], default="huyen",
+                   help="Đơn vị tổng hợp: huyen (quận/huyện, mặc định) hoặc tinh (63 tỉnh/thành)")
     p.add_argument("--province", default="", help='Lọc theo tỉnh, vd "Hà Nội" (nhiều tỉnh cách nhau dấu phẩy)')
     p.add_argument("--districts", default="", help="Lọc theo tên/mã huyện, cách nhau dấu phẩy")
     p.add_argument("--mode", choices=["pilot", "full"], default="full",
@@ -105,8 +107,9 @@ def build_parser():
 
 
 def select_districts(args, cache_dir):
-    df = load_district_boundaries(cache_dir)
-    df = filter_districts(df, province=args.province or None, districts=args.districts or None)
+    df = load_units(getattr(args, "level", "huyen"), cache_dir)
+    df = filter_districts(df, province=args.province or None,
+                          districts=(args.districts or None) if getattr(args, "level", "huyen") == "huyen" else None)
     if df.empty:
         raise SystemExit(f"[!] Không tìm thấy huyện nào khớp --province '{args.province}' "
                          f"--districts '{args.districts}'")
@@ -132,12 +135,14 @@ def run(args, timer=None):
     with timer.step("chung", "tai_danh_muc_ranh_gioi"):
         districts = select_districts(args, cache)
     summary["districts"] = len(districts)
+    summary["level"] = args.level
     summary["years"] = years
     print(f"[*] {len(districts)} huyện: {', '.join(districts['ten_huyen'].head(40))}"
           f"{' ...' if len(districts) > 40 else ''}")
     print(f"[*] Năm: {years[0]}–{years[-1]} ({len(years)} năm)")
 
     common = dict(output_dir=out, ee_project=args.ee_project, timer=timer, download_tif=not args.no_tif,
+                  level=args.level,
                   cache_dir=cache)
     if args.pipeline in ("all", "ntl"):
         from VN_NTL_Panel_2004_2025.code.ntl_pipeline import NTLPipeline

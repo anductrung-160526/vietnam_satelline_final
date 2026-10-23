@@ -43,6 +43,28 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(list(filter_districts(df, districts="Ba Vì")["ma_huyen"]), ["VNM.27.2_1"])
 
 
+class ProvinceLevelTests(unittest.TestCase):
+    def test_province_codes_cover_63(self):
+        from pipeline_core.admin_boundaries import load_province_codes
+        codes = load_province_codes()
+        self.assertEqual(len(codes), 63)
+        self.assertEqual(codes[match_key("HồChíMinh")], "79")
+        self.assertEqual(codes[match_key("BàRịa-VũngTàu")], "77")
+
+    def test_province_export_renames_columns(self):
+        from pipeline_core.base_pipeline import BasePipeline
+        p = BasePipeline.__new__(BasePipeline)
+        p.level = "tinh"
+        df = pd.DataFrame([{"ma_tinh": "01", "ten_tinh": "Hà Nội", "ma_huyen": "01", "ten_huyen": "Hà Nội",
+                            "ma_huyen_gadm": "VNM.27_1", "nam": 2024}])
+        out = p.finalize(df)
+        self.assertEqual(list(out.columns), ["ma_tinh", "ten_tinh", "ma_tinh_gadm", "nam"])
+        self.assertEqual(p.table_name("vietnam_district_day_indices_2004_2025"),
+                         "vietnam_province_day_indices_2004_2025")
+        p.level = "huyen"
+        self.assertIs(p.finalize(df), df)
+
+
 class UtilTests(unittest.TestCase):
     def test_parse_years(self):
         self.assertEqual(parse_years("2024"), [2024])

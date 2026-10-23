@@ -13,6 +13,7 @@ CSV chỉ số (mỗi file gồm cả dòng năm và dòng tháng, cột 'ky' = 
 
     python run_hanoi_pilot.py                 # mặc định năm 2024
     python run_hanoi_pilot.py --years 2004-2025
+    python run_hanoi_pilot.py --level tinh --years 2004-2025   # cả Hà Nội như MỘT đơn vị cấp tỉnh
     python run_hanoi_pilot.py --years 2024 --output-dir D:\\VNGIS_Data
 
 Kết quả thời gian: <output>/VN_*/logs/timing_hanoi_<thời điểm>.csv và timing_hanoi_<thời điểm>_tom_tat.txt
@@ -26,6 +27,7 @@ from pipeline_core.config import NTL_PACKAGE, LANDCOVER_PACKAGE
 from pipeline_core.utils import StepTimer
 
 NATIONAL_DISTRICTS = 705
+NATIONAL_PROVINCES = 63
 NATIONAL_YEARS = 22
 VN_AREA_KM2 = 331_000
 HANOI_AREA_KM2 = 3_359
@@ -49,10 +51,11 @@ def summarize(df, summary):
         "=" * 70,
         f"KẾT QUẢ CHẠY THỬ HÀ NỘI ({datetime.now():%Y-%m-%d %H:%M})",
         "=" * 70,
-        f"Số quận/huyện: {summary['districts']} | Năm: {summary['years'][0]}–{summary['years'][-1]}",
+        f"Cấp: {'tỉnh' if summary.get('level') == 'tinh' else 'huyện'} | Số đơn vị: {summary['districts']} | "
+        f"Năm: {summary['years'][0]}–{summary['years'][-1]}",
         f"Tổng thời gian: {fmt_duration(summary['seconds'])}",
         f"Số tệp .tif đã tải: {summary['files']} | Dung lượng: {summary['bytes'] / 1024 ** 2:.1f} MB",
-        f"Diện tích các huyện đã chạy: {summary.get('area_km2') or 0:.1f} km²",
+        f"Diện tích các đơn vị đã chạy: {summary.get('area_km2') or 0:.1f} km²",
         f"Bảng năm: NTL {summary['ntl']} dòng | lớp phủ {summary['landcover']} dòng "
         f"(bảng tháng nằm trong *_monthly.csv)",
         "",
@@ -63,14 +66,16 @@ def summarize(df, summary):
         lines.append(by_step.to_string())
         per_unit = df[df["ma_huyen"].astype(str) != ""]["giay"].sum() / (n_d * n_y)
         setup = df[df["ma_huyen"].astype(str) == ""]["giay"].sum() / n_y
-        est_sec = per_unit * NATIONAL_DISTRICTS * NATIONAL_YEARS + setup * NATIONAL_YEARS
+        n_units = NATIONAL_PROVINCES if summary.get("level") == "tinh" else NATIONAL_DISTRICTS
+        est_sec = per_unit * n_units * NATIONAL_YEARS + setup * NATIONAL_YEARS
         # Dung lượng tỷ lệ với diện tích THỰC TẾ của các huyện vừa chạy (không phải cả Hà Nội)
         area = summary.get("area_km2") or HANOI_AREA_KM2
         est_gb = summary["bytes"] / (n_y * area) * VN_AREA_KM2 * NATIONAL_YEARS / 1024 ** 3
         lines += [
             "",
-            "ƯỚC TÍNH TOÀN QUỐC (~705 huyện × 22 năm, chạy tuần tự, cùng tùy chọn):",
-            f"  Thời gian trung bình mỗi huyện-năm: {per_unit:.1f} giây",
+            f"ƯỚC TÍNH TOÀN QUỐC (~{n_units} {'tỉnh' if n_units == NATIONAL_PROVINCES else 'huyện'} × 22 năm, "
+            "chạy tuần tự, cùng tùy chọn):",
+            f"  Thời gian trung bình mỗi đơn vị-năm: {per_unit:.1f} giây",
             f"  Thời gian ước tính: {fmt_duration(est_sec)}",
             f"  Dung lượng .tif ước tính (theo diện tích): {est_gb:.1f} GB",
             "  (Ước tính thô: phụ thuộc mạng, quota GEE và kích thước huyện.)",

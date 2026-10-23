@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import DEFAULT_EE_PROJECT, resolve_output_dir
 from .admin_boundaries import load_district_geometries
-from .utils import setup_pipeline_logger, log_audit, CheckpointManager, StepTimer
+from .utils import setup_pipeline_logger, log_audit, CheckpointManager, StepTimer, export_multiformat_table
 from . import ee_utils
 
 ID_COLS = ["ma_tinh", "ten_tinh", "ma_huyen", "ten_huyen", "ma_huyen_gadm"]
@@ -19,7 +19,8 @@ class BasePipeline:
     NAME = ""
     SUBDIRS = ()
 
-    def __init__(self, output_dir=None, ee_project=None, timer=None, download_tif=True, cache_dir=None):
+    def __init__(self, output_dir=None, ee_project=None, timer=None, download_tif=True, cache_dir=None,
+                 level="huyen"):
         self.output_dir = resolve_output_dir(output_dir)
         self.pkg_dir = self.output_dir / self.PACKAGE
         for sub in self.SUBDIRS:
@@ -29,8 +30,10 @@ class BasePipeline:
         self.logs_dir = self.pkg_dir / "logs"
         self.docs_dir = self.pkg_dir / "docs"
         self.cache_dir = cache_dir
-        self.logger, self.log_file = setup_pipeline_logger(self.logs_dir, self.NAME)
-        self.checkpoint = CheckpointManager(self.logs_dir / f"{self.NAME}_checkpoint.jsonl")
+        self.level = level  # "huyen" (mặc định) hoặc "tinh"
+        suffix = "_tinh" if level == "tinh" else ""
+        self.logger, self.log_file = setup_pipeline_logger(self.logs_dir, self.NAME + suffix)
+        self.checkpoint = CheckpointManager(self.logs_dir / f"{self.NAME}{suffix}_checkpoint.jsonl")
         self.ee_project = ee_project or DEFAULT_EE_PROJECT
         self.timer = timer or StepTimer()
         self.download_tif = download_tif
@@ -54,7 +57,7 @@ class BasePipeline:
         missing = [g for g in districts_df["ma_huyen_gadm"] if g not in self.geoms]
         if missing:
             with self.timer.step(self.NAME, "doc_ranh_gioi_huyen"):
-                self.geoms.update(load_district_geometries(missing, self.cache_dir))
+                self.geoms.update(load_district_geometries(missing, self.cache_dir, self.level))
         lost = [g for g in missing if g not in self.geoms]
         if lost:
             self.log("Boundary", f"Không tìm thấy hình học cho: {', '.join(lost)}", error=True)
@@ -90,6 +93,21 @@ class BasePipeline:
         self.files_downloaded += 1
         self.timer.rows[-1]["mb"] = round(size / 1024 ** 2, 2)
         self.log(sensor, f"Tải {dest.name} ({size / 1024 ** 2:.1f} MB) -> {dest.parent}")
+
+    def table_name(self, name):
+        """Tên bảng theo cấp: vietnam_district_* (huyện) hoặc vietnam_province_* (tỉnh)."""
+        return name.replace("_district_", "_province_") if self.level == "tinh" else name
+
+    def finalize(self, df):
+        """Cấp tỉnh: bỏ cột huyện, đổi ma_huyen_gadm -> ma_tinh_gadm. Cấp huyện: giữ nguyên."""
+        if self.level != "tinh" or df.empty:
+            return df
+        return df.drop(columns=[c for c in ("ma_huyen", "ten_huyen") if c in df.columns]) \
+            .rename(columns={"ma_huyen_gadm": "ma_tinh_gadm"})
+
+    def export(self, df, name):
+        return export_multiformat_table(self.finalize(df), self.processed_dir / self.table_name(name),
+                                        logger=self.logger)
 
     def prepare_districts(self, districts_df):
         df = districts_df.copy()

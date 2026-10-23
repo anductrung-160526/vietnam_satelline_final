@@ -171,7 +171,7 @@ class NTLPipeline(BasePipeline):
         area = ee.Image.pixelArea().divide(1e6)
         stack = img.multiply(area).rename("sol").addBands(ee.Image.constant(1).rename("n"))
         res = ee_utils.get_info(stack.reduceRegion(reducer=ee.Reducer.sum(), geometry=geom, scale=scale,
-                                                   maxPixels=1e10))
+                                                   maxPixels=1e10, tileScale=4))
         return res.get("sol") or 0.0, round(res.get("n") or 0)
 
     def district_area_km2(self, gid):
@@ -256,7 +256,7 @@ class NTLPipeline(BasePipeline):
                             area = self.district_area_km2(gid)
                             sol, _ = self.zonal(clean, geom, SCALE["VIIRS"])
                             cf = ee_utils.get_info(img.select("cf_cvg").reduceRegion(
-                                ee.Reducer.mean(), geom, SCALE["VIIRS"], maxPixels=1e9).get("cf_cvg"))
+                                ee.Reducer.mean(), geom, SCALE["VIIRS"], maxPixels=1e10, tileScale=4).get("cf_cvg"))
                         rec = {**self.id_fields(row), "nam": year, "thang": month, "nguon_anh": label,
                                "sol_ntl": round(sol, 4), "mat_do_ntl": round(sol / area, 4) if area else None,
                                "cf_cvg_tb": round(cf, 2) if cf is not None else None,
@@ -278,17 +278,17 @@ class NTLPipeline(BasePipeline):
             annual["thay_doi_ntl"] = pct_change_consecutive(annual, "ma_huyen_gadm", "sol_ntl")
             annual = annual.reindex(columns=ANNUAL_COLS)
             with self.timer.step(self.NAME, "xuat_bang"):
-                written += export_multiformat_table(annual, self.processed_dir / ANNUAL_TABLE, logger=self.logger)
+                written += self.export(annual, ANNUAL_TABLE)
         monthly = pd.DataFrame(self.checkpoint.results("ntl_month_"))
         if not monthly.empty:
             monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reset_index(drop=True)
             # Tháng: thay đổi so với cùng tháng năm trước
             monthly["thay_doi_ntl"] = pct_change_consecutive(monthly, "ma_huyen_gadm", "sol_ntl", extra_keys=("thang",))
             monthly = monthly.reindex(columns=MONTHLY_COLS)
-            written += export_multiformat_table(monthly, self.processed_dir / MONTHLY_TABLE, logger=self.logger)
+            written += self.export(monthly, MONTHLY_TABLE)
         combined = combine_annual_monthly(annual, monthly)
         if not combined.empty:
-            written += export_multiformat_table(combined, self.processed_dir / COMBINED_TABLE, logger=self.logger)
+            written += self.export(combined, COMBINED_TABLE)
         for f in written:
             self.log("NTL", f"Xuất bảng {f}")
         return annual

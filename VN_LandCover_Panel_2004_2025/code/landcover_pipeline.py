@@ -223,13 +223,13 @@ class LandCoverPipeline(BasePipeline):
         ee = self.ee
         area = ee.Image.pixelArea().divide(1e4)
         grouped = area.addBands(cls.unmask(0)).reduceRegion(
-            ee.Reducer.sum().group(groupField=1, groupName="lop"), geom, scale, maxPixels=1e10)
+            ee.Reducer.sum().group(groupField=1, groupName="lop"), geom, scale, maxPixels=1e10, tileScale=4)
         out = {c: 0.0 for c in range(0, 6)}
         conv = None
         info = ee_utils.get_info(grouped if prev_cls is None else ee.Dictionary({
             "g": grouped,
             "conv": area.updateMask(prev_cls.eq(1).And(cls.neq(1))).reduceRegion(
-                ee.Reducer.sum(), geom, scale, maxPixels=1e10).get("area"),
+                ee.Reducer.sum(), geom, scale, maxPixels=1e10, tileScale=4).get("area"),
         }))
         groups = info["groups"] if prev_cls is None else info["g"]["groups"]
         for g in groups:
@@ -298,11 +298,11 @@ class LandCoverPipeline(BasePipeline):
         ee = self.ee
         area = ee.Image.pixelArea().divide(1e4)
         grouped = area.addBands(cls.unmask(0)).reduceRegion(
-            ee.Reducer.sum().group(groupField=1, groupName="lop"), geom, scale, maxPixels=1e10)
+            ee.Reducer.sum().group(groupField=1, groupName="lop"), geom, scale, maxPixels=1e10, tileScale=4)
         idx = ee.Image.cat([comp.normalizedDifference(["NIR", "RED"]).rename("ndvi"),
                             comp.normalizedDifference(["GREEN", "SWIR1"]).rename("mndwi"),
                             comp.normalizedDifference(["SWIR1", "NIR"]).rename("ndbi")])
-        means = idx.reduceRegion(ee.Reducer.mean(), geom, scale, maxPixels=1e10)
+        means = idx.reduceRegion(ee.Reducer.mean(), geom, scale, maxPixels=1e10, tileScale=4)
         info = ee_utils.get_info(ee.Dictionary({"g": grouped, "m": means}))
         out = {c: 0.0 for c in range(0, 6)}
         for g in info["g"]["groups"]:
@@ -385,18 +385,18 @@ class LandCoverPipeline(BasePipeline):
         monthly = self._keep_auto_source(pd.DataFrame(self.checkpoint.results("lcm_")))
         if not monthly.empty:
             monthly = monthly.sort_values(["ma_huyen_gadm", "nam", "thang"]).reindex(columns=MONTHLY_COLS)
-            for f in export_multiformat_table(monthly, self.processed_dir / MONTHLY_TABLE, logger=self.logger):
+            for f in self.export(monthly, MONTHLY_TABLE):
                 self.log("LandCover", f"Xuất bảng {f}")
         df = self._keep_auto_source(pd.DataFrame(self.checkpoint.results("lc_")))
         if not df.empty:
             df = df.sort_values(["ma_huyen_gadm", "nam"]).reindex(columns=TABLE_COLS)
         with self.timer.step(self.NAME, "xuat_bang"):
             if not df.empty:
-                for f in export_multiformat_table(df, self.processed_dir / TABLE, logger=self.logger):
+                for f in self.export(df, TABLE):
                     self.log("LandCover", f"Xuất bảng {f}")
             combined = combine_annual_monthly(df, monthly)
             if not combined.empty:
-                for f in export_multiformat_table(combined, self.processed_dir / COMBINED_TABLE, logger=self.logger):
+                for f in self.export(combined, COMBINED_TABLE):
                     self.log("LandCover", f"Xuất bảng chỉ số ảnh ngày (năm + tháng) {f}")
         return df
 

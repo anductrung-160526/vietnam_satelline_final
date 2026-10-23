@@ -17,7 +17,10 @@ from .config import GADM_VNM_URL
 
 DISTRICT_COLS = ["GID_1", "NAME_1", "GID_2", "NAME_2", "TYPE_2", "ENGTYPE_2"]
 GSO_CODES_CSV = Path(__file__).resolve().parent / "data" / "gso_district_codes.csv"
+GSO_PROVINCE_CSV = Path(__file__).resolve().parent / "data" / "gso_province_codes.csv"
 SHP_BASENAME = "gadm41_VNM_2"
+LEVELS = {"huyen": "gadm41_VNM_2", "tinh": "gadm41_VNM_1"}
+GID_FIELD = {"huyen": "GID_2", "tinh": "GID_1"}
 
 
 def normalize_text(s):
@@ -68,12 +71,13 @@ def default_cache_dir():
     return resolve_output_dir() / "_cache"
 
 
-def ensure_gadm_shapefile(cache_dir=None):
-    """Tải (một lần) gói GADM 4.1 và giải nén bộ tệp Level 2 (.shp/.shx/.dbf/.cpg)."""
+def ensure_gadm_shapefile(cache_dir=None, level="huyen"):
+    """Tải (một lần) gói GADM 4.1 và giải nén bộ tệp của cấp yêu cầu (huyện: Level 2, tỉnh: Level 1)."""
     cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
-    shp = cache_dir / f"{SHP_BASENAME}.shp"
-    if shp.is_file() and (cache_dir / f"{SHP_BASENAME}.dbf").is_file():
+    basename = LEVELS[level]
+    shp = cache_dir / f"{basename}.shp"
+    if shp.is_file() and (cache_dir / f"{basename}.dbf").is_file():
         return shp
 
     zip_path = cache_dir / "gadm41_VNM_shp.zip"
@@ -91,7 +95,7 @@ def ensure_gadm_shapefile(cache_dir=None):
 
     with zipfile.ZipFile(zip_path) as z:
         for ext in (".shp", ".shx", ".dbf", ".cpg", ".prj"):
-            name = SHP_BASENAME + ext
+            name = basename + ext
             if name in z.namelist():
                 z.extract(name, cache_dir)
     return shp
@@ -113,14 +117,60 @@ def attach_gso_codes(df, gso=None):
     df["k_tinh"] = df["ten_tinh"].apply(match_key)
     df["k_huyen"] = df["ten_huyen"].apply(match_key)
     look = gso.drop_duplicates(["k_tinh", "k_huyen"]).set_index(["k_tinh", "k_huyen"])
-    tinh_look = gso.drop_duplicates("k_tinh").set_index("k_tinh")["ma_tinh_tk"]
+    tinh_look = load_province_codes()
     ma_huyen_tk, ma_tinh_tk = [], []
     for kt, kh in zip(df["k_tinh"], df["k_huyen"]):
         ma_huyen_tk.append(look["ma_huyen_tk"].get((kt, kh), "") if not look.empty else "")
-        ma_tinh_tk.append(tinh_look.get(kt, "") if not tinh_look.empty else "")
+        ma_tinh_tk.append(tinh_look.get(kt, ""))
     df["ma_tinh_tk"] = ma_tinh_tk
     df["ma_huyen_tk"] = ma_huyen_tk
     return df.drop(columns=["k_tinh", "k_huyen"])
+
+
+def load_province_codes(path=GSO_PROVINCE_CSV):
+    """{khóa tên tỉnh: mã tỉnh Cục Thống kê}"""
+    if not Path(path).is_file():
+        return pd.Series(dtype=str)
+    df = pd.read_csv(path, dtype=str, keep_default_na=False, comment="#")
+    return df.assign(k=df["ten_tinh_tk"].apply(match_key)).drop_duplicates("k").set_index("k")["ma_tinh_tk"]
+
+
+def _read_level_dbf(cache_dir, level):
+    shp = ensure_gadm_shapefile(cache_dir, level)
+    enc = "utf-8"
+    cpg = shp.with_suffix(".cpg")
+    if cpg.is_file():
+        raw = cpg.read_text().strip()
+        if raw and raw.upper().replace("-", "") != "UTF8":
+            enc = raw
+    return read_dbf(shp.with_suffix(".dbf"), enc)
+
+
+def load_province_boundaries(cache_dir=None):
+    """
+    Danh mục 63 tỉnh/thành (GADM 4.1 Level 1) ở dạng 'đơn vị' dùng chung cho pipeline:
+    ma_huyen/ma_huyen_gadm = GID_1, ten_huyen = tên tỉnh (pipeline đổi tên cột khi xuất bảng cấp tỉnh).
+    """
+    cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
+    csv_cache = cache_dir / "vietnam_provinces_l1.csv"
+    if csv_cache.is_file():
+        df = pd.read_csv(csv_cache, dtype=str, keep_default_na=False)
+    else:
+        df_raw = _read_level_dbf(cache_dir, "tinh")
+        df = df_raw[["GID_1", "NAME_1"]].drop_duplicates("GID_1").reset_index(drop=True)
+        df.to_csv(csv_cache, index=False, encoding="utf-8-sig")
+    codes = load_province_codes()
+    out = pd.DataFrame({
+        "ma_tinh": df["GID_1"], "ten_tinh": df["NAME_1"],
+        "ma_huyen": df["GID_1"], "ten_huyen": df["NAME_1"], "loai_huyen": "Tỉnh",
+    })
+    out["ma_tinh_tk"] = [codes.get(match_key(n), "") for n in out["ten_tinh"]]
+    out["ma_huyen_tk"] = out["ma_tinh_tk"]
+    return out
+
+
+def load_units(level="huyen", cache_dir=None):
+    return load_province_boundaries(cache_dir) if level == "tinh" else load_district_boundaries(cache_dir)
 
 
 def load_district_boundaries(cache_dir=None):
@@ -133,14 +183,7 @@ def load_district_boundaries(cache_dir=None):
     if csv_cache.is_file():
         df = pd.read_csv(csv_cache, dtype=str, keep_default_na=False)
     else:
-        shp = ensure_gadm_shapefile(cache_dir)
-        enc = "utf-8"
-        cpg = shp.with_suffix(".cpg")
-        if cpg.is_file():
-            raw = cpg.read_text().strip()
-            if raw and raw.upper().replace("-", "") != "UTF8":
-                enc = raw
-        df_raw = read_dbf(shp.with_suffix(".dbf"), enc)
+        df_raw = _read_level_dbf(cache_dir, "huyen")
         cols = [c for c in DISTRICT_COLS if c in df_raw.columns]
         df = df_raw[cols].drop_duplicates("GID_2").reset_index(drop=True)
         df["ma_tinh"] = df["GID_1"]
@@ -184,15 +227,15 @@ def _round_coords(obj, nd=5):
     return obj
 
 
-def load_district_geometries(gids, cache_dir=None):
-    """Trả về {ma_huyen(GID_2): geojson geometry} cho các huyện yêu cầu."""
+def load_district_geometries(gids, cache_dir=None, level="huyen"):
+    """Trả về {GID: geojson geometry} cho các đơn vị yêu cầu (huyện: GID_2, tỉnh: GID_1)."""
     import shapefile  # pyshp
-    shp = ensure_gadm_shapefile(cache_dir)
+    shp = ensure_gadm_shapefile(cache_dir, level)
     wanted = set(gids)
     out = {}
     with shapefile.Reader(str(shp), encoding="utf-8") as r:
         names = [f[0] for f in r.fields[1:]]
-        gid_idx = names.index("GID_2")
+        gid_idx = names.index(GID_FIELD[level])
         for sr in r.iterShapeRecords():
             gid = sr.record[gid_idx]
             if gid in wanted:

@@ -124,6 +124,21 @@ Chi tiết từng bước được ghi vào `C:\VNGIS_Data\VN_NTL_Panel_2004_202
 
 Ảnh tháng làm dung lượng tăng khoảng 12 lần so với chỉ lấy ảnh năm. Riêng Sentinel-2 10 m của Hà Nội có thể lên tới vài GB mỗi năm, nên cả chuỗi 2015–2025 cần hàng chục GB. Hãy chạy năm 2024 trước để xem dung lượng thực tế. Sentinel-2 ở độ phân giải 10 m có dung lượng lớn nhất. Hà Nội cần khoảng vài trăm MB mỗi năm. Muốn tải nhẹ hơn, bạn đặt `setx VNGIS_S2_SCALE 20`. Cách này chỉ đổi độ phân giải ảnh tải về; bảng diện tích vẫn tính ở 10 m.
 
+## 3b. Lấy dữ liệu CẤP TỈNH (thay vì cấp huyện)
+
+Thêm `--level tinh`. Mỗi tỉnh/thành được tính như **một đơn vị** theo ranh giới 63 tỉnh trước sáp nhập (GADM Level 1). Mã tỉnh lấy theo bộ mã của Cục Thống kê.
+
+```bat
+python run_hanoi_pilot.py --level tinh --years 2024          :: Hà Nội cấp tỉnh, năm 2024 (năm + 12 tháng)
+python run_hanoi_pilot.py --level tinh --years 2004-2025     :: Hà Nội cấp tỉnh, cả giai đoạn
+python run_pipeline.py --level tinh --years 2004-2025 --monthly --monthly-tif   :: 63 tỉnh
+python run_hanoi_pilot.py --level tinh --years 2004-2025 --no-monthly-tif       :: chỉ bảng, không tải ảnh tháng (nhanh hơn nhiều)
+```
+
+- Bảng cấp tỉnh có tên `vietnam_province_*`, ví dụ `vietnam_province_day_indices_2004_2025.csv` và `vietnam_province_night_indices_2004_2025.csv`. Bảng nằm cùng thư mục `data_processed`, **không ghi đè** bảng cấp huyện. Cột gồm `ma_tinh, ten_tinh, ma_tinh_gadm, nam, ky, thang, ...`.
+- Checkpoint cấp tỉnh lưu riêng (`logs\*_tinh_checkpoint.jsonl`), nên chạy cấp tỉnh không ảnh hưởng đến dữ liệu cấp huyện đã có.
+- Ảnh `.tif` cấp tỉnh đặt tên theo mã tỉnh, ví dụ `SENTINEL2_01_2024_03.tif` (01 = Hà Nội). Ảnh cả tỉnh lớn nên chương trình tự chia ô để tải rồi ghép lại.
+
 ## 4. Chạy theo tỉnh, theo năm hoặc toàn quốc
 
 ```bat
