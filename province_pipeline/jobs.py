@@ -118,6 +118,10 @@ def generate_v2(config, boundaries, metadata, priority):
             geometries[p['ma_tinh']] = transform(shape(boundaries[p['ma_tinh']]['geometry']),project)
         projected = geometries[p['ma_tinh']]
         resolution=scale/111319.49079327358 if config['crs']=='EPSG:4326' else scale
+        if notebook:
+            from task_pipeline.province_image import output_job
+            yield output_job(config,base,projected.bounds,priority)
+            continue
         for tile in tile_grid(projected.bounds,resolution,config['tile_pixels']):
             if not projected.intersects(box(*tile['bounds'])):
                 continue

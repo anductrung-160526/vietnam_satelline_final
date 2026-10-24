@@ -1,3 +1,5 @@
+> **Cập nhật:** đầu ra ảnh mới là **một TIFF toàn tỉnh/thời kỳ + một PNG xem nhanh**, không xuất các tile tạm lên Drive. DMSP theo năm; VIIRS và ảnh ngày theo tháng. File mới có `_province_` trong tên. File tile cũ giữ nguyên, không tự xóa.
+
 # Sáu nhánh cố định — Task 1, 2, 3 theo tỉnh, 2004–2025
 
 Đầu ra **cấp tỉnh**, không chạy từng xã/huyện. Giữ project `vngis-ee-2`; không dùng project `angelic-digit-434804-r9` ghi trong notebook, không đổi sang project của các nhánh tỉnh cũ. Sáu nhánh dùng chung project và quota, không tạo ra sáu quota độc lập.
@@ -41,7 +43,7 @@ Notebook gốc được lưu tại `notebooks/task123/`, giữ nguyên source c�
 - **Theo tháng**, không phải composite năm như pipeline trước. Lấy trong tháng; chỉ khi không có cảnh mới thử cửa sổ ±15, rồi ±30 ngày cùng nguồn như notebook. Không có cảnh cả ba cửa sổ thì null/missing, không đổi cảm biến.
 - S2 dùng QA60, median, rồi bốn chỉ số; TIFF 10 băng, 20 m (SWIR không gọi là gốc 10 m). Landsat extension 30 m.
 - Task1 CSV giữ đúng tháng, **không dùng ảnh mở rộng thời gian của Task2** để điền bảng tháng. Window, ngày bắt đầu/ngày kết thúc exclusive và asset IDs nằm trong job manifest. Tên file giữ tháng đích; cần đọc provenance nếu window>0.
-- Chia tile cố định để mỗi yêu cầu EE dưới 32 MB. Lưới EPSG4326, bước góc=scale/111319.49079327358, tương ứng nominal scale ở xích đạo; không gọi mỗi pixel địa lý đều đúng diện tích 20x20 m ở mọi vĩ độ. Float64 như bước toDouble của notebook + NoData -9999, có band descriptions, không thay số liệu khoa học bằng ảnh PNG.
+- Thử tải nguyên tỉnh khi dưới giới hạn 32 MB/10.000 pixel mỗi chiều; nếu lớn hoặc EE báo giới hạn kích thước thì tải các ô tạm cùng lưới rồi ghép trên đĩa thành đúng một TIFF. Không resample/đổi pixel khi ghép. Chỉ upload sau khi mọi ô cần thiết đã hoàn tất và xác minh. Lưới EPSG4326, bước góc=scale/111319.49079327358, tương ứng nominal scale ở xích đạo; không gọi mỗi pixel địa lý đều đúng diện tích 20x20 m ở mọi vĩ độ. Float64 như bước toDouble của notebook + NoData -9999, có band descriptions, không thay số liệu khoa học bằng ảnh PNG.
 
 ### Task 3 — TIFF đêm và bảng đêm
 
@@ -70,7 +72,7 @@ Landsat/DMSP, mức tỉnh, tiling, retry/checkpoint, null safety và bảo vệ
     _control/{state.json,branch_progress.json,manifests,receipts,...}
 ```
 
-Các nhóm khác đổi 001_011 thành 012_022, 023_033, 034_043, 044_053, 054_063. Ảnh nằm trực tiếp trong thư mục tỉnh, nhiều tile/tháng nếu tỉnh lớn. Hai CSV gộp theo nhánh; mỗi dòng vẫn cấp tỉnh. Tổng full cả sáu nhánh: 9.702 dòng đêm và 16.632 dòng ngày, bao gồm kỳ thiếu.
+Các nhóm khác đổi 001_011 thành 012_022, 023_033, 034_043, 044_053, 054_063. Ảnh mới nằm trực tiếp trong thư mục tỉnh: đúng một TIFF/tháng (DMSP một TIFF/năm), kèm PNG cùng tên. Các tile cũ nếu có vẫn được giữ để tránh xóa dữ liệu; nhận diện file mới bằng `_province_`. Hai CSV gộp theo nhánh; mỗi dòng vẫn cấp tỉnh. Tổng full cả sáu nhánh: 9.702 dòng đêm và 16.632 dòng ngày, bao gồm kỳ thiếu.
 
 Artifact mỗi lượt: `task123-<branch>-<mode>`, gồm hai CSV, `branch_progress.json` và PNG/JSON preview mẫu (tối đa 12 tile mỗi nguồn trong một lượt để tránh đầy ổ runner/artifact; QA của mọi tile vẫn nằm trong worker reports). Báo cáo `complete_with_gaps` vẫn có missing/failed; không coi dấu xanh hoặc số dòng đủ là dữ liệu đã đầy đủ/đã kiểm định. DATA_STATUS=`OK_NOTEBOOK` nghĩa là đã tính theo phương pháp, không phải đã kiểm định khoa học.
 
@@ -91,3 +93,19 @@ Giữ bản xác minh/hash/receipt và conditional delete hiện có; dữ liệ
 ```
 
 GitHub có thể vẫn có các run cũ đang chạy sau khi xóa nhánh; xóa nhánh không hủy run. API ở môi trường triển khai hiện bị Forbidden nên người dùng cần hủy các run cũ bằng giao diện. Không xóa project Google Cloud, secrets, dữ liệu Drive/E, main, inspriring-newton hoặc nhánh districts khi dọn bốn nhánh tên tỉnh cũ.
+
+
+## Xem ảnh mới và cập nhật runner/receiver
+
+1. Hủy các lượt đang chạy/chờ ở sáu nhánh trước khi khởi động lại bằng code mới. Không xóa folder Drive, state.json, receipt hoặc marker ổ E.
+2. Actions → `vngis-2024.yml` → chọn đúng nhánh → `pilot` hoặc `full` như cũ. Project vẫn `vngis-ee-2`; phạm vi sáu nhánh và công thức CSV không đổi. Các CSV/statistics đã hoàn thành vẫn dùng lại; ảnh đổi cách đóng gói nên tạo job mới để xuất toàn tỉnh.
+3. Mỗi kỳ có cặp, ví dụ:
+   - `01_ha_noi_VIIRS_MONTHLY_2014-07_province_v004tasks_<recipe>.tif`
+   - `01_ha_noi_VIIRS_MONTHLY_2014-07_province_v004tasks_<recipe>.png`
+4. **Mở PNG** trên Drive/Photos/trình duyệt để xem. Ban ngày chọn RED/GREEN/BLUE; ban đêm dùng grayscale log1p trên radiance/DN dương để hiện cả điểm sáng ít gặp. Đây chỉ là stretch hiển thị, không sửa TIFF. TIFF float64 nhiều băng/BigTIFF không bảo đảm được trình xem TIFF web hỗ trợ; cần QGIS cho dữ liệu địa lý gốc.
+5. Cập nhật checkout Windows từ một nhánh mới rồi giữ nguyên config local/marker/rclone. Receiver mới hiểu TIFF hình chữ nhật toàn tỉnh và PNG, xác minh đủ cả cặp trước khi conditional-delete. Receiver cũ không nên nhận các bundle mới vì sẽ không hiểu PNG.
+6. File TIFF/PNG cũng tới thư mục tỉnh tương ứng dưới `E:\SatelliteData\Task123_branches\...`. PNG trên Drive có thể được dọn sau khi bản E xác minh, giống TIFF. Artifact giữ tối đa 12 mẫu/nguồn mỗi lượt, còn mỗi TIFF mới thành công đều có PNG đi kèm trên Drive/E.
+
+Không ghép các nguồn/kỳ khác nhau, không dùng ảnh tháng khác để lấp ô thiếu ngoài quy tắc Task2 đã công bố. Bên ngoài tỉnh giữ NoData, không điền bằng 0. TIFF thực sự toàn NoData bị từ chối như trước. Không có cách tạo chi tiết ảnh thật nếu nguồn không có pixel hợp lệ.
+
+Ảnh rất lớn được ghép bằng cửa sổ trên đĩa, nén DEFLATE/BigTIFF khi cần; không gom cả tỉnh vào RAM. Reservation bao gồm TIFF+PNG và vẫn nằm trong phần ngân sách của nhánh. Nếu file nén vẫn vượt output cap hoặc runner thiếu ổ đĩa, báo OUTPUT_LIMIT và không upload file thiếu/cắt cụt/giảm độ phân giải âm thầm; trường hợp đó cần điều chỉnh ngân sách trước khi chạy lại.
