@@ -26,14 +26,18 @@ def output_job(config,base,bounds,priority):
     whole=grid(bounds,resolution);p=base['province']
     job=dict(base,kind='image',priority=priority,variant='source' if priority==0 else 'composite',
         scale=scale,grid_resolution=resolution,dtype='float64',tile=whole,image_layout='province',
-        chunk_pixels=config['tile_pixels'],preview_required=True)
+        chunk_pixels=config['tile_pixels'],preview_required=False)
     job.pop('job_id',None);job.pop('reserved_bytes',None)
     job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"
-    job['job_id']=digest({k:v for k,v in job.items() if k!='chunk_pixels'})[:32]
+    identity={k:v for k,v in job.items() if k!='chunk_pixels'}
+    # Preserve completed TIFF identities from the initial province export release.
+    # Disabling a display sidecar must not cause satellite data to be fetched again.
+    identity['preview_required']=True
+    job['job_id']=digest(identity)[:32]
     raw=whole['width']*whole['height']*len(job['bands'])*8
     cap=int(config['drive_staging_budget_gib']*1024**3*config['high_watermark']*.90)
     # Enforced output limit, not a promise of compression or permission to exceed quota.
-    job['reserved_bytes']=min(2*raw+5*1024**2,cap)
+    job['reserved_bytes']=min(2*raw+1024**2,cap)
     return canonical_job(job)
 
 def small(job):
