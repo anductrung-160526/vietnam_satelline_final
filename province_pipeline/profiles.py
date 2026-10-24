@@ -44,6 +44,9 @@ def table_specs(config):
                     yield dict(province=p, product=product, period=period, night=night)
 
 def in_scope(config, job):
+    if (config['quality'].get('processing_mode')=='notebook_tasks' and job.get('kind')=='image'
+            and job.get('image_layout')!='province'):
+        return False
     if job.get('pipeline_version') != 2:
         return False
     if job['province']['ma_tinh'] not in config['province_codes'] or int(job['period'][:4]) not in config['years']:
