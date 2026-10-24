@@ -1,4 +1,4 @@
-> **Cập nhật:** đầu ra ảnh mới là **một TIFF toàn tỉnh/thời kỳ + một PNG xem nhanh**, không xuất các tile tạm lên Drive. DMSP theo năm; VIIRS và ảnh ngày theo tháng. File mới có `_province_` trong tên. File tile cũ giữ nguyên, không tự xóa.
+> **Cập nhật:** đầu ra ảnh mới là **một TIFF toàn tỉnh/thời kỳ, không xuất PNG**, không xuất các tile tạm lên Drive. DMSP theo năm; VIIRS và ảnh ngày theo tháng. File mới có `_province_` trong tên. File tile cũ giữ nguyên, không tự xóa.
 
 # Sáu nhánh cố định — Task 1, 2, 3 theo tỉnh, 2004–2025
 
@@ -72,9 +72,9 @@ Landsat/DMSP, mức tỉnh, tiling, retry/checkpoint, null safety và bảo vệ
     _control/{state.json,branch_progress.json,manifests,receipts,...}
 ```
 
-Các nhóm khác đổi 001_011 thành 012_022, 023_033, 034_043, 044_053, 054_063. Ảnh mới nằm trực tiếp trong thư mục tỉnh: đúng một TIFF/tháng (DMSP một TIFF/năm), kèm PNG cùng tên. Các tile cũ nếu có vẫn được giữ để tránh xóa dữ liệu; nhận diện file mới bằng `_province_`. Hai CSV gộp theo nhánh; mỗi dòng vẫn cấp tỉnh. Tổng full cả sáu nhánh: 9.702 dòng đêm và 16.632 dòng ngày, bao gồm kỳ thiếu.
+Các nhóm khác đổi 001_011 thành 012_022, 023_033, 034_043, 044_053, 054_063. Ảnh mới nằm trực tiếp trong thư mục tỉnh: đúng một TIFF/tháng (DMSP một TIFF/năm); không tạo PNG mới. Các tile cũ nếu có vẫn được giữ để tránh xóa dữ liệu; nhận diện file mới bằng `_province_`. Hai CSV gộp theo nhánh; mỗi dòng vẫn cấp tỉnh. Tổng full cả sáu nhánh: 9.702 dòng đêm và 16.632 dòng ngày, bao gồm kỳ thiếu.
 
-Artifact mỗi lượt: `task123-<branch>-<mode>`, gồm hai CSV, `branch_progress.json` và PNG/JSON preview mẫu (tối đa 12 tile mỗi nguồn trong một lượt để tránh đầy ổ runner/artifact; QA của mọi tile vẫn nằm trong worker reports). Báo cáo `complete_with_gaps` vẫn có missing/failed; không coi dấu xanh hoặc số dòng đủ là dữ liệu đã đầy đủ/đã kiểm định. DATA_STATUS=`OK_NOTEBOOK` nghĩa là đã tính theo phương pháp, không phải đã kiểm định khoa học.
+Artifact mỗi lượt: `task123-<branch>-<mode>`, gồm hai CSV, `branch_progress.json` và báo cáo tiến độ; QA của mọi TIFF nằm trong worker reports. Báo cáo `complete_with_gaps` vẫn có missing/failed; không coi dấu xanh hoặc số dòng đủ là dữ liệu đã đầy đủ/đã kiểm định. DATA_STATUS=`OK_NOTEBOOK` nghĩa là đã tính theo phương pháp, không phải đã kiểm định khoa học.
 
 Ngân sách staging dùng lại từ biến cũ, trừ dữ liệu cũ hiện có rồi chia sáu phần. Mỗi nhánh có margin/share riêng để sáu controller không cùng chiếm toàn bộ 20GB. Khi phần riêng đầy, dừng và nhận về E; không hứa xuất hết lên Drive khi laptop ngủ.
 
@@ -95,17 +95,13 @@ Giữ bản xác minh/hash/receipt và conditional delete hiện có; dữ liệ
 GitHub có thể vẫn có các run cũ đang chạy sau khi xóa nhánh; xóa nhánh không hủy run. API ở môi trường triển khai hiện bị Forbidden nên người dùng cần hủy các run cũ bằng giao diện. Không xóa project Google Cloud, secrets, dữ liệu Drive/E, main, inspriring-newton hoặc nhánh districts khi dọn bốn nhánh tên tỉnh cũ.
 
 
-## Xem ảnh mới và cập nhật runner/receiver
+## TIFF-only và cập nhật runner/receiver
 
-1. Hủy các lượt đang chạy/chờ ở sáu nhánh trước khi khởi động lại bằng code mới. Không xóa folder Drive, state.json, receipt hoặc marker ổ E.
-2. Actions → `vngis-2024.yml` → chọn đúng nhánh → `pilot` hoặc `full` như cũ. Project vẫn `vngis-ee-2`; phạm vi sáu nhánh và công thức CSV không đổi. Các CSV/statistics đã hoàn thành vẫn dùng lại; ảnh đổi cách đóng gói nên tạo job mới để xuất toàn tỉnh.
-3. Mỗi kỳ có cặp, ví dụ:
-   - `01_ha_noi_VIIRS_MONTHLY_2014-07_province_v004tasks_<recipe>.tif`
-   - `01_ha_noi_VIIRS_MONTHLY_2014-07_province_v004tasks_<recipe>.png`
-4. **Mở PNG** trên Drive/Photos/trình duyệt để xem. Ban ngày chọn RED/GREEN/BLUE; ban đêm dùng grayscale log1p trên radiance/DN dương để hiện cả điểm sáng ít gặp. Đây chỉ là stretch hiển thị, không sửa TIFF. TIFF float64 nhiều băng/BigTIFF không bảo đảm được trình xem TIFF web hỗ trợ; cần QGIS cho dữ liệu địa lý gốc.
-5. Cập nhật checkout Windows từ một nhánh mới rồi giữ nguyên config local/marker/rclone. Receiver mới hiểu TIFF hình chữ nhật toàn tỉnh và PNG, xác minh đủ cả cặp trước khi conditional-delete. Receiver cũ không nên nhận các bundle mới vì sẽ không hiểu PNG.
-6. File TIFF/PNG cũng tới thư mục tỉnh tương ứng dưới `E:\SatelliteData\Task123_branches\...`. PNG trên Drive có thể được dọn sau khi bản E xác minh, giống TIFF. Artifact giữ tối đa 12 mẫu/nguồn mỗi lượt, còn mỗi TIFF mới thành công đều có PNG đi kèm trên Drive/E.
+1. Hủy các lượt đang chạy/chờ trước khi khởi động lại bằng code mới. Không xóa dữ liệu, state, receipts hoặc marker E.
+2. Chọn nhánh như cũ và mode pilot/full. Project vẫn vngis-ee-2, một TIFF/tỉnh/tháng cho VIIRS/ảnh ngày và một TIFF/tỉnh/năm cho DMSP. Tên mới có `_province_` và không có số ô.
+3. Không tạo hoặc upload PNG tự động, không kèm PNG trong manifest mới. QA pixel vẫn chạy. TIFF toàn tỉnh đã hoàn thành giữ nguyên ID, không bị tải lại chỉ vì bỏ PNG. Reservation chưa chạy theo kiểu cặp sẽ được chuyển sang TIFF-only.
+4. PNG và các manifest cặp đã tạo trước đây được giữ tương thích để tránh mất dữ liệu. Không tự xóa các PNG hoặc tile cũ.
+5. Mở TIFF float64 nhiều băng/BigTIFF bằng QGIS. TIFF ngày chọn RED/GREEN/BLUE; NTL chọn stable_lights/avg_rad và stretch. Bỏ PNG không bảo đảm trình xem TIFF web hỗ trợ các kiểu dữ liệu khoa học này.
+6. Cập nhật checkout Windows từ một nhánh mới, giữ config local/rclone/marker hiện có. Kết quả vẫn về thư mục tỉnh dưới E:\SatelliteData\Task123_branches\... và conditional-delete sau xác minh như trước.
 
-Không ghép các nguồn/kỳ khác nhau, không dùng ảnh tháng khác để lấp ô thiếu ngoài quy tắc Task2 đã công bố. Bên ngoài tỉnh giữ NoData, không điền bằng 0. TIFF thực sự toàn NoData bị từ chối như trước. Không có cách tạo chi tiết ảnh thật nếu nguồn không có pixel hợp lệ.
-
-Ảnh rất lớn được ghép bằng cửa sổ trên đĩa, nén DEFLATE/BigTIFF khi cần; không gom cả tỉnh vào RAM. Reservation bao gồm TIFF+PNG và vẫn nằm trong phần ngân sách của nhánh. Nếu file nén vẫn vượt output cap hoặc runner thiếu ổ đĩa, báo OUTPUT_LIMIT và không upload file thiếu/cắt cụt/giảm độ phân giải âm thầm; trường hợp đó cần điều chỉnh ngân sách trước khi chạy lại.
+Ảnh lớn vẫn ghép các ô tạm thành một TIFF trước khi upload; không đổi pixel, không âm thầm giảm độ phân giải. Nếu file nén vượt output cap hoặc runner thiếu ổ đĩa, báo OUTPUT_LIMIT, không xuất file thiếu/cắt cụt. Ảnh nguồn thực sự toàn NoData vẫn bị từ chối. Không điền dữ liệu từ nguồn/kỳ khác ngoài phương pháp Task2 đã công bố.

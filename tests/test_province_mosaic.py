@@ -116,6 +116,7 @@ class MosaicTests(unittest.TestCase):
         c=configure(base(),selection());c['years']=[2025];b={'01':boundary(fixture())}
         j=next(generate_v2(c,b,META,0));c['drive_staging_budget_gib']=4
         other=next(generate_v2(c,b,META,0));self.assertEqual(j['job_id'],other['job_id'])
+        self.assertFalse(j['preview_required'])
         from province_pipeline.profiles import in_scope
         self.assertTrue(in_scope(c,j));self.assertFalse(in_scope(c,dict(j,image_layout='chunk')))
 
@@ -151,14 +152,14 @@ class PreviewTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'combined reservation'):_remote_manifest(d,j)
 
 class BundleIntegrationTests(unittest.TestCase):
-    def test_whole_tiff_and_png_are_received_verified_before_both_are_deleted(self):
+    def test_whole_tiff_is_received_without_creating_or_uploading_png(self):
         import os,hashlib
         from province_pipeline.direct_export import transfer
         from province_pipeline.controller import reconcile
         from province_pipeline.receiver import receive_manifest
         from province_pipeline.common import provinces
         from task_pipeline.province_image import download as real_download
-        j=dict(fixture(),variant='source',prefix='hanoi_2025_01_province',preview_required=True,pipeline_version=2,
+        j=dict(fixture(),variant='source',prefix='hanoi_2025_01_province',preview_required=False,pipeline_version=2,
             layout_version=3,folder_id='data',local_directory='unused',province=provinces()[0],
             algorithm_version='v004tasks',priority=0,export_backend='direct',attempt=1,status='RESERVED')
         d=FakeDrive();d.find=lambda parent,name:next((f for f in d.children(parent) if f['name']==name),None)
@@ -185,13 +186,36 @@ class BundleIntegrationTests(unittest.TestCase):
                 reconcile(d,folders,state,[])
                 self.assertEqual(j['status'],'REMOTE_READY')
                 manifest=d.documents['manifests','whole.json']
-                self.assertEqual({f['id'] for f in manifest['files']},{'tif','png'})
+                self.assertEqual({f['id'] for f in manifest['files']},{'tif'})
+                self.assertNotIn('preview',output)
+                self.assertFalse(list(Path(tmp).rglob('*.png')))
                 root=Path(tmp)/'E';root.mkdir()
                 with patch('province_pipeline.receiver.verify_volume',return_value=root):
                     receive_manifest(dict(volume_marker='test',allow_remote_delete=True,drive_root_id='root'),
                                      d,folders,manifest,root)
                 self.assertFalse(d.files)
                 self.assertEqual(len(list(root.rglob('*.tif'))),1)
-                self.assertEqual(len(list(root.rglob('*.png'))),1)
+                self.assertEqual(len(list(root.rglob('*.png'))),0)
                 self.assertTrue(d.documents['receipts','whole.json']['remote_deleted'])
             finally:os.chdir(cwd)
+
+class TiffOnlyCompatibilityTests(unittest.TestCase):
+    def test_completed_province_tiff_identity_does_not_change_when_disabling_png(self):
+        from task_pipeline.province_image import output_job
+        from province_pipeline.jobs import table_job
+        from province_pipeline.profiles import table_specs
+        c=configure(base(),selection());spec=next(table_specs(c))
+        job=output_job(c,table_job(c,spec,META),[105,20,105.1,20.1],0)
+        self.assertEqual(job['job_id'],'c44d370c6267bf363665d4fd1ad78a8c')
+        self.assertFalse(job['preview_required'])
+
+    def test_existing_unsubmitted_bundle_reservation_is_changed_to_tiff_only(self):
+        from province_pipeline.priority import prepare_priority
+        c=configure(base(),selection());c['years']=[2025]
+        bounds={'01':boundary(fixture())};j=next(generate_v2(c,bounds,META,0))
+        j.update(status='RESERVED',preview_required=True,folder_id='data',folder_name='data',attempt=1)
+        d=FakeDrive();d.folder=lambda p,n:p+'/'+n;d.usage=lambda root:0;d.account_free=lambda:2**40
+        d.documents['root/_control','state.json']=dict(jobs={j['job_id']:j},inventory={},cursor=0,layout_version=3)
+        plan=prepare_priority(c,d,bounds,META,lambda j:dict(status='UNAVAILABLE',count=0))
+        pending=next(job for job in plan['jobs'] if job['job_id']==j['job_id'])
+        self.assertFalse(pending['preview_required'])

@@ -42,6 +42,8 @@ def prepare_priority(config, drive, boundaries, metadata, inventory_callback):
         ensure_drive_packages(drive, config['drive_root_id'])
         state['layout_version'] = LAYOUT_VERSION
     for j in state['jobs'].values():
+        if j.get('image_layout')=='province' and j['status']=='RESERVED':
+            j['preview_required']=False
         if j['status'] == 'RESERVED' and not in_scope(config, j):
             j['status'] = 'DEFERRED'  # only never-submitted reservations
     plan, checks = [], 0

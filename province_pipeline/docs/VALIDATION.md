@@ -101,3 +101,7 @@ credentials remains to be checked on Windows; no source was deleted by these tes
 - Image jobs are now one per province/period on six Task123 branches. Statistical job IDs and project remain unchanged. Legacy unfinished tile reservations are deferred; existing tile files are retained.
 - Tests exercise small direct rectangular downloads, windowed mosaic equality including edge windows, size-only fallback, permission errors, failure/time-budget cleanup, output budget enforcement, paired PNG/TIFF manifest checks and receiver validation, plus sparse night-light visibility without modifying TIFF values.
 - This verifies local code, TIFF fixtures and request construction, not a live download of the user's screenshot file. Scientific float64 TIFFs are not guaranteed to display in browser TIFF plugins; PNG is the deliberate display output.
+
+## TIFF-only export
+
+PNG generation/upload is disabled for all new whole-province exports. Numeric QA remains active. The released TIFF job identity is retained, so completed TIFFs are not fetched again; pending old paired reservations adopt TIFF-only. Existing PNG manifests remain readable without deleting earlier files. Delivery regression checks one TIFF, zero PNG generation/uploads, and verified receipt/deletion of the TIFF alone.
