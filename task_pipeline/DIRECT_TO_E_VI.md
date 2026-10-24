@@ -77,6 +77,12 @@ Lệnh CLI tương đương (cũng không dùng Drive):
 
 Giữ PowerShell đang chạy; Ctrl+C dừng có trật tự khi yêu cầu EE hiện tại kết thúc. Chạy lại đúng lệnh để tiếp tục các công việc chưa xong. Không có giới hạn runner GitHub 5 giờ 15 phút hoặc ngân sách Drive 20 GB trong chế độ local; giới hạn là dung lượng trống của E và quota EE. Không hứa sẽ lấy nhanh hơn khả năng xử lý của EE.
 
+## Thứ tự chạy trong mỗi nhóm
+
+Code chạy theo từng bước trên **toàn nhóm**: ảnh đêm tất cả tỉnh → CSV ngày/đêm tất cả tỉnh → ảnh ngày tất cả tỉnh. Trong một bước, xử lý lần lượt từng tỉnh. Sáu nhóm chạy độc lập; nhóm nhanh không chờ nhóm chậm. Pilot chỉ có tỉnh đầu nên thứ tự vẫn là ảnh đêm → CSV → ảnh ngày của tỉnh đó.
+
+Nếu đang chạy bản cũ, nhấn Ctrl+C và chờ lệnh thoát trước khi cập nhật code. Giữ nguyên thư mục kết quả, `.local_state`, receipts, local.json và marker ổ E. Sau khi cập nhật đúng nhánh, chạy lại lệnh cũ (`--mode full` cho toàn nhóm). Code mới xác minh và tái sử dụng file đã hoàn thành; ảnh ngày/CSV đã làm trước đó vẫn giữ nguyên. Không cập nhật code giữa lúc Python còn chạy.
+
 ## 5. Xem kết quả và tiến độ
 
 ```text

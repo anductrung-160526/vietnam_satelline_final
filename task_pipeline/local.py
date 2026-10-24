@@ -190,9 +190,13 @@ def run(config,root,boundaries,metadata,inventory=None,exporter=export):
                 state['jobs'][job['job_id']]=dict(job,status='DONE_LOCAL')
                 state['statistics'][job['job_id']]=read_table(local_path(root,proof['relative_path']))
         save()
-        for province in config['task_scope']['provinces']:
-            active=dict(config,province_codes=[province['ma_tinh']])
-            for stage in range(3):
+        # Complete each stage across the whole branch before admitting the next.
+        # Job identities and receipts stay unchanged, so existing work is reused.
+        for stage in range(3):
+            audit('local_stage_started',stage={0:'night_images',1:'indices_csv',2:'day_images'}[stage],
+                  province_codes=config['province_codes'])
+            for province in config['task_scope']['provinces']:
+                active=dict(config,province_codes=[province['ma_tinh']])
                 free=shutil.disk_usage(root).free
                 active['local_output_limit_bytes']=max(0,(free-2*1024**3)//2)
                 if active['local_output_limit_bytes']<=0:exit_code=4;break
