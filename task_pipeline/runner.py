@@ -16,12 +16,15 @@ from province_pipeline.controller import control_folders,reconcile_existing,work
 from province_pipeline.priority import prepare_priority
 from province_pipeline.panels import publish
 from .scope import relative_root
+from .province_image import ExportInterrupted
 
 STOP=False
 
 def request_stop(*_):
     global STOP
     STOP=True
+    from . import province_image
+    province_image.CANCELLED=True
 
 
 def resolve(config,drive):
@@ -45,7 +48,9 @@ def resolve(config,drive):
 
 
 def run(config,drive,boundaries,metadata,max_seconds=18900,transfer=work,clock=time.monotonic):
-    start=clock();selection=config['task_scope'];folders=control_folders(drive,config['drive_root_id'])
+    start=clock()
+    config=dict(config,_task_deadline=start+max_seconds-300)
+    selection=config['task_scope'];folders=control_folders(drive,config['drive_root_id'])
     completed=[];exit_code=0
     # Sequential province completion gives visible first-province outputs early.
     # Scientific job IDs don't include pilot/full or branch range, so full reuses pilot.
@@ -68,6 +73,8 @@ def run(config,drive,boundaries,metadata,max_seconds=18900,transfer=work,clock=t
                     exit_code=130 if STOP else 3;break
                 # Single job at a time, one EE request stream per branch/project share.
                 try:transfer(active,drive,dict(plan,jobs=[job]),job['province']['group_id'],boundaries)
+                except ExportInterrupted:
+                    exit_code=3;break
                 except RuntimeError:
                     audit('task_transfer_retry_pending',job_id=job['job_id'])
             reconcile_existing(config,drive)
