@@ -1,0 +1,384 @@
+{
+  "version": "63-provinces-2024-v1",
+  "verification": "REQUIRES_BOUNDARY_CROSSWALK",
+  "provinces": [
+    {
+      "ma_tinh": "01",
+      "ten_tinh": "Hà Nội",
+      "slug": "ha_noi",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "02",
+      "ten_tinh": "Hà Giang",
+      "slug": "ha_giang",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "04",
+      "ten_tinh": "Cao Bằng",
+      "slug": "cao_bang",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "06",
+      "ten_tinh": "Bắc Kạn",
+      "slug": "bac_kan",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "08",
+      "ten_tinh": "Tuyên Quang",
+      "slug": "tuyen_quang",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "10",
+      "ten_tinh": "Lào Cai",
+      "slug": "lao_cai",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "11",
+      "ten_tinh": "Điện Biên",
+      "slug": "dien_bien",
+      "group_id": 0
+    },
+    {
+      "ma_tinh": "12",
+      "ten_tinh": "Lai Châu",
+      "slug": "lai_chau",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "14",
+      "ten_tinh": "Sơn La",
+      "slug": "son_la",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "15",
+      "ten_tinh": "Yên Bái",
+      "slug": "yen_bai",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "17",
+      "ten_tinh": "Hòa Bình",
+      "slug": "hoa_binh",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "19",
+      "ten_tinh": "Thái Nguyên",
+      "slug": "thai_nguyen",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "20",
+      "ten_tinh": "Lạng Sơn",
+      "slug": "lang_son",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "22",
+      "ten_tinh": "Quảng Ninh",
+      "slug": "quang_ninh",
+      "group_id": 1
+    },
+    {
+      "ma_tinh": "24",
+      "ten_tinh": "Bắc Giang",
+      "slug": "bac_giang",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "25",
+      "ten_tinh": "Phú Thọ",
+      "slug": "phu_tho",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "26",
+      "ten_tinh": "Vĩnh Phúc",
+      "slug": "vinh_phuc",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "27",
+      "ten_tinh": "Bắc Ninh",
+      "slug": "bac_ninh",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "30",
+      "ten_tinh": "Hải Dương",
+      "slug": "hai_duong",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "31",
+      "ten_tinh": "Hải Phòng",
+      "slug": "hai_phong",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "33",
+      "ten_tinh": "Hưng Yên",
+      "slug": "hung_yen",
+      "group_id": 2
+    },
+    {
+      "ma_tinh": "34",
+      "ten_tinh": "Thái Bình",
+      "slug": "thai_binh",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "35",
+      "ten_tinh": "Hà Nam",
+      "slug": "ha_nam",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "36",
+      "ten_tinh": "Nam Định",
+      "slug": "nam_dinh",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "37",
+      "ten_tinh": "Ninh Bình",
+      "slug": "ninh_binh",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "38",
+      "ten_tinh": "Thanh Hóa",
+      "slug": "thanh_hoa",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "40",
+      "ten_tinh": "Nghệ An",
+      "slug": "nghe_an",
+      "group_id": 3
+    },
+    {
+      "ma_tinh": "42",
+      "ten_tinh": "Hà Tĩnh",
+      "slug": "ha_tinh",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "44",
+      "ten_tinh": "Quảng Bình",
+      "slug": "quang_binh",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "45",
+      "ten_tinh": "Quảng Trị",
+      "slug": "quang_tri",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "46",
+      "ten_tinh": "Thừa Thiên Huế",
+      "slug": "thua_thien_hue",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "48",
+      "ten_tinh": "Đà Nẵng",
+      "slug": "da_nang",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "49",
+      "ten_tinh": "Quảng Nam",
+      "slug": "quang_nam",
+      "group_id": 4
+    },
+    {
+      "ma_tinh": "51",
+      "ten_tinh": "Quảng Ngãi",
+      "slug": "quang_ngai",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "52",
+      "ten_tinh": "Bình Định",
+      "slug": "binh_dinh",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "54",
+      "ten_tinh": "Phú Yên",
+      "slug": "phu_yen",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "56",
+      "ten_tinh": "Khánh Hòa",
+      "slug": "khanh_hoa",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "58",
+      "ten_tinh": "Ninh Thuận",
+      "slug": "ninh_thuan",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "60",
+      "ten_tinh": "Bình Thuận",
+      "slug": "binh_thuan",
+      "group_id": 5
+    },
+    {
+      "ma_tinh": "62",
+      "ten_tinh": "Kon Tum",
+      "slug": "kon_tum",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "64",
+      "ten_tinh": "Gia Lai",
+      "slug": "gia_lai",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "66",
+      "ten_tinh": "Đắk Lắk",
+      "slug": "dak_lak",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "67",
+      "ten_tinh": "Đắk Nông",
+      "slug": "dak_nong",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "68",
+      "ten_tinh": "Lâm Đồng",
+      "slug": "lam_dong",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "70",
+      "ten_tinh": "Bình Phước",
+      "slug": "binh_phuoc",
+      "group_id": 6
+    },
+    {
+      "ma_tinh": "72",
+      "ten_tinh": "Tây Ninh",
+      "slug": "tay_ninh",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "74",
+      "ten_tinh": "Bình Dương",
+      "slug": "binh_duong",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "75",
+      "ten_tinh": "Đồng Nai",
+      "slug": "dong_nai",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "77",
+      "ten_tinh": "Bà Rịa - Vũng Tàu",
+      "slug": "ba_ria_vung_tau",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "79",
+      "ten_tinh": "Hồ Chí Minh",
+      "slug": "ho_chi_minh",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "80",
+      "ten_tinh": "Long An",
+      "slug": "long_an",
+      "group_id": 7
+    },
+    {
+      "ma_tinh": "82",
+      "ten_tinh": "Tiền Giang",
+      "slug": "tien_giang",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "83",
+      "ten_tinh": "Bến Tre",
+      "slug": "ben_tre",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "84",
+      "ten_tinh": "Trà Vinh",
+      "slug": "tra_vinh",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "86",
+      "ten_tinh": "Vĩnh Long",
+      "slug": "vinh_long",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "87",
+      "ten_tinh": "Đồng Tháp",
+      "slug": "dong_thap",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "89",
+      "ten_tinh": "An Giang",
+      "slug": "an_giang",
+      "group_id": 8
+    },
+    {
+      "ma_tinh": "91",
+      "ten_tinh": "Kiên Giang",
+      "slug": "kien_giang",
+      "group_id": 9
+    },
+    {
+      "ma_tinh": "92",
+      "ten_tinh": "Cần Thơ",
+      "slug": "can_tho",
+      "group_id": 9
+    },
+    {
+      "ma_tinh": "93",
+      "ten_tinh": "Hậu Giang",
+      "slug": "hau_giang",
+      "group_id": 9
+    },
+    {
+      "ma_tinh": "94",
+      "ten_tinh": "Sóc Trăng",
+      "slug": "soc_trang",
+      "group_id": 9
+    },
+    {
+      "ma_tinh": "95",
+      "ten_tinh": "Bạc Liêu",
+      "slug": "bac_lieu",
+      "group_id": 9
+    },
+    {
+      "ma_tinh": "96",
+      "ten_tinh": "Cà Mau",
+      "slug": "ca_mau",
+      "group_id": 9
+    }
+  ]
+}

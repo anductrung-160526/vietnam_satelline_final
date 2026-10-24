@@ -1,0 +1,20 @@
+name: Prepare province runner
+description: Reuse existing Earth Engine service-account and rclone GitHub Secrets
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - shell: bash
+      run: python -m pip install -r province_pipeline/requirements.txt
+    - name: Install rclone from signed Ubuntu repositories
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y rclone
+    - name: Prepare existing credentials without logging their contents
+      shell: bash
+      run: python -m province_pipeline.ci_setup
+    - shell: bash
+      run: python -m province_pipeline --config .province-local/config.json sync-boundaries
