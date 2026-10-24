@@ -24,6 +24,13 @@ def receive(config,drive,dry_run=False):
             dest=local_path(base,'Task123_branches/'+name)
             if not dry_run:dest.mkdir(parents=True,exist_ok=True)
             elif not dest.exists():continue
+            owner=dest/'.local_state'/'state.json'
+            if owner.exists():
+                import json
+                if json.loads(owner.read_text(encoding='utf-8')).get('execution_backend')=='local':
+                    from province_pipeline.common import audit
+                    audit('branch_receive_skipped',branch=name,reason='DIRECT_LOCAL_OWNER')
+                    continue
             child=dict(config,drive_root_id=folder['id'],local_root=str(dest))
             try:
                 run(child,drive,dry_run)
