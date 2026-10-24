@@ -52,42 +52,40 @@ def run(config,drive,boundaries,metadata,max_seconds=18900,transfer=work,clock=t
     config=dict(config,_task_deadline=start+max_seconds-300)
     selection=config['task_scope'];folders=control_folders(drive,config['drive_root_id'])
     completed=[];exit_code=0
-    # Sequential province completion gives visible first-province outputs early.
-    # Scientific job IDs don't include pilot/full or branch range, so full reuses pilot.
-    for province in selection['provinces']:
-        active=dict(config,province_codes=[province['ma_tinh']])
-        def check(job):
-            import ee
-            from .methods import inventory
-            return inventory(job,ee.Geometry(boundaries[job['province']['ma_tinh']]['geometry']))
-        while True:
-            if STOP or Path('STOP').exists():exit_code=130;break
-            if clock()-start>max_seconds-300:exit_code=3;break
-            if drive.find(folders['root'],'STOP'):exit_code=130;break
-            plan=prepare_priority(active,drive,boundaries,metadata,check)
-            state=drive.read_json(folders['root'],'state.json')
-            if state['current_stage']=='complete':
-                completed.append(province['number']);break
-            for job in plan['jobs']:
-                if STOP or clock()-start>max_seconds-300:
-                    exit_code=130 if STOP else 3;break
-                # Single job at a time, one EE request stream per branch/project share.
-                try:transfer(active,drive,dict(plan,jobs=[job]),job['province']['group_id'],boundaries)
-                except ExportInterrupted:
-                    exit_code=3;break
-                except RuntimeError:
-                    audit('task_transfer_retry_pending',job_id=job['job_id'])
-            reconcile_existing(config,drive)
-            state=drive.read_json(folders['root'],'state.json')
-            publish(config,drive,state,metadata)
-            if state.get('waiting_for_space'):
-                exit_code=4;break
-            if any(j['status']=='BLOCKED_AMBIGUOUS' for j in state['jobs'].values()):
-                exit_code=2;break
-            # Never spin indefinitely when a direct uploaded report has no visible file.
-            if not plan['jobs'] and any(j['status']=='RUNNING' for j in state['jobs'].values()):
-                exit_code=2;break
-            if exit_code:break
+    # Priority admission must see the entire group to enforce the stage barrier.
+    # Scientific job IDs remain unchanged when resuming older province-first runs.
+    active=config
+    def check(job):
+        import ee
+        from .methods import inventory
+        return inventory(job,ee.Geometry(boundaries[job['province']['ma_tinh']]['geometry']))
+    while True:
+        if STOP or Path('STOP').exists():exit_code=130;break
+        if clock()-start>max_seconds-300:exit_code=3;break
+        if drive.find(folders['root'],'STOP'):exit_code=130;break
+        plan=prepare_priority(active,drive,boundaries,metadata,check)
+        state=drive.read_json(folders['root'],'state.json')
+        if state['current_stage']=='complete':
+            completed=[p['number'] for p in selection['provinces']];break
+        for job in plan['jobs']:
+            if STOP or clock()-start>max_seconds-300:
+                exit_code=130 if STOP else 3;break
+            # Single job at a time, one EE request stream per branch/project share.
+            try:transfer(active,drive,dict(plan,jobs=[job]),job['province']['group_id'],boundaries)
+            except ExportInterrupted:
+                exit_code=3;break
+            except RuntimeError:
+                audit('task_transfer_retry_pending',job_id=job['job_id'])
+        reconcile_existing(config,drive)
+        state=drive.read_json(folders['root'],'state.json')
+        publish(config,drive,state,metadata)
+        if state.get('waiting_for_space'):
+            exit_code=4;break
+        if any(j['status']=='BLOCKED_AMBIGUOUS' for j in state['jobs'].values()):
+            exit_code=2;break
+        # Never spin indefinitely when a direct uploaded report has no visible file.
+        if not plan['jobs'] and any(j['status']=='RUNNING' for j in state['jobs'].values()):
+            exit_code=2;break
         if exit_code:break
     state=drive.read_json(folders['root'],'state.json',{'jobs':{}})
     publish(config,drive,state,metadata)

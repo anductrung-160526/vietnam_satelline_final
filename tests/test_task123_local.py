@@ -33,6 +33,45 @@ def image_job(c):
 
 
 class LocalTests(unittest.TestCase):
+    def test_all_group_night_images_precede_any_tables_and_day_images(self):
+        c=configure(base(),selection(mode='full'));c['task_scope']['provinces']=c['task_scope']['provinces'][:2]
+        c['province_codes']=[p['ma_tinh'] for p in c['task_scope']['provinces']]
+        c.update(execution_backend='local',volume_marker='test',local_output_limit_bytes=40*1024**3)
+        template=image_job(c);visited=[]
+        def jobs(active,boundaries,metadata,stage):
+            code=active['province_codes'][0];visited.append((stage,code))
+            job=copy.deepcopy(template)
+            job['job_id']=f'{stage}-{code}';job['province']['ma_tinh']=code
+            return iter([job])
+        source=Mock(return_value=dict(status='UNAVAILABLE',count=0))
+        expected=[(stage,code) for stage in range(3) for code in c['province_codes']]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with patch('task_pipeline.local.verify_volume',return_value=root),patch('task_pipeline.local.generate_v2',side_effect=jobs),patch('task_pipeline.local.panels',return_value={}):
+                self.assertEqual(run(c,root,{},META,inventory=source),0)
+                self.assertEqual(visited,expected)
+                visited.clear()
+                self.assertEqual(run(c,root,{},META,inventory=source),0)
+                self.assertEqual(visited,expected)
+            # Synthetic stages share the same source/period, so inventory is cached.
+            self.assertEqual(source.call_count,2)
+            state=json.loads((root/'.local_state/state.json').read_text())
+            self.assertEqual(len(state['jobs']),6)
+
+    def test_night_failure_stops_group_before_csv_or_day_images(self):
+        c=config();c['task_scope']['provinces']=selection(mode='full')['provinces'][:2]
+        c['province_codes']=[p['ma_tinh'] for p in c['task_scope']['provinces']]
+        j=image_job(c);visited=[]
+        def jobs(active,boundaries,metadata,stage):
+            visited.append((stage,active['province_codes'][0]))
+            return iter([j])
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with patch('task_pipeline.local.verify_volume',return_value=root),patch('task_pipeline.local.generate_v2',side_effect=jobs),patch('task_pipeline.local.panels',return_value={}):
+                code=run(c,root,{},META,inventory=Mock(side_effect=RuntimeError('network')))
+            self.assertEqual(code,2)
+            self.assertEqual(visited,[(0,'01')])
+
     def test_direct_output_limit_uses_external_disk_not_drive_budget(self):
         c=config();c['drive_staging_budget_gib']=None
         j=image_job(c)

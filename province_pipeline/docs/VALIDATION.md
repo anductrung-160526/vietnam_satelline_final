@@ -111,3 +111,7 @@ PNG generation/upload is disabled for all new whole-province exports. Numeric QA
 214 offline tests pass, including direct image commit with same-volume scratch and receipt, no PNG/Drive credential calls, verified resume/adoption of received TIFFs, per-source nulls/NoData, disk-full pause, and incremental CSV publication without re-export. Existing-output overwrite is refused without provenance. The laptop command uses EE auth only and a disk-based reservation rather than the Drive staging budget.
 
 PowerShell/Windows-volume interaction and actual user EE OAuth were not executed in this Linux cloud environment. The new script must be launched by the user on the laptop; existing hosted GitHub workflows still use Drive and must be canceled separately when switching. No self-hosted runner or Windows scheduled producer is installed remotely by this change.
+
+## Whole-group stage priority
+
+217 offline tests pass. Local execution now completes night-image work across every selected province before entering CSV work, then completes CSV work before day-image work. The hosted runner supplies the entire branch scope to existing bounded priority admission, enforcing the same ordering. Six branches remain independent. Tests cover multi-province stage ordering, cached restart, stopping before CSV on a night-stage network failure, and the full cloud admission scope. Job IDs, receipts, project, sources and output paths are unchanged; existing verified results are reused. No live Windows/EE extraction was run for this change.
