@@ -171,6 +171,9 @@ class DirectDownloadTests(unittest.TestCase):
             params=image.getDownloadURL.call_args.args[0]
             self.assertEqual(params['dimensions'],[4,4])
             self.assertEqual(params['crs_transform'],transform)
+            from rasterio.crs import CRS
+            self.assertTrue(params['crs'].startswith('PROJCS['))
+            self.assertEqual(CRS.from_wkt(params['crs']),CRS.from_epsg(6933))
             self.assertNotIn('region',params)
             self.assertNotIn('scale',params)
             # Exercise the actual SDK parameter validator; only serialization/HTTP are mocked.

@@ -151,3 +151,9 @@ Sau khi push bản sửa vào nhánh phát triển, mở Actions → Province sa
 **Run workflow**, chọn **inspriring-newton**, mode **check_only**. Không chỉ bấm
 Re-run jobs của lượt cũ vì lượt cũ vẫn dùng commit cũ. Merge PR vào main sau khi
 kiểm tra bản sửa; lịch trên main chưa dùng bản nhánh phát triển khi chưa merge.
+
+Nếu gặp `Projection: The CRS of a map projection could not be parsed`, dùng bản
+mới có WKT đầy đủ và chạy một lượt mới trên nhánh `inspriring-newton`, mode
+`check_only`. Tìm dòng `Earth Engine projection and exact-grid request probe: PASS`.
+Không đổi `crs` trong cấu hình sang hệ khác để che lỗi; lưới tỉnh vẫn là EPSG:6933.
+Nếu probe thất bại, gửi lỗi ở bước preflight trước khi tiếp tục chạy dữ liệu thật.

@@ -7,6 +7,7 @@ import shutil
 import uuid
 from pathlib import Path
 from .common import atomic_json, audit, local_path
+from .projection import same_crs
 
 
 def hashes(path):
@@ -103,7 +104,7 @@ def validate(path, file, job):
         import rasterio
         from affine import Affine
         with rasterio.open(path) as ds:
-            if str(ds.crs) != job['crs'] or ds.count != len(job['bands']) or ds.nodata != -9999:
+            if not same_crs(ds.crs,job['crs']) or ds.count != len(job['bands']) or ds.nodata != -9999:
                 raise ValueError('TIFF CRS/bands/nodata mismatch')
             if ds.width != ds.height or ds.width * job['scale'] != job['tile']['bounds'][2]-job['tile']['bounds'][0]:
                 raise ValueError('TIFF dimensions do not match bounded tile')

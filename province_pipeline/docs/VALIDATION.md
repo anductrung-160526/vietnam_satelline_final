@@ -36,3 +36,14 @@ The actual Earth Engine Python SDK validator is exercised offline: the corrected
 combination is accepted and the previous combination with region is rejected.
 The TIFF payload test still checks its transform, dimensions, bands and NoData.
 This validates request construction, not a completed live satellite download.
+
+## Projection parsing diagnostic
+
+EE requests now spell out EPSG:6933 as OGC WKT1_GDAL at download, reduction, and
+batch-export boundaries. The raster grid, transform, statistical CRS label and job
+identity remain unchanged. Local tests verify the WKT round-trip equals EPSG:6933
+and accept equivalent WKT in received TIFFs; they do not prove live EE support.
+Preflight additionally calls the live projection nominalScale and constructs a
+4×4 constant-image exact-grid download request. It does not print the signed URL,
+retrieve satellite pixels, upload to Drive, or delete files. Require this probe
+PASS before retrying the satellite workflow after a projection parsing error.

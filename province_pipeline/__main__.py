@@ -86,6 +86,9 @@ def main():
             raise RuntimeError('Configured Drive staging root is not an active folder')
         print('Earth Engine service-account probe: PASS')
         print('Drive identity and staging folder read access: PASS')
+        from .projection import probe_download_projection
+        probe_download_projection(c)
+        print('Earth Engine projection and exact-grid request probe: PASS')
         print('Drive account free bytes:', drive.account_free())
         print('No satellite export, upload, or deletion performed')
         return
