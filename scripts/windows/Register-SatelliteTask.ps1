@@ -29,7 +29,7 @@ $Python = (Resolve-Path -LiteralPath $Python).Path
 $authPath = (Resolve-Path -LiteralPath $authPath).Path
 if ($RcloneConfig) { $RcloneConfig = $authPath } else { $Credentials = $authPath }
 $script = Join-Path $Repo "scripts\windows\Receive-Satellite.ps1"
-$arguments = "-NoProfile -ExecutionPolicy RemoteSigned -File `"$script`" -Repo `"$Repo`" -Config `"$Config`" -Python `"$Python`""
+$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File `"$script`" -Repo `"$Repo`" -Config `"$Config`" -Python `"$Python`""
 if ($RcloneConfig) { $arguments += " -RcloneConfig `"$RcloneConfig`" -Remote `"$Remote`" -RcloneExecutable `"$RcloneExecutable`"" }
 else { $arguments += " -Credentials `"$Credentials`"" }
 $powerShellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"

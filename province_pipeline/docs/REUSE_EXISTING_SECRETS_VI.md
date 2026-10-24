@@ -235,3 +235,18 @@ Giữ allow_remote_delete=false khi kiểm tra task. Sau khi kết quả tải/r
 đạt, có thể bật true ở config LOCAL; không cần bật phía GitHub để receiver xóa
 những source đã verify. DELETE_GUARD_UNAVAILABLE nghĩa là điều kiện bảo vệ xóa
 chưa chứng minh được; giữ source, không thay bằng lệnh purge/move để bỏ kiểm tra.
+
+## 11. LastTaskResult 3221225786 (0xC000013A)
+
+Đây là trạng thái tiến trình bị ngắt (Control-C exit), không tự chứng minh lỗi
+Drive/ảnh/credentials. Có thể do đóng console hoặc dừng tiến trình. Nếu transcript
+chỉ có header, chưa kết luận Python đã chạy xong. So sánh LastRunTime, State và log
+đúng lượt; khi task còn Running, LastTaskResult có thể chưa là kết quả cuối lượt.
+
+Script đăng ký mới thêm -NonInteractive -WindowStyle Hidden vào host PowerShell
+để lượt chạy nền không bật console ra desktop. Nó vẫn giữ log, đường dẫn tuyệt đối,
+kiểm tra dữ liệu, và chính sách RemoteSigned. Không dùng Bypass, không thay secret.
+Sau khi cập nhật action, Start-ScheduledTask rồi đợi task về Ready và kiểm tra
+LastTaskResult=0 cùng transcript có sự kiện receiver, không chỉ header. Nếu vẫn
+bị ngắt, cần xem Task Scheduler History/Event Viewer để xác định nguyên nhân;
+không quy kết mọi lỗi C000013A là do người dùng đóng cửa sổ.
