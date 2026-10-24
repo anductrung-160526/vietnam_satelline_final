@@ -27,3 +27,12 @@ python -m province_pipeline --help
 Cấu hình mặc định pause=true, allow_remote_delete=false, chỉ chọn Hà Nội 2024. Không tự tải toàn quốc hoặc xóa dữ liệu Drive trong lúc phát triển. Chạy pilot theo SETUP_VI.md trước khi bật xóa và mở rộng.
 
 Split auth, CI materialization, direct recovery và BOM config được kiểm thử offline. Không có quyền đọc giá trị GitHub Secrets để chạy probe trong môi trường cloud chat. Người dùng chạy workflow check_only bằng chính GitHub runner để xác minh quyền thật.
+
+## Regression: Earth Engine download parameter combination
+
+Direct TIFF download uses `crs + crs_transform + dimensions`, without `region` or
+`scale`. The affine origin and pixel dimensions define the exact tile rectangle.
+The actual Earth Engine Python SDK validator is exercised offline: the corrected
+combination is accepted and the previous combination with region is rejected.
+The TIFF payload test still checks its transform, dimensions, bands and NoData.
+This validates request construction, not a completed live satellite download.

@@ -168,7 +168,22 @@ class DirectDownloadTests(unittest.TestCase):
             dest=Path(tmp)/'result.tif'
             with patch('ee.Geometry.Rectangle',return_value='test-region'),patch('requests.get',return_value=response):
                 download_image(image,job,dest)
-            self.assertEqual(image.getDownloadURL.call_args.args[0]['dimensions'],[4,4])
+            params=image.getDownloadURL.call_args.args[0]
+            self.assertEqual(params['dimensions'],[4,4])
+            self.assertEqual(params['crs_transform'],transform)
+            self.assertNotIn('region',params)
+            self.assertNotIn('scale',params)
+            # Exercise the actual SDK parameter validator; only serialization/HTTP are mocked.
+            import ee
+            fake_image=Mock()
+            fake_image._build_download_id_image.return_value=None
+            with patch('ee.data.serializer.encode',return_value={}),patch('ee.data._get_cloud_projects'),patch(
+                    'ee.data._get_projects_path',return_value='projects/test'),patch('ee.data._maybe_populate_workload_tag'),patch(
+                    'ee.data._execute_cloud_call',return_value={'name':'projects/test/thumbnails/test'}):
+                result=ee.data.getDownloadId(dict(params,image=fake_image))
+                self.assertIsInstance(result,dict)
+                with self.assertRaisesRegex(ee.EEException,'simultaneously'):
+                    ee.data.getDownloadId(dict(params,image=fake_image,region=[0,0,120,120]))
             self.assertEqual(validate(dest,dict(size=str(dest.stat().st_size),md5Checksum=hashes(dest)[0]),job),hashes(dest)[1])
             with rasterio.open(dest) as ds: self.assertEqual(ds.descriptions,('BLUE',))
 
