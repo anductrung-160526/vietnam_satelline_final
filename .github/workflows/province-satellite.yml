@@ -7,6 +7,11 @@ on:
         type: choice
         default: test_hanoi_2025
         options: [test_hanoi_2025, full_2004_2025]
+      processing:
+        description: 'Source products without additional filters, or quality-filtered processing'
+        type: choice
+        default: raw_source
+        options: [raw_source, quality_filtered]
       cycles:
         description: 'Maximum chained batches (1-20); stop early when complete or Drive fills'
         type: string
@@ -28,6 +33,7 @@ permissions:
   contents: read
 
 env:
+  PROVINCE_PROCESSING_MODE: ${{ inputs.processing || 'raw_source' }}
   PROVINCE_RUN_PROFILE: ${{ inputs.sample || 'test_hanoi_2025' }}
   PROVINCE_ACTION_MODE: ${{ inputs.mode || 'scheduled' }}
   PROVINCE_CYCLES: ${{ inputs.cycles || '20' }}
@@ -113,6 +119,14 @@ jobs:
           path: .province-local
       - name: Submit only assigned reservations
         run: python -m province_pipeline --config .province-local/config.json work --plan .province-local/plan.json --group '${{ matrix.group }}'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: province-previews-${{ matrix.group }}
+          path: .province-local/previews/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Remove credentials
         if: always()
         run: rm -rf "$RUNNER_TEMP/province-auth"

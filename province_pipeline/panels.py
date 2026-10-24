@@ -11,7 +11,7 @@ from .sources import BANDS, NTL_PACKAGE, DAY_PACKAGE, SOURCES
 IDENTITY = ['MA_TINH','NAME_1','GID_1','YEAR','MONTH','TIME','FREQUENCY','SOURCE','SOURCE_COLLECTION',
             'UNIT','PROVINCE_AREA_HA','METHOD_VERSION','CALIBRATION_VERSION','CALIBRATION_STATUS',
             'NATIVE_RESOLUTION_M','ANALYSIS_RESOLUTION_M','SOURCE_SELECTION_REASON','IS_FALLBACK',
-            'VALID_OBSERVATIONS','VALID_AREA_PCT','QC_ATTEMPTS','QC_STATUS','DATA_STATUS','ERROR','QA_FLAGS']
+            'VALID_OBSERVATIONS','VALID_AREA_PCT','QC_ATTEMPTS','QC_STATUS','PROCESSING_MODE','DATA_STATUS','ERROR','QA_FLAGS']
 NIGHT = ['TNL','SOL_NTL','MAT_DO_NTL','MEAN_RAD','STD_RAD','MIN_RAD','MAX_RAD','SPATIAL_CV',
          'LIT_PIXELS','LIT_AREA_HA','ELECTRIFICATION_RATIO_PCT','LIT_POP_PROXY','CLOUD_FREE_OBS',
          'TNL_MA3','TNL_MOM_GROWTH_PCT','TNL_YOY_GROWTH_PCT','THAY_DOI_NTL_PCT',
@@ -44,7 +44,8 @@ def base_row(config,spec):
         CALIBRATION_STATUS='NOT_CALIBRATED' if spec['night'] else 'NOT_APPLICABLE',
         SOURCE_SELECTION_REASON='FIXED_PERIOD_POLICY',IS_FALLBACK=False,
         NATIVE_RESOLUTION_M={'DMSP':927.67,'VIIRS_MONTHLY':463.83}.get(product,SOURCES[product]['scale']),ANALYSIS_RESOLUTION_M=SOURCES[product]['scale'] if spec['night'] else 30,
-        DATA_STATUS='PENDING',ERROR='',QA_FLAGS='')
+        PROCESSING_MODE=config['quality'].get('processing_mode','quality_filtered'),
+        DATA_STATUS='PENDING',ERROR='NOT_CALCULATED_YET',QA_FLAGS='')
 
 
 def quantitative(row,record,job):
@@ -58,11 +59,13 @@ def quantitative(row,record,job):
     row.update(QC_ATTEMPTS=record.get('qc_attempts',1),QC_STATUS=record.get('qc_status','PASS'))
     if record.get('qc_initial_range_flag'):
         row['QA_FLAGS']='REPROCESSED_STRICT_MASK'
+    raw=job['quality'].get('processing_mode')=='raw_source'
     # Never publish low-quality numeric indices as valid observations.
-    if valid <= 0 or row['VALID_AREA_PCT'] < job['quality']['min_valid_area_pct'] or record.get('qc_status')=='INSUFFICIENT_QUALITY':
+    if valid <= 0 or (not raw and (row['VALID_AREA_PCT'] < job['quality']['min_valid_area_pct'] or record.get('qc_status')=='INSUFFICIENT_QUALITY')):
         row.update(DATA_STATUS='INSUFFICIENT_QUALITY',ERROR='LOW_VALID_PIXEL_COVERAGE')
         return
-    row['DATA_STATUS']='OK'
+    row['DATA_STATUS']='OK_RAW' if raw else 'OK'
+    row['ERROR']=''
     product = job['product']
     if product.startswith(('DMSP','VIIRS')):
         band = 'stable_lights' if product=='DMSP' else 'avg_rad'
@@ -85,6 +88,13 @@ def quantitative(row,record,job):
         if any(row[b+'_mean'] is not None and not -0.2 <= row[b+'_mean'] <= 1.6 for b in BANDS):
             row['QA_FLAGS']='REFLECTANCE_RANGE_REVIEW'
 
+    if raw:
+        row['QA_FLAGS']+=';RAW_UNFILTERED'
+        if row['VALID_AREA_PCT'] < job['quality']['min_valid_area_pct']:
+            row['QA_FLAGS']+=';LOW_COVERAGE_REVIEW'
+        if row.get('CLOUD_FREE_OBS')==0:
+            row['QA_FLAGS']+=';NO_CLOUD_FREE_OBSERVATIONS'
+
 
 def percent(current,previous):
     a,b=number(current),number(previous)
@@ -104,7 +114,7 @@ def temporal(rows, anomaly_z=6):
                 row['THAY_DOI_NTL_PCT']=percent(row.get('SOL_NTL'),prev.get('SOL_NTL'))
             row.update(SOL_YEAR=row.get('SOL_NTL'),MAT_DO_NTL_YEAR=row.get('MAT_DO_NTL'),
                        THAY_DOI_NTL_YEAR_PCT=row.get('THAY_DOI_NTL_PCT'),
-                       YEAR_DATA_STATUS='COMPLETE' if row['DATA_STATUS']=='OK' else row['DATA_STATUS'])
+                       YEAR_DATA_STATUS='COMPLETE' if row['DATA_STATUS'] in ('OK','OK_RAW') else row['DATA_STATUS'])
             continue
         def ago(n):
             ordinal=y*12+m-1-n
@@ -123,14 +133,14 @@ def temporal(rows, anomaly_z=6):
     # Require all 12 months; label this method explicitly in metadata.
     sums={}
     for key,group in annual.items():
-        valid=[r for r in group if r['DATA_STATUS']=='OK' and number(r.get('SOL_NTL')) is not None]
+        valid=[r for r in group if r['DATA_STATUS'] in ('OK','OK_RAW') and number(r.get('SOL_NTL')) is not None]
         if len(group)==12 and len(valid)==12:
             sums[key]=sum(r['SOL_NTL'] for r in valid)/12
         for r in group:
             r.update(VALID_MONTHS_YEAR=len(valid),YEAR_DATA_STATUS='COMPLETE' if key in sums else 'INCOMPLETE')
     for key,group in annual.items():
         for r in group:
-            if key in sums and r['DATA_STATUS']=='OK':
+            if key in sums and r['DATA_STATUS'] in ('OK','OK_RAW'):
                 r['SOL_YEAR']=sums[key]
                 r['MAT_DO_NTL_YEAR']=sum(x['MAT_DO_NTL'] for x in group)/12
                 r['THAY_DOI_NTL_YEAR_PCT']=percent(sums[key],sums.get((key[0],key[1]-1)))
@@ -182,10 +192,12 @@ def publish(config,drive,state,metadata):
     from .controller import control_folders
     import hashlib
     index=dict(profile=config['run_profile'],method_version=config['algorithm_version'],quality=config['quality'],files=[])
+    archive_remote(config,drive,index)
     outputs=build_panels(config,state,metadata)
     local=Path('.province-local/panels');local.mkdir(parents=True,exist_ok=True)
     from collections import Counter
-    report=dict(profile=config['run_profile'],stage=state.get('current_stage'),
+    report=dict(profile=config['run_profile'],processing=config['quality'].get('processing_mode','quality_filtered'),
+                stage=state.get('current_stage'),notice='PENDING means not calculated yet, not missing source.',
                 rows={name:dict(Counter(r['DATA_STATUS'] for r in rows)) for name,rows in outputs.items()})
     atomic_json(local/'quality_summary.json',report)
     for name,rows in outputs.items():
@@ -199,7 +211,7 @@ def publish(config,drive,state,metadata):
     drive.write_json(control_folders(drive,config['drive_root_id'])['root'],'panels.json',index)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as stream:
-            stream.write('### '+config['run_profile']+' — '+str(state.get('current_stage','pending'))+'\n\n')
+            stream.write('### '+config['run_profile']+' / '+config['quality'].get('processing_mode','quality_filtered')+' — '+str(state.get('current_stage','pending'))+'\n\n')
             stream.write('CSV rows marked PENDING are placeholders, not completed observations.\n\n')
             for name,counts in report['rows'].items():
                 stream.write('- '+name+': '+str(counts)+'\n')
@@ -241,6 +253,18 @@ def sync(config,drive,root,control):
             from .receiver import verify_volume
             if verify_volume(config) != Path(root):
                 raise ValueError('Wrong external disk before CSV commit')
+        if dest.exists():
+            backup=local_path(root,'.panel_history/'+dest.stem+'_'+hashes(dest)[1]+'.csv')
+            backup.parent.mkdir(parents=True,exist_ok=True)
+            # Preserve previous visible CSV only when method/scope changes, not every batch.
+            old_index_path=Path(root)/'.panels.json'
+            if old_index_path.exists():
+                import json
+                previous=json.loads(old_index_path.read_text(encoding='utf-8'))
+                if (previous.get('profile'),previous.get('method_version')) != (index.get('profile'),index.get('method_version')):
+                    if not backup.exists():
+                        import shutil
+                        shutil.copyfile(dest,backup)
         os.replace(part,dest)
     atomic_json(Path(root)/'.panels.json',index)
     write_docs(root)
@@ -263,6 +287,9 @@ def write_docs(root):
     snapshot=Path(root)/'.panels.json'
     if snapshot.exists():
         policy['quality_settings']=json.loads(snapshot.read_text(encoding='utf-8')).get('quality',{})
+    if policy.get('quality_settings',{}).get('processing_mode')=='raw_source':
+        policy['quality']='No additional QA/cloud/fire/background/observation-count filtering. Provider masks retained. SR scaling and median compositing remain; this is NOT untouched sensor scenes.'
+        policy['raw']='Clipped/resampled catalog source products; day TIFF is unfiltered annual composite, monthly CSV comes from unfiltered monthly composites. RAW_UNFILTERED is NOT quality-validated.'
     for package,columns in ((NTL_PACKAGE,IDENTITY+NIGHT),(DAY_PACKAGE,IDENTITY+DAY)):
         dest=Path(root)/package/'metadata';dest.mkdir(parents=True,exist_ok=True)
         atomic_json(dest/'processing_policy.json',policy)
@@ -313,3 +340,29 @@ def flag_day_outliers(rows,anomaly_z=6):
             for row in group:
                 if mad>0 and number(row.get(field)) is not None and abs(row[field]-med)/(1.4826*mad)>anomaly_z:
                     row['QA_FLAGS']+=';'+band+'_TEMPORAL_OUTLIER_REVIEW'
+
+
+def archive_remote(config,drive,new_index):
+    """Preserve visible previous-method CSVs before publishing new empty placeholders."""
+    import hashlib
+    from .controller import control_folders
+    control=control_folders(drive,config['drive_root_id'])['root']
+    old=drive.read_json(control,'panels.json')
+    if not old or (old.get('profile'),old.get('method_version')) == (new_index.get('profile'),new_index.get('method_version')):
+        return
+    folder=drive.folder(control,'panel_history')
+    for f in old['files']:
+        backup_name=Path(f['local_relative_path']).stem+'_'+f['sha256']+'.csv'
+        backup=drive.find(folder,backup_name)
+        if backup:
+            if hashlib.sha256(drive.read_bytes(backup['id'])).hexdigest()!=f['sha256']:
+                raise ValueError('Archived panel checksum mismatch')
+            continue  # a previous interrupted publish already secured the old bytes
+        meta=drive.metadata(f['id'])
+        if str(meta['version'])!=str(f['version']):
+            raise RuntimeError('Previous panel changed; refusing to overwrite before backup')
+        content=drive.read_bytes(f['id'])
+        if hashlib.sha256(content).hexdigest()!=f['sha256']:
+            raise ValueError('Previous panel checksum mismatch before backup')
+        drive.write_verified_bytes(folder,backup_name,content)
+    drive.write_json(folder,'index_'+__import__('hashlib').sha256(str(old).encode()).hexdigest()+'.json',old)

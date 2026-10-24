@@ -1,3 +1,5 @@
+> **Cập nhật 25/10/2026:** mặc định `processing=raw_source`, không lọc bổ sung. Xem [RAW_DIAGNOSTICS_VI.md](RAW_DIAGNOSTICS_VI.md) để chạy lại, xem PNG và chẩn đoán TIFF/CSV PENDING. Phần ngưỡng lọc dưới đây áp dụng cho `quality_filtered`.
+
 # Chạy thử Hà Nội 2025 và chạy toàn bộ mẫu
 
 Chỉ dùng nhánh `inspriring-newton`. Không cần biến GitHub mới; giữ hai secrets hiện có và `PROVINCE_CONFIG_JSON` để cung cấp project, thư mục Drive và ngân sách. Không đưa credentials vào repo.

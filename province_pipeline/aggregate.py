@@ -32,9 +32,10 @@ def row_statistics(row, product):
     row['qa'] = 'NO_VALID_PIXELS' if valid <= 0 else ('PARTIAL_COVERAGE' if valid/total < 0.95 else 'OK')
     for b in source['bands']:
         w, w2 = row.get(b+'_w'), row.get(b+'_w2')
-        mean = float(w)/valid if valid > 0 and w is not None and math.isfinite(float(w)) else float('nan')
+        band_valid=float(row.get(b+'_valid_area',valid) or 0)
+        mean = float(w)/band_valid if band_valid > 0 and w is not None and math.isfinite(float(w)) else float('nan')
         row[b+'_mean'] = mean
-        row[b+'_std'] = math.sqrt(max(0, float(w2)/valid-mean**2)) if valid > 0 and w2 is not None and math.isfinite(float(w2)) and math.isfinite(mean) else float('nan')
+        row[b+'_std'] = math.sqrt(max(0, float(w2)/band_valid-mean**2)) if band_valid > 0 and w2 is not None and math.isfinite(float(w2)) and math.isfinite(mean) else float('nan')
     if product.startswith(('DMSP', 'VIIRS')):
         band = 'stable_lights' if product == 'DMSP' else 'avg_rad'
         row['sol_ntl'] = row.get(band+'_sum') if valid > 0 else float('nan')

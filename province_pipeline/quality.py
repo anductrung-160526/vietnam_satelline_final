@@ -12,6 +12,8 @@ def out_of_range(info,job):
 
 
 def reprocess_statistics(info,job,geometry,config):
+    if job['quality'].get('processing_mode')=='raw_source':
+        return dict(info,qc_attempts=1,qc_status='RAW_UNFILTERED')
     info=dict(info,qc_attempts=1,qc_status='PASS')
     if not out_of_range(info,job):
         return info
@@ -39,7 +41,8 @@ def inspect_raster(path,job):
     with rasterio.open(path) as ds:
         for _,window in ds.block_windows(1):
             data=ds.read(window=window,masked=True)
-            common=~np.ma.getmaskarray(data).any(axis=0)
+            primary=data[:6] if job.get('quality',{}).get('processing_mode')=='raw_source' and job['product'] in ('LANDSAT','SENTINEL2') else data
+            common=~np.ma.getmaskarray(primary).any(axis=0)
             total+=common.size;valid+=int(common.sum())
             for i,b in enumerate(job['bands']):
                 values=data[i].compressed()
@@ -59,3 +62,7 @@ def inspect_raster(path,job):
     if job['product'].startswith(('DMSP','VIIRS')):
         flags.append('TRANSIENT_LIGHTS_RESIDUAL_REVIEW')
     return dict(valid_pixel_pct=100*valid/total if total else 0,flags=flags)
+
+
+class NoValidPixels(RuntimeError):
+    pass

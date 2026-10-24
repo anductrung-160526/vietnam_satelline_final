@@ -114,7 +114,9 @@ def generate_v2(config, boundaries, metadata, priority):
         for tile in tile_grid(projected.bounds,scale,config['tile_pixels']):
             if not projected.intersects(box(*tile['bounds'])):
                 continue
-            for variant in (['source','filtered'] if spec['night'] else ['composite']):
+            variants=(['source'] if config['quality'].get('processing_mode')=='raw_source'
+                      else (['source','filtered'] if spec['night'] else ['composite']))
+            for variant in variants:
                 job = dict(base,kind='image',priority=priority,variant=variant,scale=scale,tile=tile,
                            reserved_bytes=int(config['tile_pixels']**2*len(base['bands'])*4*2+1048576))
                 job.pop('job_id')

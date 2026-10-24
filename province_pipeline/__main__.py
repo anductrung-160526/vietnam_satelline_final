@@ -14,8 +14,12 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('validate')
     sub.add_parser('publish-panels')
+    inspect=sub.add_parser('inspect-tiff')
+    inspect.add_argument('--path',required=True)
+    inspect.add_argument('--output',default='.province-local/inspection')
     profile = sub.add_parser('profile')
     profile.add_argument('--sample',choices=['test_hanoi_2025','full_2004_2025'],default='test_hanoi_2025')
+    profile.add_argument('--processing',choices=['raw_source','quality_filtered'],default='raw_source')
     profile.add_argument('--output',default='.province-local/config.json')
     sub.add_parser('prepare-gadm')
     sub.add_parser('sync-boundaries')
@@ -35,10 +39,14 @@ def main():
     sub.add_parser('aggregate')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
+    if args.command=='inspect-tiff':
+        from .inspect_tiff import inspect
+        print(json.dumps(inspect(args.path,args.output),ensure_ascii=False,indent=2))
+        return
     c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive','reconcile-only','publish-panels'))
     if args.command == 'profile':
         from .profiles import apply_profile
-        atomic_json(args.output,apply_profile(c,args.sample))
+        atomic_json(args.output,apply_profile(c,args.sample,args.processing))
         print('Saved profile:',args.sample,args.output)
         return
     if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):

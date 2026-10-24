@@ -94,7 +94,8 @@ def reconcile(drive, folders, state, tasks):
     for task in tasks:
         by_description.setdefault(task.get('description'), []).append(task)
     for job in state['jobs'].values():
-        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING'):
+        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING',
+                             'MISSING_SOURCE', 'INSUFFICIENT_QUALITY', 'DEFERRED'):
             continue
         if job['status'] == 'REMOTE_READY':
             receipt = drive.read_json(folders['receipts'], job['job_id']+'.json')
@@ -111,6 +112,9 @@ def reconcile(drive, folders, state, tasks):
         report = drive.read_json(folders['reports'], report_name(job))
         if job.get('export_backend') == 'direct':
             if report:
+                if report.get('status')=='NO_VALID_PIXELS':
+                    job.update(status='INSUFFICIENT_QUALITY',error='NO_VALID_PIXELS')
+                    continue
                 if report.get('status') == 'UPLOADED':
                     try:
                         manifest = _remote_manifest(drive, job)
@@ -267,7 +271,7 @@ def work(config, drive, plan, group_id, boundaries):
                 drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='UPLOADED',**output))
             except Exception as error:
                 # Keep original error type only; no signed URL or token is persisted in reports.
-                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='FAILED',error_type=type(error).__name__))
+                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='NO_VALID_PIXELS' if type(error).__name__=='NoValidPixels' else 'FAILED',error_type=type(error).__name__))
                 failures.append(job['job_id'])
             continue
         drive.assert_unique_folder_name(job['folder_name'], job['folder_id'])

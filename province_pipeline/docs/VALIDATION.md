@@ -80,3 +80,10 @@ credentials remains to be checked on Windows; no source was deleted by these tes
 - Actual pinned GADM geometry dry-plan: Hanoi 2025 → 24 night-image jobs, 24 statistics jobs, 52 annual-day-image tile jobs. Full empty panels → 9,702 night rows and 16,632 day rows, built in about 1.4 seconds in this environment.
 - No EE or Drive runtime credentials are injected here. GitHub Actions API read returned Forbidden. Therefore no live Hanoi 2025 run, dispatch or Windows scheduling is claimed by this change. User must start the provided test profile and inspect DATA_STATUS/QA.
 - No validated DMSP–VIIRS calibration, complete ship-light removal or land-cover classification is claimed. Their limitations are explicitly recorded in delivered metadata and the run guide.
+
+## Raw diagnostic mode (2026-10-25)
+
+- 177 offline tests passed. New tests build actual EE SDK raw graphs for four sources and check that QA_PIXEL/QA_RADSAT, Cloud Score+, fire and observation-threshold filters do not occur. Verify low-coverage numeric retention, per-band denominators, no strict-mask reprocessing in raw mode, no filtered duplicate jobs, empty-image terminal status, CSV backups/recovery and readable PNG diagnostics without editing TIFF bytes.
+- Default workflow processing is `raw_source`; explicit `quality_filtered` remains available. Actual GADM dry-plan for Hanoi 2025: 12 source night TIFF jobs, 24 table jobs, 52 unfiltered annual day composite TIFF jobs. Counts are plans, not evidence that every tile has valid pixels.
+- CSV screenshot PENDING means statistics not computed yet. Existing >=80% coverage gate can suppress filtered-mode indices; that gate does not apply in raw mode. No conclusion is drawn about the supplied screenshot TIFF's actual pixels because its binary was not provided/accessed.
+- GitHub Actions API again returned Forbidden; live EE/Drive run and user-specific TIFF diagnostics remain unverified. PNG/JSON artifacts and `inspect-tiff` provide the next concrete checks. Processing preserves native catalog masks, physical scaling, clipping/grid and required composites; it is not a download of untouched sensor scenes.

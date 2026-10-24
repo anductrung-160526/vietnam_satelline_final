@@ -24,7 +24,7 @@ def prepare(environment=os.environ):
             raise ValueError('cycles must be in 1..20')
     if environment.get('PROVINCE_RUN_PROFILE'):
         from .profiles import apply_profile
-        config=apply_profile(config,environment['PROVINCE_RUN_PROFILE'])
+        config=apply_profile(config,environment['PROVINCE_RUN_PROFILE'],environment.get('PROVINCE_PROCESSING_MODE','raw_source'))
         # Dispatch is the explicit start action. Read-only modes still never export.
         if environment.get('PROVINCE_ACTION_MODE') == 'run':
             config['pause']=False

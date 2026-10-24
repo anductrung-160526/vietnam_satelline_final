@@ -2,7 +2,7 @@
 from .common import provinces
 PROFILES = ('test_hanoi_2025', 'full_2004_2025')
 
-def apply_profile(config, profile):
+def apply_profile(config, profile, processing=None):
     if profile not in PROFILES:
         raise ValueError('Unknown run profile')
     c = dict(config)
@@ -19,6 +19,9 @@ def apply_profile(config, profile):
                    lit_threshold_viirs=0.5, mask_fires=True,
                    anomaly_robust_z=6, max_transfer_attempts=4)
     quality.update(c.get('quality', {}))
+    quality['processing_mode']=processing or quality.get('processing_mode','quality_filtered')
+    if quality['processing_mode']=='raw_source':
+        c['algorithm_version']='v003raw'
     validate_quality(quality)
     c['quality'] = quality
     return c
@@ -53,6 +56,8 @@ def in_scope(config, job):
 
 
 def validate_quality(q):
+    if q.get('processing_mode','quality_filtered') not in ('raw_source','quality_filtered'):
+        raise ValueError('Invalid processing mode')
     import math
     limits={'min_valid_area_pct':(0,100),'min_observations_day':(1,1000),
             'min_cloud_free_obs':(1,10000),'sentinel_cloud_score_min':(0,1),

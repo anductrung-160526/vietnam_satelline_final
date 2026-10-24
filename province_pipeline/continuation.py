@@ -36,7 +36,7 @@ def main():
     repo=os.environ['GITHUB_REPOSITORY']
     branch=os.environ['GITHUB_REF_NAME']
     workflow=os.environ['GITHUB_WORKFLOW_REF'].split('@')[0].rsplit('/',1)[-1]
-    body=json.dumps(dict(ref=branch,inputs=dict(mode='run',sample=config['run_profile'],cycles=str(remaining-1)))).encode()
+    body=json.dumps(dict(ref=branch,inputs=dict(mode='run',sample=config['run_profile'],processing=config['quality'].get('processing_mode','quality_filtered'),cycles=str(remaining-1)))).encode()
     request=Request('https://api.github.com/repos/'+repo+'/actions/workflows/'+quote(workflow,safe='')+'/dispatches',
                     data=body,headers={'Authorization':'Bearer '+os.environ['GH_WORKFLOW_TOKEN'],
                     'Accept':'application/vnd.github+json','Content-Type':'application/json',
