@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from .common import audit, digest
 from .drive import FOLDER
+from .layout import LAYOUT_VERSION
 
 ACTIVE = {'RESERVED', 'SUBMITTING', 'RUNNING', 'BLOCKED_AMBIGUOUS'}
 
@@ -169,15 +170,15 @@ def prepare(config, drive, candidates, inventory_callback, tasks):
     if any(j['status']=='MIGRATING' for j in state['jobs'].values()):
         raise RuntimeError('Finish organize_only layout migration before running exports')
     reconcile(drive, folders, state, tasks)
-    if state.get('layout_version',1)<2:
+    if state.get('layout_version',1)<LAYOUT_VERSION:
         from .layout import ensure_drive_packages
         ensure_drive_packages(drive,root)
-        state['layout_version']=2
+        state['layout_version']=LAYOUT_VERSION
     # Pending legacy jobs with no output can adopt canonical folders without moving data.
     from .layout import canonical_job, ensure_output_folder
     for job in state['jobs'].values():
         if (job['status']=='RESERVED' and job.get('export_backend')=='direct'
-                and job.get('layout_version',1)<2 and not job_output_files(drive,job)):
+                and job.get('layout_version',1)<LAYOUT_VERSION and not job_output_files(drive,job)):
             updated=canonical_job(job)
             folder_id,folder_name=ensure_output_folder(drive,root,updated)
             job.update(updated,folder_id=folder_id,folder_name=folder_name)

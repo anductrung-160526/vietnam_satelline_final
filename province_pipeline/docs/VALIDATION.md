@@ -51,3 +51,7 @@ PASS before retrying the satellite workflow after a projection parsing error.
 ## Layout 2
 
 Tests kiểm tra tỉnh nằm đúng cấp, không đổi job IDs khi đổi đường dẫn, nhiều output dùng chung thư mục không nhầm lô, migration giữ nguyên file ID và khôi phục sau mất phản hồi, nhận lại dữ liệu local cũ không tải trùng, và aggregate bảng riêng từng tỉnh. Drive relocation thật cần chạy mode organize_only trên GitHub bằng secret hiện có; không tuyên bố đã di chuyển dữ liệu từ môi trường cloud chat.
+
+## Flat TIFF layout 3
+
+Ảnh nguồn và trung gian đều có thư mục cha trực tiếp là tỉnh. Tests xác nhận nhiều năm/tháng dùng chung thư mục nhưng không trùng tên, giữ nguyên job ID, chuyển lô layout 2 đã hoàn tất hoặc đang chuyển dở, và di chuyển TIFF local khỏi thư mục năm mà giữ nguyên MD5/SHA-256. Đây là kiểm thử offline; Drive chỉ thay đổi khi người dùng chạy organize_only bằng credentials thật.

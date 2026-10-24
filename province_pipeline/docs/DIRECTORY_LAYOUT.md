@@ -1,4 +1,4 @@
-# Cấu trúc package theo đề bài — layout 2
+# Cấu trúc package theo đề bài — layout 3
 
 Cùng một cây dữ liệu áp dụng cho Drive staging và ổ E. Package đứng trước; thư mục
 mã+tên tỉnh là con trực tiếp của DMSP, VIIRS, LANDSAT, SENTINEL2,
@@ -10,9 +10,9 @@ SatelliteStaging/                      # Hoặc E:\SatelliteData\
 ├── VN_NTL_Panel_2004_2025/
 │   ├── README.md                      # Sinh khi aggregate local
 │   ├── raw_data/NTL/
-│   │   ├── DMSP/01_ha_noi/2004/*.tif
-│   │   └── VIIRS/01_ha_noi/2024-01/*.tif
-│   ├── data_intermediate/01_ha_noi/VIIRS/2024-01/*.tif
+│   │   ├── DMSP/01_ha_noi/*.tif
+│   │   └── VIIRS/01_ha_noi/*.tif
+│   ├── data_intermediate/01_ha_noi/*.tif
 │   ├── data_processed/
 │   │   ├── 01_ha_noi/
 │   │   │   ├── source/VIIRS_MONTHLY/*.csv
@@ -26,8 +26,8 @@ SatelliteStaging/                      # Hoặc E:\SatelliteData\
 ├── VN_LandCover_Panel_2004_2025/
 │   ├── README.md
 │   ├── raw_data/DAY/
-│   │   ├── LANDSAT/01_ha_noi/2024/*.tif
-│   │   └── SENTINEL2/01_ha_noi/2024/*.tif
+│   │   ├── LANDSAT/01_ha_noi/*.tif
+│   │   └── SENTINEL2/01_ha_noi/*.tif
 │   ├── data_intermediate/01_ha_noi/    # Khi có sản phẩm trung gian
 │   ├── data_processed/
 │   │   ├── 01_ha_noi/
@@ -44,8 +44,7 @@ SatelliteStaging/                      # Hoặc E:\SatelliteData\
 ```
 
 Trên E có thêm .manifests/.receipts để kiểm tra dữ liệu, không phải dữ liệu khoa học.
-Thư mục nguồn/thời kỳ chỉ được tạo thêm khi cần, không tạo dữ liệu giả cho thư mục
-trống. Tên tỉnh còn xuất hiện trong tên TIFF/CSV để vẫn nhận diện được khi tách file.
+Ảnh TIFF nằm trực tiếp trong thư mục tỉnh, không có thư mục năm/tháng hoặc nguồn ở dưới tỉnh. Năm/tháng, nguồn, biến thể xử lý và ô ảnh được phân biệt trong tên tệp. Thư mục dữ liệu bảng không đổi trong lần chỉnh này. Tên tỉnh còn xuất hiện trong tên TIFF/CSV để vẫn nhận diện được khi tách file.
 Bảng toàn quốc là FILE ở gốc data_processed; các FOLDER tỉnh nằm trực tiếp dưới nó.
 
 Đây là thay đổi tổ chức lưu trữ, không thay thuật toán/lưới/nguồn ảnh. Job ID và tên
@@ -58,7 +57,7 @@ chỉ từ sự tồn tại của các thư mục. Phân loại đất và dashb
 1. Đặt `pause=true` trong PROVINCE_CONFIG_JSON. Đợi mọi lượt run đang chạy kết thúc;
    dừng Windows receiver nếu đã cài.
 2. Merge PR từ inspriring-newton vào main trước khi bật lại lịch. Không để code main
-   cũ và code layout 2 cùng vận hành trên một staging root.
+   cũ và code layout 3 cùng vận hành trên một staging root.
 3. Actions → Province satellite staging → Run workflow → branch main (sau merge),
    mode **organize_only**. Chế độ này yêu cầu pause=true.
 4. Controller chỉ sắp xếp output đã có manifest kiểm tra, được state nhận diện bằng
@@ -94,3 +93,10 @@ manifest/receipt, dữ liệu local được kiểm tra và chuyển sang vị t
 khi nguồn Drive không còn. Nếu thiếu/sai checksum, dừng và giữ nguyên nguồn local.
 Bảng tổng hợp mới được ghi ở vị trí mới; bảng tổng hợp cũ ở data_processed/panels
 không bị tự xóa.
+
+## Bỏ thư mục năm/tháng (layout 3)
+
+Ví dụ ảnh Landsat: `raw_data/DAY/LANDSAT/01_ha_noi/01_ha_noi_LANDSAT_2024_composite_664_171_v001.tif`.
+VIIRS tháng 01 và 02 cùng ở `raw_data/NTL/VIIRS/01_ha_noi/`, có `2024-01` hoặc `2024-02` trong tên tệp. Ảnh trung gian cũng nằm trực tiếp tại `data_intermediate/01_ha_noi/`.
+
+Mode organize_only xử lý được cả lô cũ trước layout 2 và lô đã có thư mục năm/tháng của layout 2. Nếu một lần chuyển layout 2 bị ngắt trước khi nâng cấp mã, chương trình hoàn tất đúng đích cũ rồi chuyển tiếp sang layout 3; không gắn nhãn mới cho dữ liệu chưa chuyển đúng nơi. Giữ nguyên file ID, checksum, job ID và tên tệp; không tải lại ảnh chỉ vì bỏ thư mục thời gian. Các thư mục năm/tháng cũ rỗng không bị tự xóa.

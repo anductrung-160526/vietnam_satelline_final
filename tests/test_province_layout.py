@@ -62,7 +62,7 @@ class LayoutTests(unittest.TestCase):
                 stage='NTL' if night else 'DAY'
                 legacy['local_directory']=f'{package}/raw_data/{stage}/{sensor}/01_ha_noi/{item["period"]}'
             self.assertEqual(jid,digest(legacy)[:32])
-            self.assertEqual(item['layout_version'],2)
+            self.assertEqual(item['layout_version'],3)
 
     def test_shared_folder_selects_exact_job_filename(self):
         d=FakeDrive();j=canonical_job(job())
@@ -119,7 +119,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(d.files['unrelated']['parents'],['legacy'])
         self.assertFalse(any(e[0]=='delete' for e in d.events))
         final=d.documents['root/_control','state.json']['jobs']['job1']
-        self.assertEqual(final['job_id'],'job1');self.assertEqual(final['layout_version'],2)
+        self.assertEqual(final['job_id'],'job1');self.assertEqual(final['layout_version'],3)
         manifest=d.documents['root/_control/manifests','job1.json']
         self.assertEqual(manifest['files'][0]['version'],'2')
         self.assertTrue(manifest['files'][0]['legacy_local_relative_paths'])
@@ -175,7 +175,7 @@ class LocalCompatibilityTests(unittest.TestCase):
             dest=root/relative_output(m['job'],m['files'][0]['name']);dest.parent.mkdir(parents=True)
             old.replace(dest)
             self.assertEqual(organize_local(root),0)
-            self.assertEqual(json.loads((root/'.manifests/job1.json').read_text())['local_layout_version'],2)
+            self.assertEqual(json.loads((root/'.manifests/job1.json').read_text())['local_layout_version'],3)
 
     def test_receiver_reuses_old_verified_copy_without_redownloading(self):
         from province_pipeline.receiver import receive_manifest
@@ -229,6 +229,89 @@ class DriveRelocationTests(unittest.TestCase):
         d,nodes=self.fixture();nodes['new']['parents']=[]
         with self.assertRaisesRegex(RuntimeError,'staging tree'):d.move_verified(nodes['f'],'new','root')
         d.api.files.return_value.update.assert_not_called()
+
+
+class FlatImageLayoutTests(unittest.TestCase):
+    def test_every_image_lives_directly_inside_province(self):
+        for product in ('DMSP','VIIRS_MONTHLY','VIIRS_ANNUAL','LANDSAT','SENTINEL2','SENTINEL2_10M'):
+            for period in ('2023','2024','2024-01','2024-02'):
+                for variant in ('source','filtered','composite'):
+                    j=job(product=product,variant=variant);j['period']=period
+                    directory=output_directory(j)
+                    self.assertEqual(directory.split('/')[-1],'01_ha_noi')
+                    self.assertNotIn(period,directory.split('/'))
+                    if variant=='filtered':
+                        self.assertEqual(directory.split('/')[1:],['data_intermediate','01_ha_noi'])
+
+    def test_time_remains_in_filenames_and_job_ids_across_multiple_years(self):
+        from province_pipeline.jobs import generate
+        c=load_config('province_pipeline/config/example.json');c['years']=[2023,2024]
+        b={'01':dict(geometry=dict(type='Polygon',coordinates=[[[105,20],[105.001,20],[105.001,20.001],[105,20.001],[105,20]]]))}
+        m=dict(sha256='test',source='test',version='test',date='2024-01-01',code_reference='test')
+        items=[j for j in generate(c,b,m) if j['kind']=='image']
+        self.assertTrue(items)
+        for item in items:
+            self.assertIn(item['period'],item['prefix'])
+        targets=[j['local_directory']+'/'+j['prefix']+'.tif' for j in items]
+        self.assertEqual(len(targets),len(set(targets)))
+
+    def test_already_completed_layout2_job_is_flattened(self):
+        from province_pipeline.layout import version2_directory
+        d,c=MigrationTests().fixture()
+        state=d.documents['root/_control','state.json'];j=state['jobs']['job1']
+        j.update(kind='image',variant='composite',layout_version=2)
+        j['local_directory']=version2_directory(j)
+        d.files['f']['name']=j['prefix']+'.tif';d.files['f']['mimeType']='image/tiff'
+        f=copy.deepcopy(d.files['f']);f['local_relative_path']=j['local_directory']+'/'+f['name']
+        d.documents['root/_control/manifests','job1.json']=dict(job_id='job1',job=copy.deepcopy(j),files=[f])
+        self.assertEqual(organize(c,d),(1,0))
+        self.assertEqual(d.files['f']['parents'],['root/'+output_directory(j)])
+        self.assertEqual(d.documents['root/_control','state.json']['jobs']['job1']['layout_version'],3)
+        self.assertEqual(organize(c,d),(0,0))
+
+    def test_inflight_layout2_intent_finishes_then_flattens(self):
+        from province_pipeline.layout import version2_directory
+        d,c=MigrationTests().fixture();state=d.documents['root/_control','state.json'];j=state['jobs']['job1']
+        j.update(kind='image',variant='composite')
+        f=copy.deepcopy(d.files['f']);f.update(name=j['prefix']+'.tif',mimeType='image/tiff')
+        old_target='root/'+version2_directory(j)
+        # Simulate a layout-2 move completed before the old runner saved its checkpoint.
+        d.files['f'].update(f,parents=[old_target],version='2')
+        j.update(status='MIGRATING',layout_migration=dict(original_status='REMOTE_READY',
+            target_folder_id=old_target,target_folder_name='2024',files=[f],legacy_directory=j['local_directory']))
+        organize(c,d)
+        final=d.documents['root/_control','state.json']['jobs']['job1']
+        self.assertEqual(final['layout_version'],3)
+        self.assertEqual(final['local_directory'],output_directory(j))
+        self.assertEqual(d.files['f']['parents'],['root/'+output_directory(j)])
+        manifest=d.documents['root/_control/manifests','job1.json']
+        self.assertEqual(manifest['files'][0]['local_relative_path'],output_directory(j)+'/'+f['name'])
+
+    def test_local_layout2_tiff_moves_out_of_year_folder(self):
+        import numpy as np
+        import rasterio
+        from affine import Affine
+        from province_pipeline.layout import version2_directory
+        from province_pipeline.receiver import hashes
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);j=job();j.update(layout_version=2,crs='EPSG:6933',scale=30,bands=['BLUE'],
+                tile=dict(bounds=[0,0,120,120],transform=[30,0,0,0,-30,120]))
+            j['local_directory']=version2_directory(j)
+            name='01_ha_noi_LANDSAT_2024_tile.tif';old=root/j['local_directory']/name
+            old.parent.mkdir(parents=True)
+            with rasterio.open(old,'w',driver='GTiff',height=4,width=4,count=1,dtype='float32',
+                    crs=j['crs'],transform=Affine(*j['tile']['transform']),nodata=-9999) as ds:
+                ds.write(np.ones((1,4,4),dtype='float32'))
+            md5,sha=hashes(old)
+            f=dict(id='f',name=name,size=str(old.stat().st_size),md5Checksum=md5,version='1',
+                   local_relative_path=old.relative_to(root).as_posix())
+            atomic_json(root/'.manifests/job1.json',dict(job_id='job1',job=j,files=[f]))
+            atomic_json(root/'.receipts/job1.json',dict(files=[dict(id='f',verified=True,sha256=sha,
+                local_relative_path=f['local_relative_path'])]))
+            self.assertEqual(organize_local(root),1)
+            new=root/output_directory(j)/name
+            self.assertEqual(hashes(new),(md5,sha));self.assertFalse(old.exists())
+            self.assertEqual(organize_local(root),0)
 
 
 if __name__=='__main__':unittest.main()

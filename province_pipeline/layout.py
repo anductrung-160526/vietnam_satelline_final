@@ -6,7 +6,7 @@ filenames so changing folders cannot cause satellite data to be fetched twice.
 from pathlib import PurePosixPath
 from .sources import NTL_PACKAGE, DAY_PACKAGE
 
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
 COMMON = ('data_intermediate','data_processed','metadata','code','docs','logs','dashboard')
 PACKAGE_DIRECTORIES = {
     NTL_PACKAGE: (*COMMON, 'raw_data/NTL/DMSP','raw_data/NTL/VIIRS'),
@@ -28,8 +28,8 @@ def output_directory(job):
     if job['kind']=='table':
         return f'{package}/data_processed/{province}/source/{product}'
     if job['variant']=='filtered':
-        return f'{package}/data_intermediate/{province}/{sensor}/{job["period"]}'
-    return f'{package}/raw_data/{"NTL" if night else "DAY"}/{sensor}/{province}/{job["period"]}'
+        return f'{package}/data_intermediate/{province}'
+    return f'{package}/raw_data/{"NTL" if night else "DAY"}/{sensor}/{province}'
 
 
 def canonical_job(job):
@@ -75,3 +75,14 @@ def local_manifest(manifest):
         files.append(dict(original,local_relative_path=target,
                           legacy_local_relative_paths=list(dict.fromkeys(legacy))))
     return dict(manifest,job=updated,files=files,local_layout_version=LAYOUT_VERSION)
+
+
+def version2_directory(job):
+    directory=output_directory(job)
+    if job['kind']=='table':
+        return directory
+    if job['variant']=='filtered':
+        product=job['product']
+        sensor='VIIRS' if product.startswith('VIIRS') else product.split('_')[0]
+        return directory+'/'+sensor+'/'+job['period']
+    return directory+'/'+job['period']

@@ -161,3 +161,5 @@ Nếu probe thất bại, gửi lỗi ở bước preflight trước khi tiếp 
 ## 7. Bố trí đúng hai package và sắp xếp lô cũ
 
 Xem [DIRECTORY_LAYOUT.md](DIRECTORY_LAYOUT.md). Tỉnh là con trực tiếp của các nhóm dữ liệu; Drive và E cùng layout. Mode organize_only yêu cầu pause=true, giữ nguyên file ID và dữ liệu, không xóa tệp. Merge code layout mới vào main trước khi bật lại lịch, tránh code cũ đối soát sai thư mục chứa nhiều TIFF.
+
+Ảnh hiện dùng layout 3: TIFF nằm trực tiếp trong thư mục tỉnh. Năm/tháng nằm trong tên tệp; mode organize_only chuyển cả các ảnh đang nằm trong thư mục năm/tháng cũ mà không tải lại.
