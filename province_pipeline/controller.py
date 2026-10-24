@@ -56,13 +56,21 @@ def admit(config, state, candidates, used, free):
     return selected
 
 
+def job_output_files(drive,job):
+    files=list(drive.children(job['folder_id']))
+    if job.get('layout_version',1) >= 2:
+        extension='.tif' if job['kind']=='image' else '.csv'
+        files=[f for f in files if f['name']==job['prefix']+extension]
+    return files
+
+
 def _remote_manifest(drive, job):
-    files = list(drive.children(job['folder_id']))
+    files = job_output_files(drive,job)
     extension = '.tif' if job['kind'] == 'image' else '.csv'
     if not files:
         return None  # Drive listing can lag after EE reports completion.
     if len(files) != 1:
-        raise RuntimeError('Expected exactly one bounded-tile TIFF or statistics CSV; inspect export')
+        raise RuntimeError('Expected exactly one output matching this job; inspect duplicate filenames')
     f = files[0]
     if f['mimeType'] == FOLDER or not f['name'].startswith(job['prefix']) or not f['name'].endswith(extension):
         raise RuntimeError('Unexpected output file in unique export folder')
@@ -85,7 +93,7 @@ def reconcile(drive, folders, state, tasks):
     for task in tasks:
         by_description.setdefault(task.get('description'), []).append(task)
     for job in state['jobs'].values():
-        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT'):
+        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING'):
             continue
         if job['status'] == 'REMOTE_READY':
             receipt = drive.read_json(folders['receipts'], job['job_id']+'.json')
@@ -118,7 +126,7 @@ def reconcile(drive, folders, state, tasks):
                 else:
                     # No asynchronous EE task survives this direct worker. Under workflow-wide
                     # serialization, a new controller runs only after the old worker ended.
-                    files=list(drive.children(job['folder_id']))
+                    files=job_output_files(drive,job)
                     if files:
                         job.update(status='BLOCKED_OUTPUT',error='Unconfirmed upload exists; inspect checksum before retry')
                     elif job.get('attempt',1) < 4:
@@ -158,7 +166,21 @@ def prepare(config, drive, candidates, inventory_callback, tasks):
     root = config['drive_root_id']
     folders = control_folders(drive, root)
     state = drive.read_json(folders['root'], 'state.json', {'schema_version': 1, 'jobs': {}, 'inventory': {}, 'cursor': 0})
+    if any(j['status']=='MIGRATING' for j in state['jobs'].values()):
+        raise RuntimeError('Finish organize_only layout migration before running exports')
     reconcile(drive, folders, state, tasks)
+    if state.get('layout_version',1)<2:
+        from .layout import ensure_drive_packages
+        ensure_drive_packages(drive,root)
+        state['layout_version']=2
+    # Pending legacy jobs with no output can adopt canonical folders without moving data.
+    from .layout import canonical_job, ensure_output_folder
+    for job in state['jobs'].values():
+        if (job['status']=='RESERVED' and job.get('export_backend')=='direct'
+                and job.get('layout_version',1)<2 and not job_output_files(drive,job)):
+            updated=canonical_job(job)
+            folder_id,folder_name=ensure_output_folder(drive,root,updated)
+            job.update(updated,folder_id=folder_id,folder_name=folder_name)
     plan = []
     if not config.get('pause', True):
         # Existing RESERVED entries have never had a persisted submit intent.
@@ -191,15 +213,21 @@ def prepare(config, drive, candidates, inventory_callback, tasks):
                 yield job
         new = admit(dict(config, max_active_exports=capacity), state, eligible(), used, free)
         for job in new:
-            p = job['province']
-            parent = drive.folder(root, f"{p['ma_tinh']}_{p['slug']}")
-            # Build the canonical product tree before export; leaf name globally unique for EE.
-            for part in job['local_directory'].split('/'):
-                parent = drive.folder(parent, part)
-            folder_name = f"{p['ma_tinh']}_{p['slug']}_{job['job_id']}"
-            folder_id = drive.folder(parent, folder_name)
-            drive.assert_unique_folder_name(folder_name, folder_id)
-            job.update(folder_name=folder_name, folder_id=folder_id, request_id=str(uuid.uuid4()), attempt=1, status='RESERVED')
+            if job.get('layout_version',1)>=2:
+                if job.get('export_backend')!='direct':
+                    raise ValueError('Canonical shared folders require export_backend=direct')
+                from .layout import ensure_output_folder
+                folder_id,folder_name=ensure_output_folder(drive,root,job)
+            else:
+                # Existing legacy jobs stay readable until explicitly organized.
+                p=job['province']
+                parent=drive.folder(root,f"{p['ma_tinh']}_{p['slug']}")
+                for part in job['local_directory'].split('/'):
+                    parent=drive.folder(parent,part)
+                folder_name=f"{p['ma_tinh']}_{p['slug']}_{job['job_id']}"
+                folder_id=drive.folder(parent,folder_name)
+                drive.assert_unique_folder_name(folder_name,folder_id)
+            job.update(folder_name=folder_name,folder_id=folder_id,request_id=str(uuid.uuid4()),attempt=1,status='RESERVED')
             state['jobs'][job['job_id']] = job
             plan.append(job)
         state['cursor'] = (cursor+1) % 10

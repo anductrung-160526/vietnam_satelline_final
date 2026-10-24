@@ -74,21 +74,31 @@ def aggregate(root):
         if product.startswith(('DMSP','VIIRS')):
             frame = growth(frame, 'sol_ntl')
         package = NTL_PACKAGE if product.startswith(('DMSP','VIIRS')) else DAY_PACKAGE
-        dest = root / package / 'data_processed' / 'panels'
-        dest.mkdir(parents=True, exist_ok=True)
-        stem = dest / f'{product}_{recipe[:12]}'
-        frame.to_csv(stem.with_suffix('.csv'), index=False, encoding='utf-8-sig')
-        frame.to_excel(stem.with_suffix('.xlsx'), index=False)
-        # Preserve original CSV/Excel names; explicitly map long Stata names, never silently collide.
-        mapping = {c: c if len(c) <= 32 else c[:23]+'_'+__import__('hashlib').sha256(c.encode()).hexdigest()[:8]
-                   for c in frame.columns}
-        stata = frame.rename(columns=mapping).copy()
-        for col in stata.select_dtypes(include=['object', 'str']).columns:
-            stata[col] = stata[col].fillna('').astype(str)
-        stata.to_stata(stem.with_suffix('.dta'), write_index=False, version=118)
-        atomic_json(stem.with_suffix('.columns.json'), mapping)
+        dest=root/package/'data_processed'
+        write_panel(frame,dest/f'{product}_{recipe[:12]}')
+        # Province folders sit directly under data_processed. National panel files
+        # may coexist at its root, without an extra top-level "panels" directory.
+        from .common import provinces
+        names={p['ma_tinh']:p['ma_tinh']+'_'+p['slug'] for p in provinces()}
+        for code,subset in frame.groupby('ma_tinh'):
+            if code not in names:
+                raise ValueError('Unknown province code in received statistics')
+            write_panel(subset,dest/names[code]/'panels'/f'{product}_{recipe[:12]}')
     write_package_docs(root)
     return len(grouped)
+
+
+def write_panel(frame,stem):
+    stem.parent.mkdir(parents=True,exist_ok=True)
+    frame.to_csv(stem.with_suffix('.csv'),index=False,encoding='utf-8-sig')
+    frame.to_excel(stem.with_suffix('.xlsx'),index=False)
+    mapping={c:c if len(c)<=32 else c[:23]+'_'+__import__('hashlib').sha256(c.encode()).hexdigest()[:8]
+             for c in frame.columns}
+    stata=frame.rename(columns=mapping).copy()
+    for col in stata.select_dtypes(include=['object','str']).columns:
+        stata[col]=stata[col].fillna('').astype(str)
+    stata.to_stata(stem.with_suffix('.dta'),write_index=False,version=118)
+    atomic_json(stem.with_suffix('.columns.json'),mapping)
 
 
 def write_package_docs(root):
@@ -96,15 +106,17 @@ def write_package_docs(root):
     from .common import provinces
     for package in (NTL_PACKAGE, DAY_PACKAGE):
         base = Path(root) / package
-        for name in ('metadata','code','docs','logs','data_intermediate','data_processed'):
+        from .layout import PACKAGE_DIRECTORIES
+        for name in PACKAGE_DIRECTORIES[package]:
             (base/name).mkdir(parents=True, exist_ok=True)
         if package == DAY_PACKAGE:
             (base/'samples').mkdir(exist_ok=True)
         (base/'README.md').write_text(
-            '# Province satellite source products\n\n63-province 2024 boundaries; see metadata. '
+            '# Province satellite source products\n\n63-province identity roster; see manifests for boundary source and date. '
             '`raw_data` contains clipped source products / annual composites, not sensor raw scenes. '
             'Source-specific panels are not a harmonized DMSP–VIIRS series. '
             'No land-cover classification or simulated accuracy assessment is included.\n', encoding='utf-8')
+        (base/'dashboard'/'README.md').write_text('Reserved package directory; dashboard implementation deferred by user request.\n',encoding='utf-8')
         records = []
         for product, spec in SOURCES.items():
             if product.startswith(('DMSP','VIIRS')) != (package == NTL_PACKAGE):

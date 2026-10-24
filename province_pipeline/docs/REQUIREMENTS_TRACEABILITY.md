@@ -13,7 +13,7 @@ IMPLEMENTED dưới đây nghĩa là đã có mã và kiểm tra offline tương
 | SOL, mật độ, tăng trưởng | IMPLEMENTED theo từng nguồn | Định nghĩa lưới/đơn vị riêng, coverage và chỉ số tích phân riêng. Growth chỉ kỳ liền trước, không gán thiếu thành 0 |
 | Chỉ số ảnh ngày | IMPLEMENTED theo yêu cầu hiện tại | Bands, NDVI/NDBI/MNDWI/BSI, area-weighted mean/std. Không thay thế chỉ số diện tích trong PDF |
 | Phân loại 5 lớp, bản đồ phân loại, diện tích/đất chuyển đổi | DEFERRED | Người dùng hoãn, không sinh mẫu/accuracy hoặc diện tích mô phỏng |
-| Cấu trúc hai package, TIFF/CSV/XLSX/DTA | IMPLEMENTED | Drive trước tiên theo tỉnh; manifest mapping về hai gốc package trên E; bảng tách nguồn/recipe |
+| Cấu trúc hai package, TIFF/CSV/XLSX/DTA | IMPLEMENTED | Drive và E cùng hai gốc package; tỉnh là con trực tiếp của các nhóm dữ liệu. Shared folders lọc đúng file mỗi job, có organize_only cho lô cũ. Bảng tách nguồn/recipe và theo tỉnh |
 | README/codebook, metadata nguồn | IMPLEMENTED một phần | Docs phương pháp, metadata nguồn/công thức, provenance manifest. Chưa có codebook cấp bộ dữ liệu live đã nghiệm thu và nguồn geometry thật |
 | Đồng bộ về ổ E, cập nhật và ghi log | IMPLEMENTED; Windows live BLOCKED | Windows agent, volume serial+marker, task scheduler, block validation, checksum, receipt, conditional delete |
 | Drive ít dung lượng / laptop tắt | IMPLEMENTED | Reservations toàn cục, hysteresis, quota tài khoản; WAITING_FOR_SPACE và resume; không hứa ghi E khi tắt |

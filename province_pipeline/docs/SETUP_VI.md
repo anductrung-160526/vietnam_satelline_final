@@ -1,5 +1,7 @@
 # Thiết lập và chạy pilot
 
+Cây thư mục chuẩn và chuyển dữ liệu cũ: [DIRECTORY_LAYOUT.md](DIRECTORY_LAYOUT.md). Thư mục tỉnh nằm bên trong nhóm dữ liệu của từng package, không bọc bên ngoài package.
+
 ## 1. Những gì cần chuẩn bị
 
 - Project được đăng ký Earth Engine, có quyền/quota cho công việc dự kiến; xem điều kiện sử dụng và chi phí hiện hành.

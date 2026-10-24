@@ -1,6 +1,7 @@
 """Deterministic tile jobs and one whole-province statistics job per product/period."""
 from .common import digest, provinces, tile_grid
 from .sources import SOURCES, NTL_PACKAGE, DAY_PACKAGE
+from .layout import canonical_job
 
 
 def periods(config, product):
@@ -55,9 +56,9 @@ def generate(config, boundaries, metadata):
                         item['local_directory'] = f"{package}/{directory}/{p['ma_tinh']}_{p['slug']}/{period}"
                         item['prefix'] = prefix
                         item['job_id'] = digest(item)[:32]
-                        yield item
+                        yield canonical_job(item)
                 item = dict(base, kind='table', variant='statistics', reserved_bytes=4*1048576,
                             local_directory=f"{package}/data_processed/source/{product}/{p['ma_tinh']}_{p['slug']}",
                             prefix=f"{p['ma_tinh']}_{p['slug']}_{product}_{period}_statistics_{config['algorithm_version']}")
                 item['job_id'] = digest(item)[:32]
-                yield item
+                yield canonical_job(item)

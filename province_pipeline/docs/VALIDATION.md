@@ -47,3 +47,7 @@ Preflight additionally calls the live projection nominalScale and constructs a
 4×4 constant-image exact-grid download request. It does not print the signed URL,
 retrieve satellite pixels, upload to Drive, or delete files. Require this probe
 PASS before retrying the satellite workflow after a projection parsing error.
+
+## Layout 2
+
+Tests kiểm tra tỉnh nằm đúng cấp, không đổi job IDs khi đổi đường dẫn, nhiều output dùng chung thư mục không nhầm lô, migration giữ nguyên file ID và khôi phục sau mất phản hồi, nhận lại dữ liệu local cũ không tải trùng, và aggregate bảng riêng từng tỉnh. Drive relocation thật cần chạy mode organize_only trên GitHub bằng secret hiện có; không tuyên bố đã di chuyển dữ liệu từ môi trường cloud chat.

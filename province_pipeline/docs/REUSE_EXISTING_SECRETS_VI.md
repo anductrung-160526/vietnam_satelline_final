@@ -157,3 +157,7 @@ mới có WKT đầy đủ và chạy một lượt mới trên nhánh `inspriri
 `check_only`. Tìm dòng `Earth Engine projection and exact-grid request probe: PASS`.
 Không đổi `crs` trong cấu hình sang hệ khác để che lỗi; lưới tỉnh vẫn là EPSG:6933.
 Nếu probe thất bại, gửi lỗi ở bước preflight trước khi tiếp tục chạy dữ liệu thật.
+
+## 7. Bố trí đúng hai package và sắp xếp lô cũ
+
+Xem [DIRECTORY_LAYOUT.md](DIRECTORY_LAYOUT.md). Tỉnh là con trực tiếp của các nhóm dữ liệu; Drive và E cùng layout. Mode organize_only yêu cầu pause=true, giữ nguyên file ID và dữ liệu, không xóa tệp. Merge code layout mới vào main trước khi bật lại lịch, tránh code cũ đối soát sai thư mục chứa nhiều TIFF.
