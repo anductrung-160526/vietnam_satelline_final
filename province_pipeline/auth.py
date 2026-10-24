@@ -5,6 +5,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from google.auth.credentials import Credentials
+from .common import audit
+from .rclone_diagnostics import RcloneFailure, classify, inspect_config
 
 
 class RcloneCredentials(Credentials):
@@ -23,6 +25,10 @@ class RcloneCredentials(Credentials):
         import re
         if not re.fullmatch(r'[A-Za-z0-9_-]+', remote):
             raise ValueError('Invalid rclone remote name')
+        structure=inspect_config(self.config_path,self.remote)
+        audit('rclone_config_check',**structure)
+        if structure.get('selected_remote_present') is False:
+            raise RcloneFailure('RCLONE_REMOTE_NOT_FOUND')
         self.refresh(None)
 
     def _run(self, args):
@@ -30,14 +36,20 @@ class RcloneCredentials(Credentials):
             result = subprocess.run([self.executable, '--config', self.config_path,
                 '--log-level', 'ERROR', *args], capture_output=True, text=True,
                 encoding='utf-8', timeout=120, check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            raise RuntimeError('Cannot execute rclone; install it and check the configured path') from None
+        except FileNotFoundError:
+            raise RcloneFailure('RCLONE_EXECUTABLE_NOT_FOUND') from None
+        except subprocess.TimeoutExpired:
+            raise RcloneFailure('RCLONE_TIMEOUT') from None
+        except OSError:
+            raise RcloneFailure('RCLONE_EXECUTION_FAILED') from None
         if result.returncode:
-            raise RuntimeError('Rclone authentication failed; check the remote and reconnect locally if required')
+            code=classify((getattr(result,'stderr','') or '')+'\n'+(result.stdout or ''))
+            audit('rclone_command_failed',error_code=code,exit_code=result.returncode)
+            raise RcloneFailure(code,result.returncode)
         try:
             return json.loads(result.stdout)
         except ValueError:
-            raise RuntimeError('Rclone returned invalid JSON; check configuration locally') from None
+            raise RcloneFailure('RCLONE_INVALID_JSON') from None
 
     def refresh(self, request):
         # A read-only operation makes rclone refresh/write its token using its own OAuth client.

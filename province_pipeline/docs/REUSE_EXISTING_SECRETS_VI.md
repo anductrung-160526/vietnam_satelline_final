@@ -128,3 +128,26 @@ Khi laptop tắt hoặc ổ E không có, Drive tích lũy đến ngưỡng rồ
 - Live pilot vẫn cần chạy trên GitHub bằng hai secret thực tế; test offline không xác
   nhận token hoặc service account còn hoạt động. Không có dữ liệu vệ tinh thật được tải
   hay xóa chỉ từ việc sửa mã/push code.
+
+## 6. Khi bước rclone preflight thất bại
+
+Bản cũ chỉ báo chung “Rclone authentication failed”; thông báo đó không đủ để kết
+luận token hết hạn. Bản mới ghi `rclone_config_check` (chỉ trạng thái cấu trúc) và
+`rclone_command_failed` với mã lỗi cố định. Không in stderr/stdout/config/token gốc.
+
+| Mã lỗi | Hành động |
+|---|---|
+| RCLONE_REMOTE_NOT_FOUND | Kiểm tra tên remote bằng `rclone listremotes` ở máy có cấu hình; đặt Variable PROVINCE_RCLONE_REMOTE đúng tên, không dấu hai chấm |
+| RCLONE_CONFIG_FORMAT | Secret RCLONE_CONF phải là cấu hình INI đầy đủ có `[gdrive]` hoặc tên remote thật; không phải chỉ token JSON, Client ID, đường dẫn file hay chuỗi có newline bị escape |
+| RCLONE_TOKEN_REVOKED | Google trả invalid_grant; reconnect remote trên máy tin cậy rồi cập nhật RCLONE_CONF qua GitHub Secrets, không gửi token qua chat |
+| RCLONE_CLIENT_REJECTED | Kiểm tra client cũ bị xóa/sai thông tin; không mặc định tạo client mới trước khi xem cấu hình |
+| RCLONE_TOKEN_MISSING | Remote thiếu OAuth token; đăng nhập remote bằng rclone cục bộ, không cần Desktop JSON mới nếu dùng client mặc định |
+| RCLONE_SCOPE_DENIED | Token thiếu scope; xác thực lại với quyền Drive phù hợp |
+| RCLONE_DRIVE_API_DISABLED | Kiểm tra Drive API trong project của OAuth client thực tế |
+| RCLONE_RATE_LIMIT / RCLONE_NETWORK / RCLONE_TIMEOUT | Kiểm tra quota/kết nối, không đổi secret chỉ vì lỗi tạm thời |
+| RCLONE_UNKNOWN | Chưa phân loại được; kiểm tra lỗi tại máy tin cậy, không dán cấu hình hoặc output chứa credentials |
+
+Sau khi push bản sửa vào nhánh phát triển, mở Actions → Province satellite staging →
+**Run workflow**, chọn **inspriring-newton**, mode **check_only**. Không chỉ bấm
+Re-run jobs của lượt cũ vì lượt cũ vẫn dùng commit cũ. Merge PR vào main sau khi
+kiểm tra bản sửa; lịch trên main chưa dùng bản nhánh phát triển khi chưa merge.
