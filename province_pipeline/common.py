@@ -65,6 +65,11 @@ def load_config(path, live=False):
     from .sources import SOURCES
     if not c['products'] or not set(c['products']) <= set(SOURCES):
         raise ValueError('Unsupported product')
+    if c.get('pipeline_version') == 2:
+        from .profiles import validate_quality, PROFILES
+        if c.get('run_profile') not in PROFILES:
+            raise ValueError('Select a supported run profile')
+        validate_quality(c.get('quality',{}))
     backend = c.get('export_backend', 'batch')
     if backend not in ('batch', 'direct'):
         raise ValueError('export_backend must be batch or direct')

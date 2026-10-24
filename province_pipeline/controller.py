@@ -120,6 +120,11 @@ def reconcile(drive, folders, state, tasks):
                                 raise RuntimeError('Direct upload report does not match Drive output')
                             drive.write_json(folders['manifests'],job['job_id']+'.json',manifest)
                             job['status']='REMOTE_READY'
+                            if job.get('pipeline_version') == 2 and job['kind'] == 'table':
+                                record = report.get('statistics')
+                                if not record or record.get('job_id') != job['job_id']:
+                                    raise RuntimeError('Missing verified statistics report')
+                                state.setdefault('statistics', {})[job['job_id']] = record
                         else:
                             job['status']='RUNNING'  # Wait for Drive visibility, never upload twice.
                     except RuntimeError as error:
@@ -130,7 +135,7 @@ def reconcile(drive, folders, state, tasks):
                     files=job_output_files(drive,job)
                     if files:
                         job.update(status='BLOCKED_OUTPUT',error='Unconfirmed upload exists; inspect checksum before retry')
-                    elif job.get('attempt',1) < 4:
+                    elif job.get('attempt',1) < job.get('quality',{}).get('max_transfer_attempts',4):
                         job.update(status='RESERVED',attempt=job.get('attempt',1)+1)
                     else:
                         job.update(status='FAILED',error='Direct transfer failed after four attempts; inspect reports')
@@ -243,6 +248,7 @@ def work(config, drive, plan, group_id, boundaries):
     from .earth_engine import build_export, submit_with_request_id
     if plan['config_hash'] != digest(config) or config.get('pause', True):
         raise RuntimeError('Plan/config mismatch or paused')
+    failures = []
     for job in plan['jobs']:
         if job['province']['group_id'] != group_id:
             continue
@@ -262,7 +268,7 @@ def work(config, drive, plan, group_id, boundaries):
             except Exception as error:
                 # Keep original error type only; no signed URL or token is persisted in reports.
                 drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='FAILED',error_type=type(error).__name__))
-                raise
+                failures.append(job['job_id'])
             continue
         drive.assert_unique_folder_name(job['folder_name'], job['folder_id'])
         task = build_export(config, job, boundaries[job['province']['ma_tinh']])
@@ -276,6 +282,9 @@ def work(config, drive, plan, group_id, boundaries):
             # Keep persisted SUBMITTING intent and byte reservation even on unknown outcome.
             audit('submission_uncertain', job_id=job['job_id'], group_id=group_id)
             raise
+
+    if failures:
+        raise RuntimeError(f'{len(failures)} direct transfers failed; bounded retry on next run')
 
 
 def reconcile_existing(config,drive):

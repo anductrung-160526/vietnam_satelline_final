@@ -25,7 +25,7 @@ def collection(config, product, period, geometry):
     coll = collections[0]
     for other in collections[1:]:
         coll = coll.merge(other)
-    if product.startswith(('LANDSAT', 'SENTINEL2')):
+    if product.startswith(('LANDSAT', 'SENTINEL2')) and len(period) == 4:
         # Configured months are within the labeled calendar year, not a hidden cross-year window.
         months = config.get('season_months_by_province', {}).get(config.get('_province_code'),
                     config.get('season_months', list(range(1, 13))))
@@ -82,6 +82,9 @@ def _sentinel(img):
 
 
 def composite(config, job, geometry):
+    if job.get('pipeline_version') == 2:
+        from .processing import composite as quality_composite
+        return quality_composite(config, job, geometry)
     import ee
     product = job['product']
     c = dict(config, _province_code=job['province']['ma_tinh'])

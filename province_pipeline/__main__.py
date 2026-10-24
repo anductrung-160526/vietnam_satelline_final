@@ -13,6 +13,10 @@ def main():
     parser.add_argument('--config', default='province_pipeline/config/local.json')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('validate')
+    sub.add_parser('publish-panels')
+    profile = sub.add_parser('profile')
+    profile.add_argument('--sample',choices=['test_hanoi_2025','full_2004_2025'],default='test_hanoi_2025')
+    profile.add_argument('--output',default='.province-local/config.json')
     sub.add_parser('prepare-gadm')
     sub.add_parser('sync-boundaries')
     sub.add_parser('inventory')
@@ -31,7 +35,12 @@ def main():
     sub.add_parser('aggregate')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
-    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive','reconcile-only'))
+    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive','reconcile-only','publish-panels'))
+    if args.command == 'profile':
+        from .profiles import apply_profile
+        atomic_json(args.output,apply_profile(c,args.sample))
+        print('Saved profile:',args.sample,args.output)
+        return
     if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):
         from .prepare_gadm import prepare
         print('Prepared GADM research provinces:', prepare(c))
@@ -58,6 +67,14 @@ def main():
         from .boundaries import load_boundaries
         boundaries, metadata = load_boundaries(c)
         from .jobs import generate
+        if c.get('pipeline_version') == 2:
+            from .jobs import generate_v2
+            from collections import Counter
+            stages={}
+            for priority in range(3):
+                stages[priority]=dict(Counter(j['kind'] for j in generate_v2(c,boundaries,metadata,priority)))
+            print(json.dumps(dict(profile=c['run_profile'],selected=len(c['province_codes']),years=c['years'],stages=stages),indent=2))
+            return
         jobs = list(generate(c, boundaries, metadata))
         print(json.dumps({'provinces':len(provinces()), 'selected':len(c['province_codes']),
                           'jobs':len(jobs), 'groups':sorted({j['province']['group_id'] for j in jobs}),
@@ -66,6 +83,14 @@ def main():
     from .drive import Drive
     from .auth import drive_credentials, ee_credentials
     drive = Drive(drive_credentials())
+    if args.command == 'publish-panels':
+        from .controller import control_folders
+        from .boundaries import load_boundaries
+        from .panels import publish
+        _,metadata=load_boundaries(c)
+        state=drive.read_json(control_folders(drive,c['drive_root_id'])['root'],'state.json',{'jobs':{}})
+        print('Published panels:',[(f['local_relative_path'],f['rows']) for f in publish(c,drive,state,metadata)['files']])
+        return
     if args.command == 'reconcile-only':
         from .controller import reconcile_existing
         counts=reconcile_existing(c,drive)
@@ -123,7 +148,18 @@ def main():
         work(c, drive, plan, args.group, boundaries)
         return
     from .jobs import generate
-    candidates = list(generate(c, boundaries, metadata))
+    if c.get('pipeline_version') == 2 and args.command == 'plan':
+        from .priority import prepare_priority
+        plan=prepare_priority(c,drive,boundaries,metadata,check)
+        atomic_json(args.output,plan)
+        print('Planned jobs:',len(plan['jobs']))
+        return
+    if c.get('pipeline_version') == 2:
+        from .profiles import table_specs
+        from .jobs import table_job
+        candidates=(table_job(c,s,metadata) for s in table_specs(c))
+    else:
+        candidates = generate(c, boundaries, metadata)
     if args.command == 'inventory':
         seen, records = set(), []
         for job in candidates:

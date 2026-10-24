@@ -72,3 +72,11 @@ parents, a race between metadata reads, absence of both validators, and no retry
 without If-Match after precondition failure. The installed official discovery
 schema confirms the v2 fields used exist. Live deletion with the user's Drive
 credentials remains to be checked on Windows; no source was deleted by these tests.
+
+## V2: fixed-source panels and two sample profiles (2026-10-24)
+
+- Offline regression suite plus V2 tests verify priority barriers, round-robin dispatch, bounded inventory, retries, source selection, nulls, expected row counts, same-source growth, full-year completeness, verified mutable CSV snapshots and safe local replacement.
+- Real EE SDK algorithm signatures serialize the LANDSAT, SENTINEL2, DMSP and VIIRS processing graphs, including Cloud Score+ joins, fire masks and reducers. This checks client graph construction, **not** live asset availability, EE permissions, server execution or scientific accuracy.
+- Actual pinned GADM geometry dry-plan: Hanoi 2025 → 24 night-image jobs, 24 statistics jobs, 52 annual-day-image tile jobs. Full empty panels → 9,702 night rows and 16,632 day rows, built in about 1.4 seconds in this environment.
+- No EE or Drive runtime credentials are injected here. GitHub Actions API read returned Forbidden. Therefore no live Hanoi 2025 run, dispatch or Windows scheduling is claimed by this change. User must start the provided test profile and inspect DATA_STATUS/QA.
+- No validated DMSP–VIIRS calibration, complete ship-light removal or land-cover classification is claimed. Their limitations are explicitly recorded in delivered metadata and the run guide.

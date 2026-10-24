@@ -47,12 +47,16 @@ def row_statistics(row, product):
 def aggregate(root):
     import pandas as pd
     root = Path(root)
+    if (root / '.panels.json').exists():
+        from .panels import write_docs
+        write_docs(root)
+        return 2
     manifests = root / '.manifests'
     grouped = {}
     for path in sorted(manifests.glob('*.json')):
         manifest = json.loads(path.read_text(encoding='utf-8'))
         job = manifest['job']
-        if job['kind'] != 'table':
+        if job['kind'] != 'table' or job.get('pipeline_version') == 2:
             continue
         # Only aggregate files with a verified local receipt and revalidated bytes/schema.
         from .receiver import validate

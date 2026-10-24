@@ -2,10 +2,19 @@ name: Province satellite staging
 on:
   workflow_dispatch:
     inputs:
+      sample:
+        description: '1 = Hanoi 12 months 2025; 2 = all 63 provinces 2004-2025'
+        type: choice
+        default: test_hanoi_2025
+        options: [test_hanoi_2025, full_2004_2025]
+      cycles:
+        description: 'Maximum chained batches (1-20); stop early when complete or Drive fills'
+        type: string
+        default: '20'
       mode:
         description: Check credentials and sources, or run admitted transfers
         type: choice
-        default: check_only
+        default: run
         options: [check_only, reconcile_only, organize_only, run]
   schedule:
     - cron: '17,47 * * * *'
@@ -19,6 +28,9 @@ permissions:
   contents: read
 
 env:
+  PROVINCE_RUN_PROFILE: ${{ inputs.sample || 'test_hanoi_2025' }}
+  PROVINCE_ACTION_MODE: ${{ inputs.mode || 'scheduled' }}
+  PROVINCE_CYCLES: ${{ inputs.cycles || '20' }}
   # Branch-only pilot config; main deliberately ignores this variable.
   PROVINCE_CONFIG_JSON: ${{ github.ref_name == 'inspriring-newton' && vars.PROVINCE_BRANCH_CONFIG_JSON || vars.PROVINCE_CONFIG_JSON }}
   EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
@@ -59,6 +71,9 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
               stream.write('groups='+json.dumps(groups)+'\n')
           PY
+      - name: Publish the two consolidated index panels
+        if: ${{ inputs.mode == 'run' || inputs.mode == 'reconcile_only' || github.event_name == 'schedule' }}
+        run: python -m province_pipeline --config .province-local/config.json publish-panels
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.mode == 'run' || github.event_name == 'schedule' }}
         with:
@@ -103,8 +118,11 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/province-auth"
 
   finalize:
+    permissions:
+      contents: read
+      actions: write
     needs: [controller, export]
-    if: ${{ always() && !cancelled() && needs.controller.result == 'success' && (inputs.mode == 'run' || github.event_name == 'schedule') && (needs.export.result == 'success' || needs.export.result == 'failure') }}
+    if: ${{ always() && !cancelled() && needs.controller.result == 'success' && (inputs.mode == 'run' || github.event_name == 'schedule') && (needs.export.result == 'success' || needs.export.result == 'failure' || needs.export.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -112,6 +130,20 @@ jobs:
       - uses: ./.github/actions/province-setup
       - name: Publish ready manifests after workers finish
         run: python -m province_pipeline --config .province-local/config.json reconcile-only
+      - name: Update consolidated day and night CSVs
+        run: python -m province_pipeline --config .province-local/config.json publish-panels
+      - uses: actions/upload-artifact@v4
+        with:
+          name: province-indices-${{ inputs.sample || 'test_hanoi_2025' }}
+          path: .province-local/panels/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - name: Continue bounded batches on the same branch and sample
+        env:
+          GH_WORKFLOW_TOKEN: ${{ github.token }}
+          PROVINCE_CYCLES: ${{ inputs.cycles || '20' }}
+        run: python -m province_pipeline.continuation
       - name: Remove credentials
         if: always()
         run: rm -rf "$RUNNER_TEMP/province-auth"

@@ -281,5 +281,8 @@ def run(config, drive, dry_run=False):
                 audit('receive_failed', job_id=job['job_id'], error_type=type(error).__name__,
                       error_code=failure_reason(error))
                 failures.append(job['job_id'])
+        if not dry_run:
+            from .panels import sync
+            sync(config,drive,root,folders['root'])
         if failures:
             raise RuntimeError(f'{len(failures)} batches failed; sources retained for retry')

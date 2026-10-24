@@ -71,18 +71,26 @@ def download_image(image, job, path, attempts=4):
             ds.set_band_description(index,name)
 
 
-def write_statistics(image, job, geometry, path):
+def write_statistics(image, job, geometry, path, config=None):
     from .earth_engine import statistics
+    if job.get('pipeline_version') == 2:
+        from .processing import statistics
     # Whole-province sufficient statistics from the same image and masks, not tile mean averages.
     info=statistics(image, job, geometry).first().toDictionary().getInfo()
+    if job.get('pipeline_version') == 2:
+        from .quality import reprocess_statistics
+        info=reprocess_statistics(info,job,geometry,config)
     from .sources import SOURCES
     fields=['ma_tinh','ten_tinh','nam','thang','nguon_anh','period','job_id','algorithm_version',
             'boundary_sha256','scale','crs','valid_area','total_area']
     fields += [band+suffix for band in SOURCES[job['product']]['bands'] for suffix in ('_w','_w2','_sum')]
+    if job.get('pipeline_version') == 2:
+        fields = sorted(info)
     with path.open('w',encoding='utf-8',newline='') as stream:
         writer=csv.DictWriter(stream,fieldnames=fields,extrasaction='ignore')
         writer.writeheader()
         writer.writerow(info)
+    return info
 
 
 def transfer(config, drive, job, boundary):
@@ -95,8 +103,25 @@ def transfer(config, drive, job, boundary):
         path=Path(tmp)/(job['prefix']+suffix)
         if job['kind']=='image':
             download_image(image,job,path)
+            if job.get('pipeline_version') == 2:
+                from .quality import inspect_raster
+                import rasterio
+                qa=inspect_raster(path,job)
+                qa['attempts']=1
+                if job['product'] in ('LANDSAT','SENTINEL2') and 'VALUE_RANGE_REVIEW' in qa['flags']:
+                    strict=dict(job['quality'],sentinel_cloud_score_min=max(.75,job['quality']['sentinel_cloud_score_min']),
+                                landsat_cloud_buffer_m=max(120,job['quality']['landsat_cloud_buffer_m']))
+                    from .processing import composite as reprocess
+                    image=reprocess(config,dict(job,quality=strict),geometry)
+                    download_image(image,job,path)
+                    qa=inspect_raster(path,job)
+                    qa['attempts']=2
+                with rasterio.open(path,'r+') as ds:
+                    ds.update_tags(SOURCE=job['product'],PERIOD=job['period'],METHOD_VERSION=job['algorithm_version'],
+                                   QA_FLAGS=';'.join(qa['flags']),VALID_PIXEL_PCT=str(qa['valid_pixel_pct']),
+                                   QC_ATTEMPTS=str(qa['attempts']),CALIBRATION_STATUS='NOT_CALIBRATED' if job['priority']==0 else 'NOT_APPLICABLE')
         else:
-            write_statistics(image,job,geometry,path)
+            record = write_statistics(image,job,geometry,path,config)
         if path.stat().st_size > job['reserved_bytes']:
             raise RuntimeError('Output exceeded reservation; no upload performed')
         # Validate locally before any upload. Receiver will independently validate its own copy.
@@ -105,4 +130,9 @@ def transfer(config, drive, job, boundary):
         validate(path,expected,job)
         file_id=drive.upload_verified(job['folder_id'],path)
         audit('uploaded',job_id=job['job_id'],backend='direct')
-        return dict(file_id=file_id,md5Checksum=expected['md5Checksum'],size=expected['size'])
+        result = dict(file_id=file_id,md5Checksum=expected['md5Checksum'],size=expected['size'])
+        if job['kind']=='image' and job.get('pipeline_version')==2:
+            result['image_qa']=qa
+        if job['kind'] == 'table' and job.get('pipeline_version') == 2:
+            result['statistics'] = record
+        return result

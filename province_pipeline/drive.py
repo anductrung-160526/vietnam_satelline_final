@@ -95,6 +95,26 @@ class Drive:
                                           media_body=media, fields='id', supportsAllDrives=True)
         return self.execute(req)['id']
 
+    def write_verified_bytes(self, parent, name, content):
+        """Mutable consolidated CSV under workflow single-writer lock; verify response bytes."""
+        import hashlib
+        from googleapiclient.http import MediaIoBaseUpload
+        found = self.find(parent, name)
+        expected = hashlib.md5(content).hexdigest()
+        if found and found.get('md5Checksum') == expected:
+            return self.metadata(found['id'])
+        media = MediaIoBaseUpload(io.BytesIO(content), mimetype='text/csv', resumable=False)
+        if found:
+            request = self.api.files().update(fileId=found['id'], media_body=media,
+                                             fields=FIELDS, supportsAllDrives=True)
+        else:
+            request = self.api.files().create(body={'name':name,'parents':[parent]},
+                    media_body=media,fields=FIELDS,supportsAllDrives=True)
+        result = self.execute(request)
+        if result.get('md5Checksum') != expected or int(result.get('size',0)) != len(content):
+            raise RuntimeError('Aggregate upload checksum mismatch')
+        return result
+
     def upload_verified(self, parent, path):
         """Unique job folder + checksummed upload; reconcile a lost response without duplicates."""
         from googleapiclient.http import MediaFileUpload

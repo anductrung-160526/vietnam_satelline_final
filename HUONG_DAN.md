@@ -1,3 +1,5 @@
+> Pipeline cấp tỉnh mới: [hai chế độ chạy thử Hà Nội 2025 / toàn bộ 2004–2025](province_pipeline/docs/RUN_PROFILES_VI.md). Nội dung phía dưới dành cho workflow xã/phường cũ.
+
 # Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions
 
 Pipeline chạy notebook `VNGISDash_Task123_Merged_final.ipynb` (chỉ 3 chức năng: trích chỉ số ảnh ngày và đêm, lấy tif ngày, lấy tif đêm) cho toàn bộ xã/phường (GADM 4.1 cấp 3), 12 tháng năm 2024, và ghi kết quả lên Google Drive. Mỗi lượt chạy khoảng 5 giờ 15 phút, hết lượt thì tự gọi lượt kế tiếp. Trạng thái nằm trên Drive nên lượt sau làm tiếp đúng chỗ dừng, bạn có thể tắt máy.
