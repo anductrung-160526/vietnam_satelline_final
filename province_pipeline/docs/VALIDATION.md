@@ -55,3 +55,7 @@ Tests kiểm tra tỉnh nằm đúng cấp, không đổi job IDs khi đổi đ�
 ## Flat TIFF layout 3
 
 Ảnh nguồn và trung gian đều có thư mục cha trực tiếp là tỉnh. Tests xác nhận nhiều năm/tháng dùng chung thư mục nhưng không trùng tên, giữ nguyên job ID, chuyển lô layout 2 đã hoàn tất hoặc đang chuyển dở, và di chuyển TIFF local khỏi thư mục năm mà giữ nguyên MD5/SHA-256. Đây là kiểm thử offline; Drive chỉ thay đổi khi người dùng chạy organize_only bằng credentials thật.
+
+## Worker finalization
+
+Regression tests kiểm tra RESERVED + report UPLOADED chỉ thành REMOTE_READY khi file ID/checksum khớp, manifest được lưu trước state READY, thiếu report/output không bị coi là hoàn tất, không cấp job mới khi reconcile_only, và không ghi đè state đang MIGRATING hoặc state chưa tồn tại. Finalizer chạy sau matrix trong cùng concurrency group. Live handoff cần chạy trên GitHub với credentials thực tế.

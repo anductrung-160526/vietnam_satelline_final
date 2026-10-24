@@ -19,6 +19,7 @@ def main():
     sub.add_parser('preflight')
     sub.add_parser('organize-drive')
     sub.add_parser('organize-local')
+    sub.add_parser('reconcile-only')
     plan = sub.add_parser('plan')
     plan.add_argument('--output', default='.province-local/plan.json')
     work = sub.add_parser('work')
@@ -30,7 +31,7 @@ def main():
     sub.add_parser('aggregate')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
-    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive'))
+    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive','reconcile-only'))
     if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):
         from .prepare_gadm import prepare
         print('Prepared GADM research provinces:', prepare(c))
@@ -65,6 +66,12 @@ def main():
     from .drive import Drive
     from .auth import drive_credentials, ee_credentials
     drive = Drive(drive_credentials())
+    if args.command == 'reconcile-only':
+        from .controller import reconcile_existing
+        counts=reconcile_existing(c,drive)
+        print('Job statuses:',json.dumps(counts,sort_keys=True))
+        print('Ready to receive:',counts.get('REMOTE_READY',0))
+        return
     if args.command == 'organize-drive':
         from .organize import organize
         changed,skipped=organize(c,drive)

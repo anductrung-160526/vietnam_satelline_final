@@ -183,3 +183,32 @@ Giai đoạn này chạy nhánh qua workflow_dispatch thủ công; schedule GitH
 phát từ default branch và main đang được bỏ qua. Không hứa nhánh tự chạy định kỳ
 24/24 khi chưa có bộ lập lịch cho nhánh. Khi đã quyết định merge, đưa cấu hình về
 PROVINCE_CONFIG_JSON để bật lịch main; xóa biến branch nếu không còn cần.
+
+## 9. Windows không thấy would_receive, state chỉ có RESERVED
+
+Worker ghi báo cáo UPLOADED riêng; controller phải kiểm tra output, tạo manifest
+và lưu REMOTE_READY trước khi receiver chọn tải. RESERVED không tự chứng minh
+ảnh chưa có trên Drive, cũng không được coi là ảnh đã tải thành công.
+
+Workflow run mới có job **finalize** sau khi matrix export kết thúc, để công bố
+manifest READY trong cùng lượt chạy. Nếu worker thất bại, finalize chỉ đối soát
+kết quả thật và giữ cơ chế retry; không gán READY cho lô thiếu output/checksum.
+
+Đối với lượt cũ chưa có finalize: Actions → Province satellite staging → Run
+workflow → branch inspriring-newton → mode **reconcile_only**. Không cần đổi pause.
+Mở bước **Reconcile existing worker reports without exporting new data**:
+
+```text
+Job statuses: {"REMOTE_READY": 2}
+Ready to receive: 2
+```
+
+Đây chỉ là ví dụ khi hai report đã upload và khớp output; không hứa luôn có hai
+lô. Nếu không có report, trạng thái vẫn RESERVED; nếu tệp chưa thấy, RUNNING;
+checksum/file ID không khớp thì BLOCKED_OUTPUT. Mode này không cấp công việc mới,
+không lấy ảnh mới và không xóa dữ liệu. Giữ single-writer concurrency như workflow.
+
+Sau khi Ready to receive > 0, chạy lại receive --dry-run rồi receive trên Windows.
+Không cần cập nhật mã Windows chỉ để đọc những manifest đã được công bố. Bản
+receiver mới còn in receiver_summary / receiver_waiting khi không có lô READY,
+tránh kết thúc im lặng sau rclone_config_check.

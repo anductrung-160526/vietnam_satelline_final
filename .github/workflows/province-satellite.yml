@@ -6,7 +6,7 @@ on:
         description: Check credentials and sources, or run admitted transfers
         type: choice
         default: check_only
-        options: [check_only, organize_only, run]
+        options: [check_only, reconcile_only, organize_only, run]
   schedule:
     - cron: '17,47 * * * *'
 
@@ -43,8 +43,11 @@ jobs:
       - name: Organize existing verified outputs into canonical packages
         if: ${{ inputs.mode == 'organize_only' }}
         run: python -m province_pipeline --config .province-local/config.json organize-drive
+      - name: Reconcile existing worker reports without exporting new data
+        if: ${{ inputs.mode == 'reconcile_only' }}
+        run: python -m province_pipeline --config .province-local/config.json reconcile-only
       - name: Reconcile and reserve global export capacity
-        if: ${{ inputs.mode != 'check_only' && inputs.mode != 'organize_only' }}
+        if: ${{ inputs.mode == 'run' || github.event_name == 'schedule' }}
         id: plan
         run: |
           python -m province_pipeline --config .province-local/config.json plan --output .province-local/plan.json
@@ -57,7 +60,7 @@ jobs:
               stream.write('groups='+json.dumps(groups)+'\n')
           PY
       - uses: actions/upload-artifact@v4
-        if: ${{ inputs.mode != 'check_only' && inputs.mode != 'organize_only' }}
+        if: ${{ inputs.mode == 'run' || github.event_name == 'schedule' }}
         with:
           name: province-plan
           path: .province-local/plan.json
@@ -95,6 +98,20 @@ jobs:
           path: .province-local
       - name: Submit only assigned reservations
         run: python -m province_pipeline --config .province-local/config.json work --plan .province-local/plan.json --group '${{ matrix.group }}'
+      - name: Remove credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/province-auth"
+
+  finalize:
+    needs: [controller, export]
+    if: ${{ always() && !cancelled() && needs.controller.result == 'success' && (inputs.mode == 'run' || github.event_name == 'schedule') && (needs.export.result == 'success' || needs.export.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/province-setup
+      - name: Publish ready manifests after workers finish
+        run: python -m province_pipeline --config .province-local/config.json reconcile-only
       - name: Remove credentials
         if: always()
         run: rm -rf "$RUNNER_TEMP/province-auth"

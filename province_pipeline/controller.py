@@ -276,3 +276,26 @@ def work(config, drive, plan, group_id, boundaries):
             # Keep persisted SUBMITTING intent and byte reservation even on unknown outcome.
             audit('submission_uncertain', job_id=job['job_id'], group_id=group_id)
             raise
+
+
+def reconcile_existing(config,drive):
+    """Finalize worker reports without creating/reserving/submitting new data jobs.
+
+    Same single-writer workflow concurrency contract as prepare/organize. A missing
+    state is an error, not an excuse to replace a real state with an empty document.
+    """
+    from collections import Counter
+    if config.get('export_backend','direct')!='direct':
+        raise ValueError('reconcile-only currently supports direct transfers only')
+    folders=control_folders(drive,config['drive_root_id'])
+    state=drive.read_json(folders['root'],'state.json')
+    if state is None:
+        raise RuntimeError('No pipeline state found; verify Drive root before reconciliation')
+    if any(j['status']=='MIGRATING' for j in state['jobs'].values()):
+        raise RuntimeError('Finish organize_only migration before reconciliation')
+    reconcile(drive,folders,state,[])
+    state['updated_at']=datetime.now(timezone.utc).isoformat()
+    drive.write_json(folders['root'],'state.json',state)
+    counts=dict(Counter(j['status'] for j in state['jobs'].values()))
+    audit('reconciliation_complete',status_counts=counts,ready_jobs=counts.get('REMOTE_READY',0),new_jobs=0)
+    return counts

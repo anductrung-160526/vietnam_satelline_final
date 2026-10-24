@@ -245,6 +245,12 @@ def run(config, drive, dry_run=False):
     with single_receiver(root):
         folders = control_folders(drive, config['drive_root_id'])
         state = drive.read_json(folders['root'], 'state.json', {'jobs': {}})
+        from collections import Counter
+        counts=dict(Counter(j['status'] for j in state['jobs'].values()))
+        audit('receiver_summary',total_jobs=sum(counts.values()),status_counts=counts,
+              ready_jobs=counts.get('REMOTE_READY',0),dry_run=dry_run)
+        if not counts.get('REMOTE_READY',0):
+            audit('receiver_waiting',reason='NO_REMOTE_READY',next_step='Run GitHub mode reconcile_only to finalize worker reports')
         failures = []
         for job in state['jobs'].values():
             if job['status'] != 'REMOTE_READY':
