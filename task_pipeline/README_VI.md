@@ -1,3 +1,5 @@
+> **Muốn bỏ Drive và ghi trực tiếp vào E:** dùng [DIRECT_TO_E_VI.md](DIRECT_TO_E_VI.md). Đây là chế độ chạy trên laptop bằng PowerShell; workflow GitHub bên dưới vẫn là phương án qua Drive.
+
 > **Cập nhật:** đầu ra ảnh mới là **một TIFF toàn tỉnh/thời kỳ, không xuất PNG**, không xuất các tile tạm lên Drive. DMSP theo năm; VIIRS và ảnh ngày theo tháng. File mới có `_province_` trong tên. File tile cũ giữ nguyên, không tự xóa.
 
 # Sáu nhánh cố định — Task 1, 2, 3 theo tỉnh, 2004–2025
