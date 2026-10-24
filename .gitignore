@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+.province-local/
+province_pipeline/config/local.json
+province_pipeline/config/boundaries.geojson
+province_pipeline/config/boundaries.metadata.json

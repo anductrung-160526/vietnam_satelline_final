@@ -1,0 +1,43 @@
+{
+  "project": "",
+  "drive_root_id": "",
+  "boundaries": "province_pipeline/config/boundaries.geojson",
+  "boundary_metadata": "province_pipeline/config/boundaries.metadata.json",
+  "years": [
+    2024
+  ],
+  "province_codes": [
+    "01"
+  ],
+  "products": [
+    "LANDSAT",
+    "VIIRS_MONTHLY"
+  ],
+  "viirs_months": [
+    1
+  ],
+  "season_months": [
+    1,
+    2,
+    3,
+    4,
+    11,
+    12
+  ],
+  "season_months_by_province": {},
+  "tile_pixels": 512,
+  "crs": "EPSG:6933",
+  "algorithm_version": "v001",
+  "max_active_exports": 2,
+  "drive_staging_budget_gib": null,
+  "drive_safety_margin_gib": null,
+  "high_watermark": 0.65,
+  "low_watermark": 0.3,
+  "pause": true,
+  "local_root": "E:\\SatelliteData",
+  "volume_marker": "",
+  "allow_remote_delete": false,
+  "boundaries_drive_id": "",
+  "boundary_metadata_drive_id": "",
+  "max_inventory_checks_per_cycle": 20
+}
