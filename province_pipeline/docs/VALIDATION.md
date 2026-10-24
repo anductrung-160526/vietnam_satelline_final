@@ -63,3 +63,12 @@ Regression tests kiểm tra RESERVED + report UPLOADED chỉ thành REMOTE_READY
 ## Windows task launch
 
 Task registration now persists absolute paths including rclone.exe; receiver logs each invocation to a per-user transcript and preserves the Python exit code. Windows Task Scheduler and PowerShell transcript execution cannot be validated on this Linux machine. Python receiver diagnostics are covered by tests ensuring only constant error codes are logged, with no raw API/credential response content.
+
+## Conditional Drive delete fallback
+
+Tests cover the Drive v2 File ETag fallback when v3 omits the header, exact-ID
+conditional delete through the same API version, mismatched content/version/name/
+parents, a race between metadata reads, absence of both validators, and no retry
+without If-Match after precondition failure. The installed official discovery
+schema confirms the v2 fields used exist. Live deletion with the user's Drive
+credentials remains to be checked on Windows; no source was deleted by these tests.

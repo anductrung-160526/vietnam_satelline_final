@@ -247,6 +247,7 @@ def failure_reason(error):
                 412:'REMOTE_FILE_CHANGED',429:'DRIVE_RATE_LIMIT'}[status]
     message=str(error).lower()
     for phrase,code in [('conditional delete support','DELETE_GUARD_UNAVAILABLE'),
+                        ('staging ancestry','STAGING_ANCESTRY_UNVERIFIED'),
                         ('checksum','DATA_CHECKSUM_MISMATCH'),('md5','DATA_CHECKSUM_MISMATCH'),
                         ('receipt','RECEIPT_VERIFICATION_FAILED'),('wrong external disk','WRONG_DISK'),
                         ('disk full','LOCAL_DISK_FULL'),('source changed','REMOTE_FILE_CHANGED')]:

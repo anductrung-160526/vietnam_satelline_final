@@ -1,7 +1,7 @@
 """Drive API adapter: IDs, pagination, exact parent/name lookup, bounded requests."""
 import io
 import json
-from .common import retry
+from .common import retry, audit
 
 FOLDER = 'application/vnd.google-apps.folder'
 FIELDS = 'id,name,mimeType,size,md5Checksum,version,parents,trashed,appProperties'
@@ -19,6 +19,8 @@ def credentials(path):
 class Drive:
     def __init__(self, creds):
         from googleapiclient.discovery import build
+        self._credentials=creds
+        self._v2_api=None
         self.api = build('drive', 'v3', credentials=creds, cache_discovery=False)
 
     def execute(self, req):
@@ -189,9 +191,46 @@ class Drive:
             if node['name'] == '_control':
                 raise RuntimeError('Control files must never be deleted')
             parent = node.get('parents', [])
-        if parent != [root] or not current.get('_etag'):
-            raise RuntimeError('Cannot prove staging ancestry or conditional delete support')
-        req = self.api.files().delete(fileId=current['id'], supportsAllDrives=True)
-        req.headers['If-Match'] = current['_etag']
+        if parent != [root]:
+            raise RuntimeError('Cannot prove staging ancestry; deletion blocked')
+        if current.get('_etag'):
+            req = self.api.files().delete(fileId=current['id'], supportsAllDrives=True)
+            req.headers['If-Match'] = current['_etag']
+            api_version='v3'
+        else:
+            # Drive v3's File schema has no etag property and its GET may omit the
+            # HTTP header. Drive v2 exposes an explicit File.etag. Read and delete
+            # through that SAME API; never send a v2 validator to a v3 mutation.
+            v2=self._conditional_v2_api()
+            snapshot=self.execute(v2.files().get(fileId=current['id'],supportsAllDrives=True,
+                fields='id,etag,version,md5Checksum,fileSize,parents(id),title'))
+            normalized=dict(id=snapshot.get('id'),version=snapshot.get('version'),
+                md5Checksum=snapshot.get('md5Checksum'),size=snapshot.get('fileSize'),
+                parents=[p['id'] for p in snapshot.get('parents',[])])
+            if any(normalized.get(k)!=expected.get(k) for k in ('id','version','md5Checksum','size','parents')):
+                raise RuntimeError('Source changed since verification; deletion blocked')
+            if expected.get('name') and snapshot.get('title')!=expected['name']:
+                raise RuntimeError('Source name changed since verification; deletion blocked')
+            if not snapshot.get('etag'):
+                raise RuntimeError('Cannot prove conditional delete support: Drive v2 ETag also unavailable')
+            # Reject an update racing between the v3 and v2 reads, even if the
+            # unchanged MD5 alone would not reveal a metadata-only modification.
+            checked=self.metadata(current['id'])
+            if any(checked.get(k)!=expected.get(k) for k in ('version','md5Checksum','size','parents')):
+                raise RuntimeError('Source changed since verification; deletion blocked')
+            req=v2.files().delete(fileId=current['id'],supportsAllDrives=True)
+            req.headers['If-Match']=snapshot['etag']
+            api_version='v2'
+        audit('delete_guard',api_version=api_version,condition='If-Match')
         # No retry of destructive requests with an unknown outcome.
         req.execute()
+
+    def _conditional_v2_api(self):
+        api=getattr(self,'_v2_api',None)
+        if api is None:
+            if not getattr(self,'_credentials',None):
+                raise RuntimeError('Cannot prove conditional delete support: no authenticated Drive v2 client')
+            from googleapiclient.discovery import build
+            api=build('drive','v2',credentials=self._credentials,cache_discovery=False)
+            self._v2_api=api
+        return api

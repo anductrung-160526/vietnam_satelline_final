@@ -250,3 +250,27 @@ Sau khi cập nhật action, Start-ScheduledTask rồi đợi task về Ready v�
 LastTaskResult=0 cùng transcript có sự kiện receiver, không chỉ header. Nếu vẫn
 bị ngắt, cần xem Task Scheduler History/Event Viewer để xác định nguyên nhân;
 không quy kết mọi lỗi C000013A là do người dùng đóng cửa sổ.
+
+## 12. DELETE_GUARD_UNAVAILABLE khi bản local đã tải
+
+Bản cũ yêu cầu ETag từ HTTP header của Drive v3 GET. Drive v3 có thể không trả
+header đó; File schema v3 cũng không có thuộc tính etag. Vì vậy bản tải/receipt
+có thể đã đạt nhưng thao tác xóa bị giữ lại, source không bị xóa.
+
+Bản mới vẫn kiểm tra ancestry, file ID, version, MD5, size và receipt/local bytes.
+Nếu v3 có HTTP ETag, dùng If-Match trên delete v3 như cũ. Nếu không, lấy File.etag
+qua Drive v2, đối chiếu id/version/md5Checksum/fileSize/parents/title, đọc lại v3
+để phát hiện thay đổi giữa các lượt đọc rồi dùng If-Match với delete **v2**. Không
+gửi validator v2 sang endpoint v3, không có nhánh xóa vô điều kiện hoặc retry
+unconditional khi server trả 412. Nếu v2 cũng không cung cấp ETag, vẫn chặn xóa.
+Hai API dùng cùng credential/scopes Drive, không cần secret mới hay tạo client.
+
+Log delete_guard chỉ cho biết guard đã chọn; chỉ event received với
+remote_deleted=true xác nhận receiver đã hoàn tất cleanup. STAGING_ANCESTRY_UNVERIFIED
+là lỗi riêng về phạm vi folder, cần kiểm tra root/parent trước khi tiếp tục.
+Cảnh báo TIFF Photometric/ExtraSamples là vấn đề khai báo kênh màu, không phải lỗi
+DELETE_GUARD_UNAVAILABLE; không lưu lại các TIFF đã nhận để làm mất checksum gốc.
+
+Giữ scheduled task tạm dừng khi cập nhật drive.py/receiver.py trên Windows. Chạy
+receive trực tiếp để kiểm tra; chỉ bật lại task sau khi cleanup đạt. Không dùng
+rclone purge/move hoặc xóa thủ công để vượt qua điều kiện bảo vệ.
