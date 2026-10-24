@@ -163,3 +163,23 @@ Nếu probe thất bại, gửi lỗi ở bước preflight trước khi tiếp 
 Xem [DIRECTORY_LAYOUT.md](DIRECTORY_LAYOUT.md). Tỉnh là con trực tiếp của các nhóm dữ liệu; Drive và E cùng layout. Mode organize_only yêu cầu pause=true, giữ nguyên file ID và dữ liệu, không xóa tệp. Merge code layout mới vào main trước khi bật lại lịch, tránh code cũ đối soát sai thư mục chứa nhiều TIFF.
 
 Ảnh hiện dùng layout 3: TIFF nằm trực tiếp trong thư mục tỉnh. Năm/tháng nằm trong tên tệp; mode organize_only chuyển cả các ảnh đang nằm trong thư mục năm/tháng cũ mà không tải lại.
+
+## 8. Chạy riêng inspriring-newton, chưa merge main
+
+Sau khi organize_only đạt, vẫn giữ pause=true trong cấu hình hiện tại. Vào Settings
+→ Secrets and variables → Actions → **Variables** (không phải Secrets):
+
+1. Sao chép đầy đủ nội dung PROVINCE_CONFIG_JSON vào biến mới **PROVINCE_BRANCH_CONFIG_JSON**.
+2. Kiểm tra biến mới đủ cấu hình rồi xóa biến cũ **PROVINCE_CONFIG_JSON**. Không xóa EE_SERVICE_ACCOUNT_JSON hoặc RCLONE_CONF.
+3. Đợi các lượt workflow đang chạy kết thúc; lịch main về sau sẽ bỏ qua controller do không còn biến cấu hình cũ. Main không đọc PROVINCE_BRANCH_CONFIG_JSON.
+4. Sửa pause=false trong **PROVINCE_BRANCH_CONFIG_JSON**, giữ allow_remote_delete=false cho pilot.
+5. Actions → Province satellite staging → Run workflow → chọn branch **inspriring-newton**, mode **run**. Không Re-run lượt cũ vì nó dùng commit cũ.
+
+Mã nhánh ưu tiên cấu hình branch khi chạy đúng inspriring-newton; mã main (cũ hoặc
+mới) chỉ dùng PROVINCE_CONFIG_JSON. Cặp secrets Google/rclone và staging root giữ
+nguyên. Không cần cập nhật config local trên Windows chỉ vì đổi tên Variable GitHub.
+
+Giai đoạn này chạy nhánh qua workflow_dispatch thủ công; schedule GitHub chỉ xuất
+phát từ default branch và main đang được bỏ qua. Không hứa nhánh tự chạy định kỳ
+24/24 khi chưa có bộ lập lịch cho nhánh. Khi đã quyết định merge, đưa cấu hình về
+PROVINCE_CONFIG_JSON để bật lịch main; xóa biến branch nếu không còn cần.

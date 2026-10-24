@@ -19,14 +19,15 @@ permissions:
   contents: read
 
 env:
-  PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON }}
+  # Branch-only pilot config; main deliberately ignores this variable.
+  PROVINCE_CONFIG_JSON: ${{ github.ref_name == 'inspriring-newton' && vars.PROVINCE_BRANCH_CONFIG_JSON || vars.PROVINCE_CONFIG_JSON }}
   EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
   RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
   PROVINCE_RCLONE_REMOTE: ${{ vars.PROVINCE_RCLONE_REMOTE }}
 
 jobs:
   controller:
-    if: ${{ vars.PROVINCE_CONFIG_JSON != '' }}
+    if: ${{ (github.ref_name == 'inspriring-newton' && vars.PROVINCE_BRANCH_CONFIG_JSON != '') || vars.PROVINCE_CONFIG_JSON != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:

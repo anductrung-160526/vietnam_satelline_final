@@ -56,7 +56,7 @@ chỉ từ sự tồn tại của các thư mục. Phân loại đất và dashb
 
 1. Đặt `pause=true` trong PROVINCE_CONFIG_JSON. Đợi mọi lượt run đang chạy kết thúc;
    dừng Windows receiver nếu đã cài.
-2. Merge PR từ inspriring-newton vào main trước khi bật lại lịch. Không để code main
+2. Nếu bật lịch main, merge PR từ inspriring-newton vào main trước. Nếu chỉ chạy nhánh, dùng cấu hình riêng ở mục 8 của REUSE_EXISTING_SECRETS_VI.md để main bỏ qua controller. Không để code main
    cũ và code layout 3 cùng vận hành trên một staging root.
 3. Actions → Province satellite staging → Run workflow → branch main (sau merge),
    mode **organize_only**. Chế độ này yêu cầu pause=true.
