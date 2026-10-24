@@ -1,6 +1,6 @@
 # Phương pháp và giới hạn
 
-- Địa giới cố định năm 2024, mã thống kê 2 ký tự, GeoJSON WGS84 có đủ 63 polygon/multipolygon và crosswalk được người quản lý nguồn xác minh. Phần mềm kiểm tra checksum, mã, hình học; không thể tự chứng minh nguồn pháp lý chỉ từ GeoJSON.
+- Chế độ `official_2024`: địa giới cố định năm 2024, mã thống kê 2 ký tự, GeoJSON WGS84 có đủ 63 polygon/multipolygon và crosswalk được người quản lý nguồn xác minh. Phần mềm kiểm tra checksum, mã, hình học; không thể tự chứng minh nguồn pháp lý chỉ từ GeoJSON.
 - Lưới đầu ra bằng diện tích EPSG:6933: Landsat 30 m, Sentinel-2 đa phổ/chỉ số 20 m, tùy chọn 4 band Sentinel-2 10 m, DMSP 1000 m, VIIRS 500 m. Đây là lưới chuẩn hóa, không phải độ phân giải gốc ở mọi nguồn. Lưu transform mỗi tile trong manifest; ảnh nguyên tỉnh có thể gồm nhiều tile. Không gộp mean các tile.
 - Landsat Collection 2 L2: QA_PIXEL bits 0–5 và QA_RADSAT; reflectance = DN*0.0000275−0.2. Band 5/7 và 8/9 được ánh xạ riêng. Landsat 7 mất dữ liệu SLC-off được giữ trong mask và phản ánh qua coverage, không bịa pixel để lấp.
 - Sentinel-2 SR Harmonized: mask SCL loại no-data, defective, shadow, unclassified, cloud/cirrus/snow. Reflectance/10000. Band quang học resample bilinear; mask lớp dùng trước nội suy. Bộ 20 m chứa SWIR; bộ 10 m chỉ BLUE/GREEN/RED/NIR. Không tuyên bố SWIR có chi tiết gốc 10 m.
@@ -12,3 +12,6 @@
 - SOL nguồn = tổng giá trị pixel hợp lệ trên lưới equal-area đã công bố, có thể có pixel biên tính theo trọng số reducer. Mật độ = SOL/diện tích polygon raster hóa km². `sol_area_integral` tách riêng tích phân value×pixelArea/km². DN và radiance khác đơn vị; tuyệt đối không ghép chuỗi hai nguồn thành cùng đại lượng. Chuỗi harmonized còn BLOCKED bởi phương pháp/hệ số kiểm định.
 - Tăng trưởng chỉ so với kỳ liền trước cùng nguồn/recipe và giá trị trước dương, còn lại NA. Panel nguồn tách VIIRS tháng/năm, Landsat và Sentinel-2. Chưa có panel harmonized duy nhất 2004–2025.
 - raw_data chứa sản phẩm nguồn trích xuất/composite, không phải từng cảnh sensor gốc; ảnh đêm lọc thêm lưu data_intermediate. Manifest chứa bands/CRS/grid và inventory. Đọc từng block TIFF kiểm tra giải mã và checksum, không đồng nghĩa kiểm định độ chính xác khoa học.
+
+- Chế độ mặc định `gadm41_research`: GADM 4.1 cấp tỉnh, archive nguồn năm 2022, đối chiếu tên/GID chính xác sang danh mục mã 63 tỉnh. Cùng một footprint được dùng xuyên chuỗi; không khẳng định địa giới pháp lý 2024 hoặc dựng lại địa giới lịch sử. Nguồn giữ nguyên polygon và không tự bổ sung lãnh thổ/đảo.
+- GADM geometry audit ở EPSG:6933 phát hiện 111 cặp tỉnh có overlap >1 m²; phần diện tích đếm trùng tổng khoảng 10,8894 km² (~0,003307%). Giữ nguyên nguồn, ghi từng cặp trong metadata `geometry_audit`; không suy ra không chồng lấn chỉ từ `is_valid`. Cần cân nhắc trước khi cộng chỉ số các tỉnh thành tổng quốc gia.

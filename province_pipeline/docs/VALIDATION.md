@@ -20,7 +20,7 @@ python -m province_pipeline --help
 
 1. Earth Engine compute/export và việc Earth Engine phân giải đúng leaf folder đã tạo trên Drive.
 2. Quota thực tế, quyền sở hữu file, refresh token lâu dài, HTTP ETag và conditional permanent delete trên tài khoản người dùng.
-3. Bộ ranh giới 63 tỉnh chính xác về nguồn/crosswalk/diện tích.
+3. Chứng nhận pháp lý/diện tích của bộ ranh giới 2024. Bộ GADM 4.1 thật đã tải từ nguồn, xác nhận hash, đủ 63 tỉnh và mã, hình học hợp lệ; không coi đó là xác nhận pháp lý.
 4. Windows Task Scheduler, volume identity và tải/xóa trên ổ E thật.
 5. Độ chính xác khoa học của NTL, bộ lọc transient light, phân loại đất và harmonization.
 

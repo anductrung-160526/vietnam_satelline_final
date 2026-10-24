@@ -1,4 +1,4 @@
-"""Require an explicit, source-attributed 2024 crosswalk; never match by fuzzy name."""
+"""Load attributed geometry with an explicit boundary policy; never fuzzy-match province IDs."""
 import hashlib
 import json
 from pathlib import Path
@@ -12,8 +12,16 @@ def load_boundaries(config):
     for key in ('source', 'version', 'date', 'sha256', 'code_reference', 'crosswalk_verified'):
         if not meta.get(key):
             raise ValueError(f'Boundary metadata missing: {key}')
-    if meta['crosswalk_verified'] is not True or meta['date'][:4] != '2024':
-        raise ValueError('Require verified 2024 provincial crosswalk')
+    if meta['crosswalk_verified'] is not True:
+        raise ValueError('Require verified provincial identity crosswalk')
+    policy = config.get('boundary_policy', 'official_2024')
+    if policy == 'gadm41_research':
+        from .prepare_gadm import PROFILE, SOURCE_SHA256, ZIP_SHA256
+        if (meta.get('boundary_profile') != PROFILE or meta.get('source_sha256') != SOURCE_SHA256
+                or meta.get('archive_sha256') != ZIP_SHA256 or meta.get('version') != 'GADM 4.1'):
+            raise ValueError('Expected pinned GADM 4.1 research metadata')
+    elif policy != 'official_2024' or meta['date'][:4] != '2024':
+        raise ValueError('Require verified 2024 provincial crosswalk or explicit gadm41_research policy')
     checksum = hashlib.sha256(path.read_bytes()).hexdigest()
     if checksum != meta['sha256']:
         raise ValueError('Boundary SHA-256 mismatch')

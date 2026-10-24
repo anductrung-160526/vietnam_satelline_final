@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--config', default='province_pipeline/config/local.json')
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('validate')
+    sub.add_parser('prepare-gadm')
     sub.add_parser('sync-boundaries')
     sub.add_parser('inventory')
     plan = sub.add_parser('plan')
@@ -27,6 +28,10 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
     c = load_config(args.config, live=args.command in ('plan','work','inventory','receive','sync-boundaries'))
+    if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):
+        from .prepare_gadm import prepare
+        print('Prepared GADM research provinces:', prepare(c))
+        return
     if args.command == 'enroll-disk':
         from .receiver import enroll
         print('Set volume_marker in the local config to:', enroll(c['local_root']))

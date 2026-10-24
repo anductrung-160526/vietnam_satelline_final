@@ -344,7 +344,7 @@ class GeometryAndRasterTests(unittest.TestCase):
                   code_reference='TEST ONLY',sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         mp=self.root/'boundaries.metadata.json'; mp.write_text(json.dumps(meta))
         c=load_config('province_pipeline/config/example.json')
-        c.update(boundaries=str(path),boundary_metadata=str(mp))
+        c.update(boundaries=str(path),boundary_metadata=str(mp),boundary_policy='official_2024')
         return c,path,mp
 
     def test_boundary_checksum_and_exact_code_coverage(self):
@@ -466,6 +466,58 @@ class ControllerIntegrationTests(unittest.TestCase):
         plan=prepare(c,d,[self.job()],lambda j: dict(status='PARTIAL'),[])
         self.assertEqual(plan['jobs'],[])
         self.assertEqual(len(d.documents['root/_control','state.json']['inventory']),1)
+
+
+class GadmPreparationTests(unittest.TestCase):
+    def fixture(self):
+        import csv, io, zipfile
+        from province_pipeline import prepare_gadm as gadm
+        with Path('province_pipeline/data/gadm41_province_crosswalk.csv').open(encoding='utf-8') as stream:
+            rows=list(csv.DictReader(stream))
+        features=[]
+        for i,row in enumerate(rows):
+            x=105+i*0.002
+            features.append(dict(type='Feature',properties={'GID_1':row['gid_1'],'NAME_1':row['source_name']},
+                geometry=dict(type='Polygon',coordinates=[[[x,20],[x+0.001,20],[x+0.001,20.001],[x,20.001],[x,20]]])))
+        raw=json.dumps(dict(type='FeatureCollection',features=features)).encode()
+        stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w') as z: z.writestr(gadm.MEMBER,raw)
+        return raw,stream.getvalue()
+
+    def test_crosswalk_has_63_unique_exact_identities(self):
+        import csv
+        with open('province_pipeline/data/gadm41_province_crosswalk.csv',encoding='utf-8') as f:
+            rows=list(csv.DictReader(f))
+        self.assertEqual(len({r['gid_1'] for r in rows}),63)
+        self.assertEqual(len({r['ma_tinh'] for r in rows}),63)
+        self.assertEqual(next(r['gid_1'] for r in rows if r['ma_tinh']=='01'),'VNM.27_1')
+        self.assertEqual(next(r['ma_tinh'] for r in rows if r['gid_1']=='VNM.1_1'),'89')
+
+    def test_archive_mismatch_is_rejected_before_writing(self):
+        from province_pipeline.prepare_gadm import prepare
+        with tempfile.TemporaryDirectory() as root:
+            c=dict(boundaries=str(Path(root)/'b.json'),boundary_metadata=str(Path(root)/'m.json'))
+            with self.assertRaisesRegex(ValueError,'archive checksum'): prepare(c,b'wrong')
+            self.assertEqual(list(Path(root).iterdir()),[])
+
+    def test_prepare_metadata_and_idempotent_no_network_resume(self):
+        from province_pipeline import prepare_gadm as gadm
+        raw,archive=self.fixture()
+        with tempfile.TemporaryDirectory() as root:
+            c=dict(boundaries=str(Path(root)/'b.json'),boundary_metadata=str(Path(root)/'m.json'),boundary_policy='gadm41_research')
+            with patch.object(gadm,'SOURCE_SHA256',hashlib.sha256(raw).hexdigest()),patch.object(gadm,'ZIP_SHA256',hashlib.sha256(archive).hexdigest()):
+                self.assertEqual(gadm.prepare(c,archive),63)
+                before=Path(c['boundaries']).read_bytes()
+                self.assertEqual(gadm.prepare(c),63)
+                self.assertEqual(before,Path(c['boundaries']).read_bytes())
+            meta=json.loads(Path(c['boundary_metadata']).read_text())
+            self.assertEqual(meta['date'],'2022-07-18')
+            self.assertEqual(meta['boundary_profile'],gadm.PROFILE)
+            self.assertTrue(meta['crosswalk_verified'])
+
+    def test_source_checksum_mismatch_is_rejected(self):
+        from province_pipeline.prepare_gadm import convert
+        with self.assertRaisesRegex(ValueError,'source checksum'): convert(b'{}')
 
 
 if __name__ == '__main__':

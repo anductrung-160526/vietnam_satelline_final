@@ -39,5 +39,7 @@
   "allow_remote_delete": false,
   "boundaries_drive_id": "",
   "boundary_metadata_drive_id": "",
-  "max_inventory_checks_per_cycle": 20
+  "max_inventory_checks_per_cycle": 20,
+  "boundary_provider": "gadm41",
+  "boundary_policy": "gadm41_research"
 }

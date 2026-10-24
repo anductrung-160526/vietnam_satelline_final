@@ -9,24 +9,35 @@
 
 Không gửi khóa/refresh token vào chat. File cấu hình local và ranh giới riêng đã được gitignore; credentials nên đặt ngoài repo và hạn chế quyền đọc.
 
-## 2. Địa giới có nguồn
+## 2. Chuẩn bị địa giới tự động (GADM cấp tỉnh)
 
-Tạo GeoJSON WGS84 `FeatureCollection` đúng 63 feature Polygon/MultiPolygon. Mỗi feature có `properties.ma_tinh` dạng chuỗi như `01`; không tự zero-pad mã GADM thành mã thống kê. Nguồn phải bao gồm phần lãnh thổ/đảo cần nghiên cứu. Kiểm tra chồng lấn và tính đầy đủ trước khi xác nhận crosswalk.
+Không cần QGIS với cấu hình mẫu mới. Tại thư mục repo, chạy:
 
-Đặt `boundaries.metadata.json` cạnh GeoJSON:
-
-```json
-{
-  "source": "URL hoặc trích dẫn bộ ranh giới thực tế",
-  "version": "phiên bản đã kiểm tra",
-  "date": "2024-12-31",
-  "code_reference": "URL/trích dẫn danh mục mã thống kê và crosswalk đã đối chiếu",
-  "crosswalk_verified": true,
-  "sha256": "SHA256 thực tế của tệp GeoJSON"
-}
+```powershell
+Copy-Item province_pipeline/config/example.json province_pipeline/config/local.json
+python -m province_pipeline --config province_pipeline/config/local.json prepare-gadm
+python -m province_pipeline --config province_pipeline/config/local.json validate
 ```
 
-Không sao chép giá trị placeholder rồi coi là đã xác minh. Tính checksum bằng `Get-FileHash -Algorithm SHA256 <file>` (dùng chữ thường trong metadata). Upload hai tệp lên Drive, lưu ID từ URL, điền `boundaries_drive_id`, `boundary_metadata_drive_id` trong cấu hình. Controller và worker tải bằng ID rồi kiểm tra checksum. Có thể kiểm tra local trước, không cần Drive bằng lệnh `validate`.
+Nếu đã có `local.json`, **không chép đè**. Giữ nguyên project/Drive/budget và thêm:
+
+```json
+"boundary_provider": "gadm41",
+"boundary_policy": "gadm41_research"
+```
+
+Lệnh tải GADM 4.1 Việt Nam cấp 1 từ UC Davis qua HTTPS, xác nhận checksum ZIP và JSON đã pin, đối chiếu 63 tỉnh bằng bảng GID+tên chính xác trong `province_pipeline/data/gadm41_province_crosswalk.csv`, gắn `ma_tinh` chuỗi và tạo tự động:
+
+```text
+province_pipeline/config/boundaries.geojson
+province_pipeline/config/boundaries.metadata.json
+```
+
+Các file sinh ra nằm trong checkout nhưng gitignored; repo chứa công cụ tái tạo và crosswalk, không phát hành lại toàn bộ geometry GADM. Xem điều kiện sử dụng nguồn tại https://gadm.org/license.html. GitHub Actions gọi `sync-boundaries`, tự tải và chuẩn hóa cùng bộ GADM theo checksum; **không cần upload hai file lên Drive hoặc điền hai boundary file ID** khi dùng `boundary_provider=gadm41`. Chạy lại xác minh file hiện có, không ghi đè dữ liệu người dùng. Nếu chỉ có một file hoặc checksum sai, lệnh dừng để bạn xử lý, không xóa tự động.
+
+Metadata ghi ngày thành viên archive `2022-07-18`, không gán ngày pháp lý 2024. Đây là footprint GADM cho nghiên cứu với danh mục 63 tỉnh trước sáp nhập; đối chiếu mã đã kiểm tra không đồng nghĩa xác nhận địa giới chính thức năm 2024. Bộ nguồn được giữ nguyên hình học, không tự thêm đảo/vùng tranh chấp hoặc chứng nhận đủ toàn bộ lãnh thổ; kiểm tra footprint phù hợp mục tiêu trước khi tính các tỉnh ven biển. Bounds thực tế được kiểm tra khi chuẩn bị dữ liệu; xem `province_pipeline/data/README.md`.
+
+Nếu có bộ chính thức 2024 riêng, đặt `boundary_provider=drive`, `boundary_policy=official_2024`, cung cấp GeoJSON đủ 63 tỉnh WGS84 với `properties.ma_tinh`, nguồn/version/date/code_reference/crosswalk_verified/SHA256 trong metadata. Upload hai file lên Drive và điền `boundaries_drive_id`, `boundary_metadata_drive_id`. SHA256 có thể tính bằng `Get-FileHash -Algorithm SHA256 <file>`. Chỉ đặt crosswalk_verified=true sau khi đối chiếu thật. Không thay GADM bằng nguồn khác nhưng giữ metadata GADM; loader phân biệt hai chế độ.
 
 ## 3. Xác thực Google (pilot dùng tài khoản người dùng)
 
@@ -45,7 +56,7 @@ Không mặc định service account có My Drive để chứa file. OIDC/WIF ch
 
 ## 4. Cấu hình pilot
 
-Sao chép `province_pipeline/config/example.json` thành `local.json`, giữ một tỉnh/năm, 512 pixel/tile và 2 export toàn cục. Điền project, Drive root ID (thư mục riêng `SatelliteStaging`), hai boundary file IDs, budget và safety margin thực tế.
+Sao chép `province_pipeline/config/example.json` thành `local.json`, giữ một tỉnh/năm, 512 pixel/tile và 2 export toàn cục. Điền project, Drive root ID (thư mục riêng `SatelliteStaging`), budget và safety margin thực tế. Hai boundary file ID chỉ cần khi dùng provider `drive`.
 
 Ví dụ **chỉ khi đã đo còn đủ dung lượng**: dành 5 GiB staging, margin 0.5 GiB, ngưỡng cao 0.65/thấp 0.30. Các giá trị này không phải ước lượng dung lượng tài khoản của bạn. Reservation dựa vào pixel×band×4 byte×2 + overhead, không trông chờ nén. Tài khoản còn trống phải đủ cả reserved+margin. Khi thiếu chỗ → WAITING_FOR_SPACE; không xóa dữ liệu người dùng khác.
 

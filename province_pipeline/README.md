@@ -23,9 +23,10 @@ python -m province_pipeline --help
 python -m unittest discover -s tests -v
 ```
 
-Sao chép `config/example.json` thành `config/local.json` (đã gitignore). Mặc định chỉ 1 tỉnh/1 năm, pause bật và xóa tắt. Không có ranh giới giả đi kèm; cung cấp bộ GeoJSON 63 tỉnh 2024, crosswalk được xác minh và metadata checksum trước khi chạy.
+Sao chép `config/example.json` thành `config/local.json` (đã gitignore). Mặc định chỉ 1 tỉnh/1 năm, pause bật và xóa tắt. Cấu hình mẫu tự tải GADM 4.1 cấp tỉnh, đối chiếu mã bằng crosswalk đã lưu và tạo metadata; không giả định GADM là địa giới pháp lý 2024. Có thể chọn bộ chính thức 2024 riêng.
 
 ```bash
+python -m province_pipeline --config province_pipeline/config/local.json prepare-gadm
 python -m province_pipeline --config province_pipeline/config/local.json validate
 python -m province_pipeline --config province_pipeline/config/local.json inventory
 ```
