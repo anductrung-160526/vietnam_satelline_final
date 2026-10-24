@@ -79,8 +79,16 @@ def _remote_manifest(drive, job):
         raise RuntimeError('Output missing checksum/size')
     if int(f['size']) > job['reserved_bytes']:
         raise RuntimeError('Output exceeded reservation; review byte bound')
-    return dict(schema_version=1, job_id=job['job_id'], job=job, files=[dict(
-        f, local_relative_path=job['local_directory']+'/'+f['name'])])
+    manifest_files=[dict(f,local_relative_path=job['local_directory']+'/'+f['name'])]
+    if job.get('preview_required'):
+        preview=drive.find(job['folder_id'],job['prefix']+'.png')
+        if not preview:return None
+        if preview.get('mimeType')==FOLDER or not preview.get('md5Checksum') or not int(preview.get('size',0)):
+            raise RuntimeError('Preview PNG missing checksum/size')
+        manifest_files.append(dict(preview,role='preview',local_relative_path=job['local_directory']+'/'+preview['name']))
+        if sum(int(item['size']) for item in manifest_files)>job['reserved_bytes']:
+            raise RuntimeError('Province TIFF/PNG exceeded combined reservation')
+    return dict(schema_version=1,job_id=job['job_id'],job=job,files=manifest_files)
 
 
 def report_name(job):
@@ -114,6 +122,9 @@ def reconcile(drive, folders, state, tasks):
         report = drive.read_json(folders['reports'], report_name(job))
         if job.get('export_backend') == 'direct':
             if report:
+                if report.get('status')=='OUTPUT_LIMIT':
+                    job.update(status='FAILED',error='OUTPUT_LIMIT: compressed TIFF/PNG or runner disk exceeds budget')
+                    continue
                 if report.get('status')=='NO_VALID_PIXELS':
                     job.update(status='INSUFFICIENT_QUALITY',error='NO_VALID_PIXELS')
                     continue
@@ -124,6 +135,11 @@ def reconcile(drive, folders, state, tasks):
                             output=manifest['files'][0]
                             if output['id'] != report.get('file_id') or output['md5Checksum'] != report.get('md5Checksum'):
                                 raise RuntimeError('Direct upload report does not match Drive output')
+                            if job.get('preview_required'):
+                                expected=report.get('preview',{})
+                                preview=manifest['files'][1]
+                                if preview['id']!=expected.get('file_id') or preview['md5Checksum']!=expected.get('md5Checksum'):
+                                    raise RuntimeError('Preview upload report does not match Drive output')
                             drive.write_json(folders['manifests'],job['job_id']+'.json',manifest)
                             job['status']='REMOTE_READY'
                             if job.get('pipeline_version') == 2 and job['kind'] == 'table':
@@ -273,7 +289,7 @@ def work(config, drive, plan, group_id, boundaries):
                 drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='UPLOADED',**output))
             except Exception as error:
                 # Keep original error type only; no signed URL or token is persisted in reports.
-                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='NO_VALID_PIXELS' if type(error).__name__=='NoValidPixels' else 'FAILED',error_type=type(error).__name__))
+                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status={'NoValidPixels':'NO_VALID_PIXELS','OutputLimit':'OUTPUT_LIMIT'}.get(type(error).__name__,'FAILED'),error_type=type(error).__name__))
                 failures.append(job['job_id'])
             continue
         drive.assert_unique_folder_name(job['folder_name'], job['folder_id'])

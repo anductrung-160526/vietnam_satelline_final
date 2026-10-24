@@ -95,3 +95,9 @@ credentials remains to be checked on Windows; no source was deleted by these tes
 - Exact WGS84 tiled grids are validated independently from nominal metre scale. Float64 preservation and lossless DEFLATE round-trip preserve exact pixels, band descriptions, NoData and grid. Receiver continues other branch roots when one fails, under the existing external-volume and checksum/conditional-delete guards.
 - Shared project quota and six fixed staging budget shares are retained. New branch workflows loop within one runner; continuation occurs only near the 315-minute runner budget. API access remains Forbidden, so no claim is made that workflows were dispatched, old active runs canceled or scientific completeness validated remotely.
 - Uploaded notebooks are stored without outputs. Province-level adaptation and historical Landsat/DMSP extension are documented explicitly. DN/VIIRS radiance and TOA/SR remain unharmonized; missing inputs remain null, not synthetic zero.
+
+## Single-province TIFF + browser preview
+
+- Image jobs are now one per province/period on six Task123 branches. Statistical job IDs and project remain unchanged. Legacy unfinished tile reservations are deferred; existing tile files are retained.
+- Tests exercise small direct rectangular downloads, windowed mosaic equality including edge windows, size-only fallback, permission errors, failure/time-budget cleanup, output budget enforcement, paired PNG/TIFF manifest checks and receiver validation, plus sparse night-light visibility without modifying TIFF values.
+- This verifies local code, TIFF fixtures and request construction, not a live download of the user's screenshot file. Scientific float64 TIFFs are not guaranteed to display in browser TIFF plugins; PNG is the deliberate display output.
