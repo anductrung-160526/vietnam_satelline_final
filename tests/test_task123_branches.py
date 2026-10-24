@@ -147,6 +147,22 @@ class RunnerTests(unittest.TestCase):
             code=run(c,d,{},META,max_seconds=1000,transfer=transfer,clock=lambda:0)
         self.assertEqual(code,0);self.assertEqual(transfer.call_count,2);self.assertEqual(n[0],3)
 
+    def test_cloud_priority_admission_sees_whole_group_instead_of_one_province(self):
+        from task_pipeline.runner import run
+        from test_province_pipeline import FakeDrive
+        c=configure(base(),selection(mode='full'));d=FakeDrive()
+        d.folder=lambda p,n:p+'/'+n;d.find=lambda p,n:None
+        d.documents['root/_control','state.json']=dict(jobs={},current_stage='night_images')
+        seen=[]
+        def plan(active,*args):
+            seen.append(active['province_codes'])
+            d.documents['root/_control','state.json']['current_stage']='complete'
+            return dict(jobs=[])
+        with patch('task_pipeline.runner.prepare_priority',side_effect=plan),patch('task_pipeline.runner.publish'),patch('task_pipeline.runner.atomic_json'):
+            self.assertEqual(run(c,d,{},META,clock=lambda:0),0)
+        self.assertEqual(seen,[c['province_codes']])
+        self.assertEqual(d.documents['root/_control','branch_progress.json']['completed_provinces'],list(range(1,12)))
+
     def test_budget_is_six_shares_and_accounts_for_existing_data(self):
         from task_pipeline.runner import resolve
         from test_province_pipeline import FakeDrive
