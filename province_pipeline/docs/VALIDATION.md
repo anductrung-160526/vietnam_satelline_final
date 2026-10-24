@@ -105,3 +105,9 @@ credentials remains to be checked on Windows; no source was deleted by these tes
 ## TIFF-only export
 
 PNG generation/upload is disabled for all new whole-province exports. Numeric QA remains active. The released TIFF job identity is retained, so completed TIFFs are not fetched again; pending old paired reservations adopt TIFF-only. Existing PNG manifests remain readable without deleting earlier files. Delivery regression checks one TIFF, zero PNG generation/uploads, and verified receipt/deletion of the TIFF alone.
+
+## Direct laptop → E mode
+
+214 offline tests pass, including direct image commit with same-volume scratch and receipt, no PNG/Drive credential calls, verified resume/adoption of received TIFFs, per-source nulls/NoData, disk-full pause, and incremental CSV publication without re-export. Existing-output overwrite is refused without provenance. The laptop command uses EE auth only and a disk-based reservation rather than the Drive staging budget.
+
+PowerShell/Windows-volume interaction and actual user EE OAuth were not executed in this Linux cloud environment. The new script must be launched by the user on the laptop; existing hosted GitHub workflows still use Drive and must be canceled separately when switching. No self-hosted runner or Windows scheduled producer is installed remotely by this change.
