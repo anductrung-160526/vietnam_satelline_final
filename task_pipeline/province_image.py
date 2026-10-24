@@ -35,7 +35,8 @@ def output_job(config,base,bounds,priority):
     identity['preview_required']=True
     job['job_id']=digest(identity)[:32]
     raw=whole['width']*whole['height']*len(job['bands'])*8
-    cap=int(config['drive_staging_budget_gib']*1024**3*config['high_watermark']*.90)
+    cap=(int(config['local_output_limit_bytes']) if config.get('execution_backend')=='local'
+         else int(config['drive_staging_budget_gib']*1024**3*config['high_watermark']*.90))
     # Enforced output limit, not a promise of compression or permission to exceed quota.
     job['reserved_bytes']=min(2*raw+1024**2,cap)
     return canonical_job(job)
