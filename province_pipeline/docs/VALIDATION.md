@@ -59,3 +59,7 @@ Tests kiểm tra tỉnh nằm đúng cấp, không đổi job IDs khi đổi đ�
 ## Worker finalization
 
 Regression tests kiểm tra RESERVED + report UPLOADED chỉ thành REMOTE_READY khi file ID/checksum khớp, manifest được lưu trước state READY, thiếu report/output không bị coi là hoàn tất, không cấp job mới khi reconcile_only, và không ghi đè state đang MIGRATING hoặc state chưa tồn tại. Finalizer chạy sau matrix trong cùng concurrency group. Live handoff cần chạy trên GitHub với credentials thực tế.
+
+## Windows task launch
+
+Task registration now persists absolute paths including rclone.exe; receiver logs each invocation to a per-user transcript and preserves the Python exit code. Windows Task Scheduler and PowerShell transcript execution cannot be validated on this Linux machine. Python receiver diagnostics are covered by tests ensuring only constant error codes are logged, with no raw API/credential response content.

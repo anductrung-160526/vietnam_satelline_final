@@ -239,6 +239,22 @@ def receive_manifest(config, drive, folders, manifest, root, dry_run=False):
     audit('received', job_id=jid, remote_deleted=receipt['remote_deleted'])
 
 
+def failure_reason(error):
+    """Only constant reason codes leave the exception boundary, never raw API bodies."""
+    status=getattr(getattr(error,'resp',None),'status',None)
+    if status in (403,404,412,429):
+        return {403:'DRIVE_PERMISSION_DENIED',404:'REMOTE_FILE_NOT_FOUND',
+                412:'REMOTE_FILE_CHANGED',429:'DRIVE_RATE_LIMIT'}[status]
+    message=str(error).lower()
+    for phrase,code in [('conditional delete support','DELETE_GUARD_UNAVAILABLE'),
+                        ('checksum','DATA_CHECKSUM_MISMATCH'),('md5','DATA_CHECKSUM_MISMATCH'),
+                        ('receipt','RECEIPT_VERIFICATION_FAILED'),('wrong external disk','WRONG_DISK'),
+                        ('disk full','LOCAL_DISK_FULL'),('source changed','REMOTE_FILE_CHANGED')]:
+        if phrase in message:
+            return code
+    return 'RECEIVE_ERROR'
+
+
 def run(config, drive, dry_run=False):
     from .controller import control_folders
     root = verify_volume(config)
@@ -261,7 +277,8 @@ def run(config, drive, dry_run=False):
             try:
                 receive_manifest(config, drive, folders, manifest, root, dry_run)
             except Exception as error:
-                audit('receive_failed', job_id=job['job_id'], error_type=type(error).__name__)
+                audit('receive_failed', job_id=job['job_id'], error_type=type(error).__name__,
+                      error_code=failure_reason(error))
                 failures.append(job['job_id'])
         if failures:
             raise RuntimeError(f'{len(failures)} batches failed; sources retained for retry')

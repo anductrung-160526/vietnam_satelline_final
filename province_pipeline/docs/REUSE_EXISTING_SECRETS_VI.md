@@ -212,3 +212,26 @@ Sau khi Ready to receive > 0, chạy lại receive --dry-run rồi receive trên
 Không cần cập nhật mã Windows chỉ để đọc những manifest đã được công bố. Bản
 receiver mới còn in receiver_summary / receiver_waiting khi không có lô READY,
 tránh kết thúc im lặng sau rclone_config_check.
+
+## 10. Tác vụ Windows không phụ thuộc PATH/biến của cửa sổ đang mở
+
+Register-SatelliteTask nhận thêm -RcloneExecutable, hoặc tự tìm rclone trong phiên
+đăng ký rồi ghi đường dẫn tuyệt đối vào action. Python, config, repo và PowerShell
+đều dùng đường dẫn cố định. Vì vậy không phụ thuộc biến `$python` hay
+PROVINCE_RCLONE_CONFIG của một cửa sổ PowerShell đã đóng. Receiver không cần key EE.
+
+Action dùng ExecutionPolicy RemoteSigned ở mức process, không thay chính sách
+CurrentUser/LocalMachine và không bỏ yêu cầu chữ ký cho file có dấu nguồn Internet.
+Group Policy vẫn có hiệu lực. Nếu file script bị chặn, kiểm tra nguồn/file trước,
+không dùng ExecutionPolicy Bypass để cho qua.
+
+Mỗi lượt nhận/tổng hợp có transcript riêng tại
+`%LOCALAPPDATA%\SatellitePipeline\logs\receiver-<thời điểm>.log`. Không in nội dung
+credentials hoặc môi trường. Task chạy khi đăng nhập và lặp mỗi 5 phút, IgnoreNew
+khi lượt trước còn chạy. LastTaskResult=0 là lệnh đã kết thúc không lỗi; log vẫn cần
+kiểm tra received/ready_jobs để biết có tệp mới hay chỉ không có việc.
+
+Giữ allow_remote_delete=false khi kiểm tra task. Sau khi kết quả tải/receipt đã
+đạt, có thể bật true ở config LOCAL; không cần bật phía GitHub để receiver xóa
+những source đã verify. DELETE_GUARD_UNAVAILABLE nghĩa là điều kiện bảo vệ xóa
+chưa chứng minh được; giữ source, không thay bằng lệnh purge/move để bỏ kiểm tra.
