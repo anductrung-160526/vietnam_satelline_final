@@ -15,3 +15,5 @@
 
 - Chế độ mặc định `gadm41_research`: GADM 4.1 cấp tỉnh, archive nguồn năm 2022, đối chiếu tên/GID chính xác sang danh mục mã 63 tỉnh. Cùng một footprint được dùng xuyên chuỗi; không khẳng định địa giới pháp lý 2024 hoặc dựng lại địa giới lịch sử. Nguồn giữ nguyên polygon và không tự bổ sung lãnh thổ/đảo.
 - GADM geometry audit ở EPSG:6933 phát hiện 111 cặp tỉnh có overlap >1 m²; phần diện tích đếm trùng tổng khoảng 10,8894 km² (~0,003307%). Giữ nguyên nguồn, ghi từng cặp trong metadata `geometry_audit`; không suy ra không chồng lấn chỉ từ `is_valid`. Cần cân nhắc trước khi cộng chỉ số các tỉnh thành tổng quốc gia.
+
+- Backend direct mặc định: tile tải từ EE bằng service account, kiểm tra TIFF tại runner rồi upload Drive bằng rclone OAuth. Mỗi tile float32 phải <32 MB không nén; 512 pixel cho 10 bands khoảng 10,49 MB. Không có batch task tiếp tục sau khi worker tắt. Bảng thống kê tỉnh lấy cùng composite qua EE getInfo; phải chạy pilot để xác nhận thời gian tính toán.

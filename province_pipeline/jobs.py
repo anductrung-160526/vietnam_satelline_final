@@ -36,7 +36,7 @@ def generate(config, boundaries, metadata):
             package = NTL_PACKAGE if night else DAY_PACKAGE
             sensor = 'VIIRS' if product.startswith('VIIRS') else product.split('_')[0]
             for period in periods(config, product):
-                base = dict(province=p, product=product, period=period, boundary_sha256=metadata['sha256'],
+                base = dict(export_backend=config.get('export_backend','batch'),province=p, product=product, period=period, boundary_sha256=metadata['sha256'],
                             recipe_hash=digest({'settings': {k: config.get(k) for k in ('season_months', 'season_months_by_province', 'crs', 'tile_pixels', 'algorithm_version')}, 'source': source}),
                             source_definition=source,
                             boundary_provenance={k: metadata[k] for k in ('source','version','date','code_reference','sha256')},

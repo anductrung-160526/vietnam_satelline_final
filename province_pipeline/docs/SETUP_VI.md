@@ -39,31 +39,27 @@ Metadata ghi ngày thành viên archive `2022-07-18`, không gán ngày pháp l�
 
 Nếu có bộ chính thức 2024 riêng, đặt `boundary_provider=drive`, `boundary_policy=official_2024`, cung cấp GeoJSON đủ 63 tỉnh WGS84 với `properties.ma_tinh`, nguồn/version/date/code_reference/crosswalk_verified/SHA256 trong metadata. Upload hai file lên Drive và điền `boundaries_drive_id`, `boundary_metadata_drive_id`. SHA256 có thể tính bằng `Get-FileHash -Algorithm SHA256 <file>`. Chỉ đặt crosswalk_verified=true sau khi đối chiếu thật. Không thay GADM bằng nguồn khác nhưng giữ metadata GADM; loader phân biệt hai chế độ.
 
-## 3. Xác thực Google (pilot dùng tài khoản người dùng)
+## 3. Dùng hai secret hiện có — không cần tải OAuth JSON
 
-1. Bật Earth Engine API và Drive API trong project phù hợp. Cấu hình OAuth consent và tạo **Desktop OAuth client**; tải client JSON về máy Windows, không commit.
-2. Đảm bảo tài khoản đăng nhập được phép dùng project Earth Engine và có quota Drive. Chạy:
+Workflow đã dùng lại `EE_SERVICE_ACCOUNT_JSON` cho Earth Engine và `RCLONE_CONF`
+cho Drive. Không cần tạo Desktop OAuth client hoặc thêm secret đăng nhập chung.
+Xem hướng dẫn từng bước tại [REUSE_EXISTING_SECRETS_VI.md](REUSE_EXISTING_SECRETS_VI.md).
 
-```powershell
-python -m province_pipeline.oauth_login --client "C:\Private\desktop-client.json" --output "C:\Private\satellite-authorized-user.json"
-$env:PROVINCE_GOOGLE_CREDENTIALS = "C:\Private\satellite-authorized-user.json"
-```
-
-3. Consent cần quyền Drive để Earth Engine xuất vào các thư mục mới; quyền drive.file đơn thuần không được mặc định đủ cho file do Earth Engine tạo. Quyền rộng là một đánh đổi: dùng tài khoản riêng cho dữ liệu nếu phù hợp. Chính sách Google có thể yêu cầu xác minh ứng dụng; refresh token ở consent testing có thể hết hạn, cần xử lý trạng thái publishing/authorization theo tài liệu Google, không hứa token tồn tại mãi.
-4. Đặt nội dung **authorized-user JSON** vào GitHub Actions Secret `PROVINCE_GOOGLE_CREDENTIALS_JSON` qua giao diện Secrets an toàn. File local đặt ngoài repo. Không dùng token truy cập ngắn hạn đơn lẻ. Lỗi refresh/auth phải sửa trước khi xuất tiếp.
-
-Không mặc định service account có My Drive để chứa file. OIDC/WIF chỉ thay cách xác thực, không tự cấp khả năng sở hữu/lưu file Drive. v1 chưa xác minh Shared Drive/quota tổ chức: `account_free` sẽ dừng nếu API không trả quota; không tự đoán. Chỉ đổi auth model sau khi pilot chứng minh được Earth Engine và Drive API nhìn cùng thư mục, file owner/quota đúng.
+GitHub chỉ cần thêm Variable `PROVINCE_CONFIG_JSON`; remote mặc định `gdrive`.
+Chạy mode `check_only` trước để kiểm tra quyền và nguồn ảnh mà chưa xuất/xóa dữ liệu.
+Windows receiver dùng rclone config riêng trên máy, không cần key Earth Engine.
 
 ## 4. Cấu hình pilot
 
-Sao chép `province_pipeline/config/example.json` thành `local.json`, giữ một tỉnh/năm, 512 pixel/tile và 2 export toàn cục. Điền project, Drive root ID (thư mục riêng `SatelliteStaging`), budget và safety margin thực tế. Hai boundary file ID chỉ cần khi dùng provider `drive`.
+Sao chép `province_pipeline/config/example.json` thành `local.json`, giữ một tỉnh/năm, 512 pixel/tile và 2 lượt transfer toàn cục. Điền project, Drive root ID (thư mục riêng `SatelliteStaging`), budget và safety margin thực tế. Hai boundary file ID chỉ cần khi dùng provider `drive`.
 
 Ví dụ **chỉ khi đã đo còn đủ dung lượng**: dành 5 GiB staging, margin 0.5 GiB, ngưỡng cao 0.65/thấp 0.30. Các giá trị này không phải ước lượng dung lượng tài khoản của bạn. Reservation dựa vào pixel×band×4 byte×2 + overhead, không trông chờ nén. Tài khoản còn trống phải đủ cả reserved+margin. Khi thiếu chỗ → WAITING_FOR_SPACE; không xóa dữ liệu người dùng khác.
 
 ```powershell
 python -m province_pipeline --config province_pipeline/config/local.json validate
 python -m province_pipeline --config province_pipeline/config/local.json sync-boundaries
-python -m province_pipeline --config province_pipeline/config/local.json inventory
+# Kiểm kê nguồn ở mode check_only trên GitHub nếu key EE chỉ có trong GitHub Secrets.
+# Lệnh inventory local chỉ dùng khi bạn có credentials EE riêng được cấp cho máy này.
 ```
 
 Review `.province-local/source_inventory.csv`: AVAILABLE mới được xuất; PARTIAL/UNAVAILABLE không biến thành số 0. Xem METHODS.md về VIIRS 2013/Sentinel-2 2015–2016 và việc VIIRS annual là tự tổng hợp từ tháng.
@@ -74,11 +70,11 @@ Workflow trong nhánh phát triển cần được push để GitHub thấy. Ch�
 
 ## 5. Chạy Actions và theo dõi
 
-Run workflow **Province satellite staging**. Controller tạo folder tỉnh trước, cấp chỗ và lưu state; matrix 10 nhóm chỉ submit phần được cấp. Export chạy trên Earth Engine sau khi job Actions kết thúc. Lượt schedule/manual sau (mỗi 30 phút theo UTC trong workflow) hòa giải và tạo manifest READY. Có thể gọi manual để giảm thời gian chờ; concurrency ngăn chồng lượt. Chưa có vòng polling liên tục nên không hứa phản hồi ngay khi có file.
+Run workflow **Province satellite staging**, chọn **check_only** trước, sau khi đạt chọn **run**. Controller tạo folder tỉnh trước, cấp chỗ và lưu state; matrix 10 nhóm chỉ thực hiện phần được cấp. Backend direct tải tile từ EE rồi upload bằng tài khoản rclone ngay trong worker; không có batch export tiếp tục chạy nền sau khi runner kết thúc. Lượt schedule/manual sau (mỗi 30 phút theo UTC trong workflow) hòa giải và tạo manifest READY. Có thể gọi manual để giảm thời gian chờ; concurrency ngăn chồng lượt. Chưa có vòng polling liên tục nên không hứa phản hồi ngay khi có file.
 
 `_control/state.json` là nguồn tiến độ chính; manifests/reports/receipts nằm ở các thư mục riêng. Controller single-writer nhờ concurrency của **một workflow trong một repo**. Không khởi chạy controller thứ hai từ máy khác hay workflow khác. Không sửa/xóa state khi workflow đang chạy.
 
-Pause: đặt `pause=true` trong Actions Variable. Lượt mới không cấp thêm export; task cũ vẫn được hòa giải. Pause không hủy task Earth Engine đã gửi, chúng đã có reservation. Quota/lỗi HTTP được xử lý hữu hạn; `BLOCKED_AMBIGUOUS` giữ chỗ để tránh submit trùng. Xem EE Task Manager theo description `province_<job_id>` và file ID trước khi sửa lỗi. Không xóa report/state để ép chạy lại khi task chưa rõ kết quả.
+Pause: đặt `pause=true` trong Actions Variable. Lượt mới không cấp thêm export; task cũ vẫn được hòa giải. Pause không hủy transfer đã bắt đầu trong worker; chúng đã có reservation. Quota/lỗi HTTP được xử lý hữu hạn; `BLOCKED_AMBIGUOUS` giữ chỗ để tránh submit trùng. Xem EE Task Manager theo description `province_<job_id>` và file ID trước khi sửa lỗi. Không xóa report/state để ép chạy lại khi task chưa rõ kết quả.
 
 Đối với task thất bại đã xác nhận: giữ log, kiểm tra và xử lý chính xác file dở còn lại, sửa nguyên nhân; dùng algorithm version mới để tạo job mới có truy vết. Không có nút retry hàng loạt xóa dấu vết. Không hứa GitHub miễn phí: xem hạn mức runner và điều kiện sử dụng hiện hành.
 
@@ -110,13 +106,14 @@ Ví dụ dùng PowerShell trên Windows (đổi đường dẫn cho đúng):
 .\scripts\windows\Register-SatelliteTask.ps1 `
   -Repo "C:\Projects\vietnam_satelline_final" `
   -Config "C:\Projects\vietnam_satelline_final\province_pipeline\config\local.json" `
-  -Credentials "C:\Private\satellite-authorized-user.json" `
+  -RcloneConfig "$env:APPDATA\rclone\rclone.conf" `
+  -Remote "gdrive" `
   -Python "C:\Projects\vietnam_satelline_final\.venv\Scripts\python.exe"
 ```
 
 Task chạy khi đăng nhập và lặp mỗi 5 phút, IgnoreNew khi lần cũ còn chạy; không chứa secret trong command line, chỉ có đường dẫn file. Theo chính sách tài khoản Windows, có thể cần chọn lại người dùng/quyền trong Task Scheduler. Xem Last Run Result và chạy `Receive-Satellite.ps1` trực tiếp để xem lỗi. Phần Windows chưa được kiểm tra trên ổ E thật từ môi trường cloud.
 
-Khi laptop tắt/Sleep không tải được. Lúc bật và đăng nhập lại, task nhận các lô READY; Drive giảm dung lượng rồi controller cấp tiếp trong lượt sau. Không cần để laptop chạy để Earth Engine hoàn tất lô đã gửi, nhưng khi Drive đầy pipeline sẽ chờ đúng phương án đã chọn.
+Khi laptop tắt/Sleep không tải được. Lúc bật và đăng nhập lại, task nhận các lô READY; Drive giảm dung lượng rồi controller cấp tiếp trong lượt sau. GitHub worker có thể tải/upload khi laptop tắt; khi Drive gần đầy pipeline sẽ chờ đúng phương án đã chọn.
 
 ## 8. Mở rộng sau pilot
 

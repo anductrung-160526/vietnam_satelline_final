@@ -1,6 +1,12 @@
 name: Province satellite staging
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Check credentials and sources, or run admitted transfers
+        type: choice
+        default: check_only
+        options: [check_only, run]
   schedule:
     - cron: '17,47 * * * *'
 
@@ -14,7 +20,9 @@ permissions:
 
 env:
   PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON }}
-  PROVINCE_GOOGLE_CREDENTIALS_JSON: ${{ secrets.PROVINCE_GOOGLE_CREDENTIALS_JSON }}
+  EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
+  RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+  PROVINCE_RCLONE_REMOTE: ${{ vars.PROVINCE_RCLONE_REMOTE }}
 
 jobs:
   controller:
@@ -26,7 +34,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/province-setup
+      - name: Read-only credential preflight
+        run: python -m province_pipeline --config .province-local/config.json preflight
+      - name: Read-only source inventory
+        if: ${{ inputs.mode == 'check_only' }}
+        run: python -m province_pipeline --config .province-local/config.json inventory
       - name: Reconcile and reserve global export capacity
+        if: ${{ inputs.mode != 'check_only' }}
         id: plan
         run: |
           python -m province_pipeline --config .province-local/config.json plan --output .province-local/plan.json
@@ -39,15 +53,24 @@ jobs:
               stream.write('groups='+json.dumps(groups)+'\n')
           PY
       - uses: actions/upload-artifact@v4
+        if: ${{ inputs.mode != 'check_only' }}
         with:
           name: province-plan
           path: .province-local/plan.json
           include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.mode == 'check_only' }}
+        with:
+          name: province-source-inventory
+          path: .province-local/source_inventory.csv
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
       - name: Remove credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/province-credentials.json"
+        run: rm -rf "$RUNNER_TEMP/province-auth"
 
   export:
     if: ${{ needs.controller.outputs.groups != '[]' && needs.controller.outputs.groups != '' }}
@@ -70,4 +93,4 @@ jobs:
         run: python -m province_pipeline --config .province-local/config.json work --plan .province-local/plan.json --group '${{ matrix.group }}'
       - name: Remove credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/province-credentials.json"
+        run: rm -rf "$RUNNER_TEMP/province-auth"

@@ -40,7 +40,7 @@ def provinces():
 
 
 def load_config(path, live=False):
-    c = json.loads(Path(path).read_text(encoding='utf-8'))
+    c = json.loads(Path(path).read_text(encoding='utf-8-sig'))
     required = ('project', 'drive_root_id', 'boundaries', 'boundary_metadata', 'years',
                 'province_codes', 'products', 'tile_pixels', 'crs', 'algorithm_version',
                 'max_active_exports', 'high_watermark', 'low_watermark')
@@ -65,6 +65,12 @@ def load_config(path, live=False):
     from .sources import SOURCES
     if not c['products'] or not set(c['products']) <= set(SOURCES):
         raise ValueError('Unsupported product')
+    backend = c.get('export_backend', 'batch')
+    if backend not in ('batch', 'direct'):
+        raise ValueError('export_backend must be batch or direct')
+    if backend == 'direct':
+        from .direct_export import check_tile_limit
+        check_tile_limit(c)
     if live:
         for key in ('project', 'drive_root_id', 'drive_staging_budget_gib', 'drive_safety_margin_gib'):
             if not c.get(key):

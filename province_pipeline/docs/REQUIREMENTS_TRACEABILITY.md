@@ -5,7 +5,7 @@ IMPLEMENTED dưới đây nghĩa là đã có mã và kiểm tra offline tương
 | Yêu cầu | Trạng thái | Triển khai / phần còn thiếu |
 |---|---|---|
 | 63 tỉnh trước sáp nhập, mã thống kê | IMPLEMENTED với GADM research | Tự tải GADM 4.1, pin hash, crosswalk GID+tên sang 63 mã, giữ nguồn/date đúng năm 2022. Bộ chính thức 2024 vẫn cần nguồn riêng |
-| Tải ảnh tự động, nhật ký | IMPLEMENTED; live BLOCKED | EE batch exports, group/task IDs trong log, Drive state/reports; thiếu authorized credentials/project/root/quota |
+| Tải ảnh tự động, nhật ký | IMPLEMENTED; live BLOCKED | Direct EE tile downloads + rclone-authenticated Drive upload, log và state/reports; dùng hai secret cũ. Live quyền/project/root/quota cần check_only trên GitHub |
 | DMSP 2004–2013, VIIRS 2013–2025, Landsat 2004–2025, S2 từ 2015 | PARTIAL / BLOCKED coverage | Có adapters và live inventory snapshot IDs. Không xuất kỳ thiếu/partial; VCMSLCFG và S2 SR không đủ các năm đầu mục tiêu. Chưa bổ sung sản phẩm thay thế |
 | Ảnh TIFF ngày, che mây, composite, ưu tiên mùa khô | IMPLEMENTED; live BLOCKED | Landsat QA/scale/offset; S2 SCL; tháng cấu hình theo tỉnh; tile equal-area có CRS/transform và noData |
 | Ảnh TIFF đêm nguồn và lọc thêm | IMPLEMENTED một phần | DMSP stable product, VIIRS coverage và mask âm; chưa kiểm định loại hết cháy/tàu thuyền/ánh sáng tạm thời |

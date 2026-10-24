@@ -74,6 +74,12 @@ def _remote_manifest(drive, job):
         f, local_relative_path=job['local_directory']+'/'+f['name'])])
 
 
+def report_name(job):
+    if job.get('export_backend') == 'direct':
+        return job['job_id']+'-a'+str(job.get('attempt',1))+'.json'
+    return job['job_id']+'.json'
+
+
 def reconcile(drive, folders, state, tasks):
     by_description = {}
     for task in tasks:
@@ -93,7 +99,33 @@ def reconcile(drive, folders, state, tasks):
                     job['status'] = 'DELETED_REMOTE'
                 # Keep REMOTE_READY until deletion so the receiver can retry a failed cleanup.
             continue
-        report = drive.read_json(folders['reports'], job['job_id']+'.json')
+        report = drive.read_json(folders['reports'], report_name(job))
+        if job.get('export_backend') == 'direct':
+            if report:
+                if report.get('status') == 'UPLOADED':
+                    try:
+                        manifest = _remote_manifest(drive, job)
+                        if manifest:
+                            output=manifest['files'][0]
+                            if output['id'] != report.get('file_id') or output['md5Checksum'] != report.get('md5Checksum'):
+                                raise RuntimeError('Direct upload report does not match Drive output')
+                            drive.write_json(folders['manifests'],job['job_id']+'.json',manifest)
+                            job['status']='REMOTE_READY'
+                        else:
+                            job['status']='RUNNING'  # Wait for Drive visibility, never upload twice.
+                    except RuntimeError as error:
+                        job.update(status='BLOCKED_OUTPUT',error=str(error))
+                else:
+                    # No asynchronous EE task survives this direct worker. Under workflow-wide
+                    # serialization, a new controller runs only after the old worker ended.
+                    files=list(drive.children(job['folder_id']))
+                    if files:
+                        job.update(status='BLOCKED_OUTPUT',error='Unconfirmed upload exists; inspect checksum before retry')
+                    elif job.get('attempt',1) < 4:
+                        job.update(status='RESERVED',attempt=job.get('attempt',1)+1)
+                    else:
+                        job.update(status='FAILED',error='Direct transfer failed after four attempts; inspect reports')
+            continue
         matches = by_description.get('province_'+job['job_id'], [])
         if len(matches) > 1:
             raise RuntimeError('Duplicate EE tasks: stop and reconcile explicitly')
@@ -167,7 +199,7 @@ def prepare(config, drive, candidates, inventory_callback, tasks):
             folder_name = f"{p['ma_tinh']}_{p['slug']}_{job['job_id']}"
             folder_id = drive.folder(parent, folder_name)
             drive.assert_unique_folder_name(folder_name, folder_id)
-            job.update(folder_name=folder_name, folder_id=folder_id, request_id=str(uuid.uuid4()), status='RESERVED')
+            job.update(folder_name=folder_name, folder_id=folder_id, request_id=str(uuid.uuid4()), attempt=1, status='RESERVED')
             state['jobs'][job['job_id']] = job
             plan.append(job)
         state['cursor'] = (cursor+1) % 10
@@ -185,20 +217,31 @@ def work(config, drive, plan, group_id, boundaries):
     for job in plan['jobs']:
         if job['province']['group_id'] != group_id:
             continue
-        report_name = job['job_id']+'.json'
-        if drive.read_json(plan['folders']['reports'], report_name):
+        name = report_name(job)
+        if drive.read_json(plan['folders']['reports'], name):
             # The controller, not a second worker, resolves ambiguous submissions.
             continue
         folder = drive.metadata(job['folder_id'])
         if folder['name'] != job['folder_name'] or folder['mimeType'] != FOLDER:
             raise RuntimeError('Export destination changed')
+        if job.get('export_backend') == 'direct':
+            from .direct_export import transfer
+            drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='TRANSFERRING'))
+            try:
+                output=transfer(config,drive,job,boundaries[job['province']['ma_tinh']])
+                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='UPLOADED',**output))
+            except Exception as error:
+                # Keep original error type only; no signed URL or token is persisted in reports.
+                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='FAILED',error_type=type(error).__name__))
+                raise
+            continue
         drive.assert_unique_folder_name(job['folder_name'], job['folder_id'])
         task = build_export(config, job, boundaries[job['province']['ma_tinh']])
         report = dict(job_id=job['job_id'], status='SUBMITTING', request_id=job['request_id'])
-        drive.write_json(plan['folders']['reports'], report_name, report)
+        drive.write_json(plan['folders']['reports'], name, report)
         try:
             operation = submit_with_request_id(task, job['request_id'])
-            drive.write_json(plan['folders']['reports'], report_name, dict(report, status='SUBMITTED', operation=operation))
+            drive.write_json(plan['folders']['reports'], name, dict(report, status='SUBMITTED', operation=operation))
             audit('submitted', job_id=job['job_id'], group_id=group_id, operation=operation)
         except Exception:
             # Keep persisted SUBMITTING intent and byte reservation even on unknown outcome.

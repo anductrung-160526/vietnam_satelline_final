@@ -16,6 +16,7 @@ def main():
     sub.add_parser('prepare-gadm')
     sub.add_parser('sync-boundaries')
     sub.add_parser('inventory')
+    sub.add_parser('preflight')
     plan = sub.add_parser('plan')
     plan.add_argument('--output', default='.province-local/plan.json')
     work = sub.add_parser('work')
@@ -27,7 +28,7 @@ def main():
     sub.add_parser('aggregate')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
-    c = load_config(args.config, live=args.command in ('plan','work','inventory','receive','sync-boundaries'))
+    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries'))
     if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):
         from .prepare_gadm import prepare
         print('Prepared GADM research provinces:', prepare(c))
@@ -52,12 +53,9 @@ def main():
                           'jobs':len(jobs), 'groups':sorted({j['province']['group_id'] for j in jobs}),
                           'largest_reservation_bytes':max(j['reserved_bytes'] for j in jobs)}, indent=2))
         return
-    from .drive import Drive, credentials
-    credential_path = os.environ.get('PROVINCE_GOOGLE_CREDENTIALS')
-    if not credential_path:
-        raise ValueError('Set PROVINCE_GOOGLE_CREDENTIALS to an authorized credentials file; never paste credentials in chat')
-    creds = credentials(credential_path)
-    drive = Drive(creds)
+    from .drive import Drive
+    from .auth import drive_credentials, ee_credentials
+    drive = Drive(drive_credentials())
     if args.command == 'sync-boundaries':
         for field, id_field in [('boundaries','boundaries_drive_id'), ('boundary_metadata','boundary_metadata_drive_id')]:
             if not c.get(id_field):
@@ -77,8 +75,20 @@ def main():
     from .boundaries import load_boundaries
     boundaries, metadata = load_boundaries(c)
     from .earth_engine import initialize, inventory, operations
-    initialize(c, creds)
+    initialize(c, ee_credentials())
     import ee
+    if args.command == 'preflight':
+        if ee.Number(1).getInfo() != 1:
+            raise RuntimeError('Earth Engine probe failed')
+        root = drive.metadata(c['drive_root_id'])
+        from .drive import FOLDER
+        if root['mimeType'] != FOLDER or root.get('trashed'):
+            raise RuntimeError('Configured Drive staging root is not an active folder')
+        print('Earth Engine service-account probe: PASS')
+        print('Drive identity and staging folder read access: PASS')
+        print('Drive account free bytes:', drive.account_free())
+        print('No satellite export, upload, or deletion performed')
+        return
     def check(job):
         geometry = ee.Geometry(boundaries[job['province']['ma_tinh']]['geometry'])
         result = inventory(dict(c, _province_code=job['province']['ma_tinh']), job['product'], job['period'], geometry)
@@ -106,7 +116,8 @@ def main():
         print(path)
         return
     from .controller import prepare
-    plan = prepare(c, drive, candidates, check, operations())
+    tasks = operations() if c.get('export_backend','batch') == 'batch' else []
+    plan = prepare(c, drive, candidates, check, tasks)
     atomic_json(args.output, plan)
     print('Planned jobs:', len(plan['jobs']))
 

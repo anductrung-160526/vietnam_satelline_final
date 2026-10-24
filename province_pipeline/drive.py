@@ -93,6 +93,26 @@ class Drive:
                                           media_body=media, fields='id', supportsAllDrives=True)
         return self.execute(req)['id']
 
+    def upload_verified(self, parent, path):
+        """Unique job folder + checksummed upload; reconcile a lost response without duplicates."""
+        from googleapiclient.http import MediaFileUpload
+        from .receiver import hashes
+        expected_md5 = hashes(path)[0]
+        found = self.find(parent, path.name)
+        if found:
+            if found.get('md5Checksum') == expected_md5 and int(found.get('size', 0)) == path.stat().st_size:
+                return found['id']
+            raise RuntimeError('Upload destination already contains different data; refusing overwrite')
+        req = self.api.files().create(body={'name':path.name,'parents':[parent]},
+            media_body=MediaFileUpload(str(path),resumable=True), fields=FIELDS, supportsAllDrives=True)
+        result = None
+        # Media upload retries only the current resumable session, not files.create.
+        while result is None:
+            _, result = retry(req.next_chunk)
+        if result.get('md5Checksum') != expected_md5 or int(result.get('size',0)) != path.stat().st_size:
+            raise RuntimeError('Uploaded Drive file checksum mismatch')
+        return result['id']
+
     def download(self, file_id, path):
         from googleapiclient.http import MediaIoBaseDownload
         with path.open('wb') as stream:
