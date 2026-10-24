@@ -13,6 +13,7 @@ runs:
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y rclone
+        rclone version
     - name: Prepare existing credentials without logging their contents
       shell: bash
       run: python -m province_pipeline.ci_setup

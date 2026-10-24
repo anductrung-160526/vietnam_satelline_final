@@ -1,5 +1,6 @@
 """Real Earth Engine composites only. No synthetic data or geometry fallback."""
 from .sources import SOURCES, BANDS
+from .projection import ee_crs
 
 
 def initialize(config, creds):
@@ -123,7 +124,7 @@ def statistics(image, job, geometry):
     sums = image.rename([b+'_sum' for b in bands])
     stack = weighted.addBands(squares).addBands(sums).addBands(area_valid).addBands(area.rename('total_area'))
     scale = job['scale']
-    stats = stack.reduceRegion(ee.Reducer.sum(), geometry, crs=job['crs'],
+    stats = stack.reduceRegion(ee.Reducer.sum(), geometry, crs=ee_crs(job['crs']),
                               crsTransform=[scale,0,0,0,-scale,0], maxPixels=1e13, tileScale=4)
     # Leave raw sufficient statistics in the CSV; local aggregation handles nulls without ee.Number(null).
     properties = dict(ma_tinh=job['province']['ma_tinh'], ten_tinh=job['province']['ten_tinh'],
@@ -146,9 +147,9 @@ def build_export(config, job, boundary):
         return ee.batch.Export.table.toDrive(collection=statistics(image, job, geometry),
                 selectors=selectors, fileFormat='CSV', **common)
     tile = job['tile']
-    region = ee.Geometry.Rectangle(tile['bounds'], proj=job['crs'], geodesic=False)
+    region = ee.Geometry.Rectangle(tile['bounds'], proj=ee_crs(job['crs']), geodesic=False)
     return ee.batch.Export.image.toDrive(image=image.unmask(-9999, sameFootprint=False), region=region,
-            crs=job['crs'], crsTransform=tile['transform'], maxPixels=config['tile_pixels']**2+1,
+            crs=ee_crs(job['crs']), crsTransform=tile['transform'], maxPixels=config['tile_pixels']**2+1,
             fileFormat='GeoTIFF', formatOptions={'cloudOptimized': True, 'noData': -9999}, **common)
 
 

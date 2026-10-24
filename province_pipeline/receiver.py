@@ -7,6 +7,7 @@ import shutil
 import uuid
 from pathlib import Path
 from .common import atomic_json, audit, local_path
+from .projection import same_crs
 
 
 def hashes(path):
@@ -103,7 +104,7 @@ def validate(path, file, job):
         import rasterio
         from affine import Affine
         with rasterio.open(path) as ds:
-            if str(ds.crs) != job['crs'] or ds.count != len(job['bands']) or ds.nodata != -9999:
+            if not same_crs(ds.crs,job['crs']) or ds.count != len(job['bands']) or ds.nodata != -9999:
                 raise ValueError('TIFF CRS/bands/nodata mismatch')
             if ds.width != ds.height or ds.width * job['scale'] != job['tile']['bounds'][2]-job['tile']['bounds'][0]:
                 raise ValueError('TIFF dimensions do not match bounded tile')
@@ -131,6 +132,8 @@ def _not_found(error):
 
 
 def receive_manifest(config, drive, folders, manifest, root, dry_run=False):
+    from .layout import local_manifest
+    manifest=local_manifest(manifest)
     job = manifest['job']
     jid = manifest['job_id']
     if jid != job['job_id']:
@@ -151,8 +154,32 @@ def receive_manifest(config, drive, folders, manifest, root, dry_run=False):
         if dest.exists():
             sha = validate(dest, f, job)
         else:
-            if f['id'] in previous:
+            # An explicit Drive organization may change the local target. Reuse a
+            # verified old copy by same-volume rename; never overwrite or redownload it.
+            legacy=list(f.get('legacy_local_relative_paths',[]))
+            if f['id'] in previous and previous[f['id']].get('local_relative_path'):
+                legacy.append(previous[f['id']]['local_relative_path'])
+            for relative in legacy:
+                old_path=local_path(root,relative)
+                if old_path!=dest and old_path.is_file():
+                    sha=validate(old_path,f,job)
+                    if f['id'] in previous and previous[f['id']]['sha256']!=sha:
+                        raise ValueError('Legacy copy differs from its receipt')
+                    dest.parent.mkdir(parents=True,exist_ok=True)
+                    old_path.rename(dest)
+                    break
+            if dest.exists():
+                sha=validate(dest,f,job)
+            elif f['id'] in previous:
                 raise RuntimeError('Previously received file missing locally; do not delete source')
+            else:
+                sha=None
+            if sha is not None:
+                old=previous.get(f['id'],{})
+                verified.append(dict(id=f['id'],verified=True,sha256=sha,md5Checksum=f['md5Checksum'],
+                    size=f['size'],version=f['version'],local_relative_path=f['local_relative_path'],
+                    deleted=old.get('deleted',False)))
+                continue
             current = drive.metadata(f['id'])
             for key in ('size', 'md5Checksum', 'version', 'parents'):
                 if current.get(key) != f.get(key):

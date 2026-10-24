@@ -17,6 +17,8 @@ def main():
     sub.add_parser('sync-boundaries')
     sub.add_parser('inventory')
     sub.add_parser('preflight')
+    sub.add_parser('organize-drive')
+    sub.add_parser('organize-local')
     plan = sub.add_parser('plan')
     plan.add_argument('--output', default='.province-local/plan.json')
     work = sub.add_parser('work')
@@ -28,7 +30,7 @@ def main():
     sub.add_parser('aggregate')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | system | province | %(message)s')
-    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries'))
+    c = load_config(args.config, live=args.command in ('plan','work','inventory','preflight','receive','sync-boundaries','organize-drive'))
     if args.command == 'prepare-gadm' or (args.command == 'sync-boundaries' and c.get('boundary_provider') == 'gadm41'):
         from .prepare_gadm import prepare
         print('Prepared GADM research provinces:', prepare(c))
@@ -36,6 +38,13 @@ def main():
     if args.command == 'enroll-disk':
         from .receiver import enroll
         print('Set volume_marker in the local config to:', enroll(c['local_root']))
+        return
+    if args.command == 'organize-local':
+        from .receiver import verify_volume,single_receiver
+        from .organize import organize_local
+        root=verify_volume(c)
+        with single_receiver(root):
+            print('Verified local files reorganized:',organize_local(root))
         return
     if args.command == 'aggregate':
         from .receiver import verify_volume, single_receiver
@@ -56,6 +65,11 @@ def main():
     from .drive import Drive
     from .auth import drive_credentials, ee_credentials
     drive = Drive(drive_credentials())
+    if args.command == 'organize-drive':
+        from .organize import organize
+        changed,skipped=organize(c,drive)
+        print('Organized jobs:',changed,'Skipped unresolved jobs:',skipped)
+        return
     if args.command == 'sync-boundaries':
         for field, id_field in [('boundaries','boundaries_drive_id'), ('boundary_metadata','boundary_metadata_drive_id')]:
             if not c.get(id_field):
@@ -86,6 +100,9 @@ def main():
             raise RuntimeError('Configured Drive staging root is not an active folder')
         print('Earth Engine service-account probe: PASS')
         print('Drive identity and staging folder read access: PASS')
+        from .projection import probe_download_projection
+        probe_download_projection(c)
+        print('Earth Engine projection and exact-grid request probe: PASS')
         print('Drive account free bytes:', drive.account_free())
         print('No satellite export, upload, or deletion performed')
         return

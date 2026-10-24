@@ -292,10 +292,11 @@ class ReceiverTests(unittest.TestCase):
             with patch('province_pipeline.aggregate.write_package_docs'):
                 self.assertEqual(aggregate(self.root),1)
         import pandas as pd
-        dest=self.root/'VN_LandCover_Panel_2004_2025/data_processed/panels/LANDSAT_recipe'
+        dest=self.root/'VN_LandCover_Panel_2004_2025/data_processed/LANDSAT_recipe'
         for ext in ('.csv','.xlsx','.dta'):
             self.assertTrue(dest.with_suffix(ext).is_file())
         self.assertEqual(pd.read_stata(dest.with_suffix('.dta')).iloc[0]['ma_tinh'],'01')
+        self.assertTrue((dest.parent/'01_ha_noi/panels/LANDSAT_recipe.xlsx').is_file())
 
 
 class ScientificSummaryTests(unittest.TestCase):

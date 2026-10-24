@@ -6,7 +6,7 @@ on:
         description: Check credentials and sources, or run admitted transfers
         type: choice
         default: check_only
-        options: [check_only, run]
+        options: [check_only, organize_only, run]
   schedule:
     - cron: '17,47 * * * *'
 
@@ -19,14 +19,15 @@ permissions:
   contents: read
 
 env:
-  PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON }}
+  # Branch-only pilot config; main deliberately ignores this variable.
+  PROVINCE_CONFIG_JSON: ${{ github.ref_name == 'inspriring-newton' && vars.PROVINCE_BRANCH_CONFIG_JSON || vars.PROVINCE_CONFIG_JSON }}
   EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
   RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
   PROVINCE_RCLONE_REMOTE: ${{ vars.PROVINCE_RCLONE_REMOTE }}
 
 jobs:
   controller:
-    if: ${{ vars.PROVINCE_CONFIG_JSON != '' }}
+    if: ${{ (github.ref_name == 'inspriring-newton' && vars.PROVINCE_BRANCH_CONFIG_JSON != '') || vars.PROVINCE_CONFIG_JSON != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -39,8 +40,11 @@ jobs:
       - name: Read-only source inventory
         if: ${{ inputs.mode == 'check_only' }}
         run: python -m province_pipeline --config .province-local/config.json inventory
+      - name: Organize existing verified outputs into canonical packages
+        if: ${{ inputs.mode == 'organize_only' }}
+        run: python -m province_pipeline --config .province-local/config.json organize-drive
       - name: Reconcile and reserve global export capacity
-        if: ${{ inputs.mode != 'check_only' }}
+        if: ${{ inputs.mode != 'check_only' && inputs.mode != 'organize_only' }}
         id: plan
         run: |
           python -m province_pipeline --config .province-local/config.json plan --output .province-local/plan.json
@@ -53,7 +57,7 @@ jobs:
               stream.write('groups='+json.dumps(groups)+'\n')
           PY
       - uses: actions/upload-artifact@v4
-        if: ${{ inputs.mode != 'check_only' }}
+        if: ${{ inputs.mode != 'check_only' && inputs.mode != 'organize_only' }}
         with:
           name: province-plan
           path: .province-local/plan.json

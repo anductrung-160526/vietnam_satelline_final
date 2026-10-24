@@ -137,6 +137,41 @@ class Drive:
             raise RuntimeError('Account quota unknown (e.g. Shared Drive): configure a supported account; refusing exports')
         return max(0, int(quota['limit']) - int(quota['usage']))
 
+    def assert_under(self,folder_id,root):
+        seen=set()
+        while folder_id!=root:
+            if folder_id in seen:
+                raise RuntimeError('Drive ancestry cycle')
+            seen.add(folder_id)
+            node=self.metadata(folder_id)
+            if node.get('name')=='_control' or len(node.get('parents',[]))!=1:
+                raise RuntimeError('Move must stay inside the data staging tree')
+            folder_id=node['parents'][0]
+
+    def move_verified(self,expected,parent,root):
+        """Move the same file ID, preserving bytes; retry after a lost response is safe."""
+        self.assert_under(parent,root)
+        current=self.metadata(expected['id'])
+        for key in ('size','md5Checksum'):
+            if current.get(key)!=expected.get(key):
+                raise RuntimeError('Source content changed; layout migration blocked')
+        if current.get('parents')==[parent]:
+            return current  # A previous move succeeded before its checkpoint was saved.
+        if current.get('parents')!=expected.get('parents') or current.get('version')!=expected.get('version'):
+            raise RuntimeError('Source location/version changed; layout migration blocked')
+        for source_parent in current.get('parents',[]):
+            self.assert_under(source_parent,root)
+        req=self.api.files().update(fileId=current['id'],addParents=parent,
+            removeParents=','.join(current['parents']),fields=FIELDS,supportsAllDrives=True)
+        if current.get('_etag'):
+            req.headers['If-Match']=current['_etag']
+        req.execute()  # Unknown outcomes are reconciled by ID on the next organize_only run.
+        moved=self.metadata(current['id'])
+        if (moved.get('parents')!=[parent] or moved.get('md5Checksum')!=expected.get('md5Checksum')
+                or moved.get('size')!=expected.get('size')):
+            raise RuntimeError('Moved file verification failed; migration intent retained')
+        return moved
+
     def delete_verified(self, expected, root):
         current = self.metadata(expected['id'])
         for key in ('version', 'md5Checksum', 'size', 'parents'):

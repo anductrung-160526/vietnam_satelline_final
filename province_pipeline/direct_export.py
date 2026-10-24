@@ -8,6 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 from .common import audit
+from .projection import ee_crs, same_crs
 
 MAX_DOWNLOAD_BYTES = 32_000_000
 
@@ -23,15 +24,15 @@ def check_tile_limit(config):
 
 
 def download_image(image, job, path, attempts=4):
-    import ee
     import requests
-    region = ee.Geometry.Rectangle(job['tile']['bounds'], proj=job['crs'], geodesic=False)
     scale = job['scale']
     bounds = job['tile']['bounds']
     pixels = round((bounds[2]-bounds[0])/scale)
     if pixels*pixels*len(job['bands'])*4 >= MAX_DOWNLOAD_BYTES:
         raise ValueError('Direct download tile exceeds 32 MB')
-    params = dict(region=region, crs=job['crs'], crs_transform=job['tile']['transform'],
+    # EE's exact-grid mode is CRS + affine + dimensions, WITHOUT region/scale.
+    # The affine origin and dimensions already define the complete tile footprint.
+    params = dict(crs=ee_crs(job['crs']), crs_transform=job['tile']['transform'],
                   dimensions=[pixels,pixels], format='GEO_TIFF', filePerBand=False)
     # Explicit default value is preserved as NoData metadata by local TIFF rewrite below.
     image = image.unmask(-9999, sameFootprint=False)
@@ -62,7 +63,7 @@ def download_image(image, job, path, attempts=4):
     from affine import Affine
     with rasterio.open(path,'r+') as ds:
         expected=Affine(*job['tile']['transform'])
-        if (str(ds.crs) != job['crs'] or not ds.transform.almost_equals(expected)
+        if (not same_crs(ds.crs,job['crs']) or not ds.transform.almost_equals(expected)
                 or ds.width != pixels or ds.height != pixels or ds.count != len(job['bands'])):
             raise RuntimeError('Earth Engine returned a different tile grid/band layout')
         ds.nodata=-9999

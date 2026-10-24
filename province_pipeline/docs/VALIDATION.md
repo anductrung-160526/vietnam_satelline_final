@@ -27,3 +27,31 @@ python -m province_pipeline --help
 Cấu hình mặc định pause=true, allow_remote_delete=false, chỉ chọn Hà Nội 2024. Không tự tải toàn quốc hoặc xóa dữ liệu Drive trong lúc phát triển. Chạy pilot theo SETUP_VI.md trước khi bật xóa và mở rộng.
 
 Split auth, CI materialization, direct recovery và BOM config được kiểm thử offline. Không có quyền đọc giá trị GitHub Secrets để chạy probe trong môi trường cloud chat. Người dùng chạy workflow check_only bằng chính GitHub runner để xác minh quyền thật.
+
+## Regression: Earth Engine download parameter combination
+
+Direct TIFF download uses `crs + crs_transform + dimensions`, without `region` or
+`scale`. The affine origin and pixel dimensions define the exact tile rectangle.
+The actual Earth Engine Python SDK validator is exercised offline: the corrected
+combination is accepted and the previous combination with region is rejected.
+The TIFF payload test still checks its transform, dimensions, bands and NoData.
+This validates request construction, not a completed live satellite download.
+
+## Projection parsing diagnostic
+
+EE requests now spell out EPSG:6933 as OGC WKT1_GDAL at download, reduction, and
+batch-export boundaries. The raster grid, transform, statistical CRS label and job
+identity remain unchanged. Local tests verify the WKT round-trip equals EPSG:6933
+and accept equivalent WKT in received TIFFs; they do not prove live EE support.
+Preflight additionally calls the live projection nominalScale and constructs a
+4×4 constant-image exact-grid download request. It does not print the signed URL,
+retrieve satellite pixels, upload to Drive, or delete files. Require this probe
+PASS before retrying the satellite workflow after a projection parsing error.
+
+## Layout 2
+
+Tests kiểm tra tỉnh nằm đúng cấp, không đổi job IDs khi đổi đường dẫn, nhiều output dùng chung thư mục không nhầm lô, migration giữ nguyên file ID và khôi phục sau mất phản hồi, nhận lại dữ liệu local cũ không tải trùng, và aggregate bảng riêng từng tỉnh. Drive relocation thật cần chạy mode organize_only trên GitHub bằng secret hiện có; không tuyên bố đã di chuyển dữ liệu từ môi trường cloud chat.
+
+## Flat TIFF layout 3
+
+Ảnh nguồn và trung gian đều có thư mục cha trực tiếp là tỉnh. Tests xác nhận nhiều năm/tháng dùng chung thư mục nhưng không trùng tên, giữ nguyên job ID, chuyển lô layout 2 đã hoàn tất hoặc đang chuyển dở, và di chuyển TIFF local khỏi thư mục năm mà giữ nguyên MD5/SHA-256. Đây là kiểm thử offline; Drive chỉ thay đổi khi người dùng chạy organize_only bằng credentials thật.
