@@ -35,6 +35,10 @@ try {
     if ($exitCode -eq 0 -and -not $DryRun) {
         & $Python -m province_pipeline --config $Config aggregate
         $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            & $Python -m task_pipeline.receiver --config $Config
+            $exitCode = $LASTEXITCODE
+        }
     }
 } finally {
     Stop-Transcript | Out-Null

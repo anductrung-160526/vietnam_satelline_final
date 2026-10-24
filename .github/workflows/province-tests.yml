@@ -1,9 +1,9 @@
 name: Province pipeline tests
 on:
   push:
-    paths: ['province_pipeline/**', 'tests/**', 'scripts/windows/**', '.github/workflows/province-*.yml', '.github/actions/province-setup/**']
+    paths: ['task_pipeline/**', 'notebooks/task123/**', 'province_pipeline/**', 'tests/**', 'scripts/windows/**', '.github/workflows/province-*.yml', '.github/actions/province-setup/**']
   pull_request:
-    paths: ['province_pipeline/**', 'tests/**', 'scripts/windows/**', '.github/workflows/province-*.yml', '.github/actions/province-setup/**']
+    paths: ['task_pipeline/**', 'notebooks/task123/**', 'province_pipeline/**', 'tests/**', 'scripts/windows/**', '.github/workflows/province-*.yml', '.github/actions/province-setup/**']
 permissions:
   contents: read
 jobs:

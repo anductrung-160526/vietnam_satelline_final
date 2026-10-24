@@ -36,10 +36,14 @@ def gadm_codes():
 
 def base_row(config,spec):
     p,product,period = spec['province'],spec['product'],spec['period']
+    definition=SOURCES[product]
+    if config['quality'].get('processing_mode')=='notebook_tasks':
+        from task_pipeline.methods import source_spec
+        definition=source_spec(product,period)
     return dict(MA_TINH=p['ma_tinh'],NAME_1=p['ten_tinh'],GID_1=gadm_codes().get(p['ma_tinh'],''),
         YEAR=int(period[:4]),MONTH=int(period[5:]) if len(period)==7 else None,TIME=period,
         FREQUENCY='monthly' if len(period)==7 else 'annual',SOURCE='VIIRS' if product.startswith('VIIRS') else product,
-        SOURCE_COLLECTION=';'.join(SOURCES[product]['collections']),UNIT=SOURCES[product]['unit'],
+        SOURCE_COLLECTION=';'.join(definition['collections']),UNIT=definition['unit'],
         METHOD_VERSION=config['algorithm_version'],CALIBRATION_VERSION=None,
         CALIBRATION_STATUS='NOT_CALIBRATED' if spec['night'] else 'NOT_APPLICABLE',
         SOURCE_SELECTION_REASON='FIXED_PERIOD_POLICY',IS_FALLBACK=False,
@@ -59,12 +63,13 @@ def quantitative(row,record,job):
     row.update(QC_ATTEMPTS=record.get('qc_attempts',1),QC_STATUS=record.get('qc_status','PASS'))
     if record.get('qc_initial_range_flag'):
         row['QA_FLAGS']='REPROCESSED_STRICT_MASK'
-    raw=job['quality'].get('processing_mode')=='raw_source'
+    notebook=job['quality'].get('processing_mode')=='notebook_tasks'
+    raw=job['quality'].get('processing_mode')=='raw_source' or notebook
     # Never publish low-quality numeric indices as valid observations.
     if valid <= 0 or (not raw and (row['VALID_AREA_PCT'] < job['quality']['min_valid_area_pct'] or record.get('qc_status')=='INSUFFICIENT_QUALITY')):
         row.update(DATA_STATUS='INSUFFICIENT_QUALITY',ERROR='LOW_VALID_PIXEL_COVERAGE')
         return
-    row['DATA_STATUS']='OK_RAW' if raw else 'OK'
+    row['DATA_STATUS']='OK_NOTEBOOK' if notebook else 'OK_RAW' if raw else 'OK'
     row['ERROR']=''
     product = job['product']
     if product.startswith(('DMSP','VIIRS')):
@@ -88,7 +93,9 @@ def quantitative(row,record,job):
         if any(row[b+'_mean'] is not None and not -0.2 <= row[b+'_mean'] <= 1.6 for b in BANDS):
             row['QA_FLAGS']='REFLECTANCE_RANGE_REVIEW'
 
-    if raw:
+    if notebook:
+        notebook_metrics(row,record,job)
+    if raw and not notebook:
         row['QA_FLAGS']+=';RAW_UNFILTERED'
         if row['VALID_AREA_PCT'] < job['quality']['min_valid_area_pct']:
             row['QA_FLAGS']+=';LOW_COVERAGE_REVIEW'
@@ -114,7 +121,7 @@ def temporal(rows, anomaly_z=6):
                 row['THAY_DOI_NTL_PCT']=percent(row.get('SOL_NTL'),prev.get('SOL_NTL'))
             row.update(SOL_YEAR=row.get('SOL_NTL'),MAT_DO_NTL_YEAR=row.get('MAT_DO_NTL'),
                        THAY_DOI_NTL_YEAR_PCT=row.get('THAY_DOI_NTL_PCT'),
-                       YEAR_DATA_STATUS='COMPLETE' if row['DATA_STATUS'] in ('OK','OK_RAW') else row['DATA_STATUS'])
+                       YEAR_DATA_STATUS='COMPLETE' if row['DATA_STATUS'] in ('OK','OK_RAW','OK_NOTEBOOK') else row['DATA_STATUS'])
             continue
         def ago(n):
             ordinal=y*12+m-1-n
@@ -133,14 +140,14 @@ def temporal(rows, anomaly_z=6):
     # Require all 12 months; label this method explicitly in metadata.
     sums={}
     for key,group in annual.items():
-        valid=[r for r in group if r['DATA_STATUS'] in ('OK','OK_RAW') and number(r.get('SOL_NTL')) is not None]
+        valid=[r for r in group if r['DATA_STATUS'] in ('OK','OK_RAW','OK_NOTEBOOK') and number(r.get('SOL_NTL')) is not None]
         if len(group)==12 and len(valid)==12:
             sums[key]=sum(r['SOL_NTL'] for r in valid)/12
         for r in group:
             r.update(VALID_MONTHS_YEAR=len(valid),YEAR_DATA_STATUS='COMPLETE' if key in sums else 'INCOMPLETE')
     for key,group in annual.items():
         for r in group:
-            if key in sums and r['DATA_STATUS'] in ('OK','OK_RAW'):
+            if key in sums and r['DATA_STATUS'] in ('OK','OK_RAW','OK_NOTEBOOK'):
                 r['SOL_YEAR']=sums[key]
                 r['MAT_DO_NTL_YEAR']=sum(x['MAT_DO_NTL'] for x in group)/12
                 r['THAY_DOI_NTL_YEAR_PCT']=percent(sums[key],sums.get((key[0],key[1]-1)))
@@ -176,6 +183,8 @@ def build_panels(config,state,metadata):
         outputs['night_indices.csv' if spec['night'] else 'day_indices.csv'].append(row)
     temporal(outputs['night_indices.csv'],config['quality']['anomaly_robust_z'])
     flag_day_outliers(outputs['day_indices.csv'],config['quality']['anomaly_robust_z'])
+    if config['quality'].get('processing_mode')=='notebook_tasks':
+        notebook_rolling(outputs['night_indices.csv'])
     for name,rows in outputs.items():
         rows.sort(key=lambda r:(r['MA_TINH'],r['TIME']))
     return outputs
@@ -287,6 +296,10 @@ def write_docs(root):
     snapshot=Path(root)/'.panels.json'
     if snapshot.exists():
         policy['quality_settings']=json.loads(snapshot.read_text(encoding='utf-8')).get('quality',{})
+    if policy.get('quality_settings',{}).get('processing_mode')=='notebook_tasks':
+        policy['quality']='Notebook QA60 bits 10/11; Task1 CLOUDY_PIXEL_PERCENTAGE<85 with same-month fallback and mean/stdDev at 50m EPSG4326. Task2 images use 0/15/30-day windows only when no scenes exist; provenance retained. VIIRS mean, VCMSLCFG then VCMCFG, lit>=1.5; no fire/Cloud Score+ or 80% coverage gate.'
+        policy['raw']='Task2 masked monthly day composites at 20m Sentinel/30m Landsat; night catalog composites. EPSG4326 fixed tiles, lossless float64; not untouched sensor scenes.'
+        policy['population']='LIT_POP_PROXY follows Task3 sum of radiance above lit threshold; NOT a population estimate.'
     if policy.get('quality_settings',{}).get('processing_mode')=='raw_source':
         policy['quality']='No additional QA/cloud/fire/background/observation-count filtering. Provider masks retained. SR scaling and median compositing remain; this is NOT untouched sensor scenes.'
         policy['raw']='Clipped/resampled catalog source products; day TIFF is unfiltered annual composite, monthly CSV comes from unfiltered monthly composites. RAW_UNFILTERED is NOT quality-validated.'
@@ -300,6 +313,8 @@ def write_docs(root):
             for suffix in ('mean','stdDev'):
                 if band+'_'+suffix in dictionary:
                     dictionary[band+'_'+suffix]['definition']='Area-weighted population '+suffix+' of monthly masked pixel '+band+' on common 30m grid'
+        if policy.get('quality_settings',{}).get('processing_mode')=='notebook_tasks' and 'LIT_POP_PROXY' in dictionary:
+            dictionary['LIT_POP_PROXY']['definition']='Task3: sum(radiance where >=1.5); DMSP extension uses DN threshold5. Not number of people.' if 'LIT_POP_PROXY' in dictionary else ''
         atomic_json(dest/'indices_codebook.json',dictionary)
 
 DEFINITIONS={
@@ -366,3 +381,56 @@ def archive_remote(config,drive,new_index):
             raise ValueError('Previous panel checksum mismatch before backup')
         drive.write_verified_bytes(folder,backup_name,content)
     drive.write_json(folder,'index_'+__import__('hashlib').sha256(str(old).encode()).hexdigest()+'.json',old)
+
+
+def notebook_metrics(row,record,job):
+    p=job['product']
+    row['QA_FLAGS']+=';NOTEBOOK_TASKS;NOT_HARMONIZED'
+    row['SOURCE_COLLECTION']=record.get('actual_source_collections',row['SOURCE_COLLECTION'])
+    row['ANALYSIS_RESOLUTION_M']=50 if p in ('LANDSAT','SENTINEL2') else job['scale']
+    row['UNIT']=job['source_definition']['unit']
+    if p in ('LANDSAT','SENTINEL2'):
+        for b in BANDS+['NDVI','NDBI','MNDWI','BSI']:
+            row[b+'_mean']=number(record.get(b+'_mean'))
+            row[b+'_stdDev']=number(record.get(b+'_stdDev'))
+        return
+    b='stable_lights' if p=='DMSP' else 'avg_rad'
+    for suffix,out in (('_mean','MEAN_RAD'),('_stdDev','STD_RAD'),('_min','MIN_RAD'),('_max','MAX_RAD')):
+        row[out]=number(record.get(b+suffix))
+    row['TNL']=row['SOL_NTL']=number(record.get(b+'_sum'))
+    area=row.get('PROVINCE_AREA_HA')
+    row['MAT_DO_NTL']=row['SOL_NTL']/(area/100) if row['SOL_NTL'] is not None and area else None
+    count=number(record.get('lit_pixels'));total=number(record.get('notebook_valid_pixels'))
+    row['LIT_PIXELS']=int(count) if count is not None else None
+    row['LIT_AREA_HA']=count*(25 if p=='VIIRS_MONTHLY' else 100) if count is not None else None
+    row['ELECTRIFICATION_RATIO_PCT']=100*count/total if count is not None and total and total>0 else None
+    row['LIT_POP_PROXY']=number(record.get('notebook_lit_pop_proxy'))
+    if count==0 and total and total>0:row['LIT_POP_PROXY']=0.0
+    mean,std=row.get('MEAN_RAD'),row.get('STD_RAD')
+    row['SPATIAL_CV']=std/mean if std is not None and mean and mean>0 else 0.0 if mean is not None else None
+    for key in ('TNL','SOL_NTL','MEAN_RAD','STD_RAD','MIN_RAD','MAX_RAD','SPATIAL_CV','LIT_POP_PROXY'):
+        if row.get(key) is not None:row[key]=round(row[key],4)
+    for key in ('PROVINCE_AREA_HA','LIT_AREA_HA','ELECTRIFICATION_RATIO_PCT'):
+        if row.get(key) is not None:row[key]=round(row[key],2)
+    if row.get('CLOUD_FREE_OBS') is not None:row['CLOUD_FREE_OBS']=round(row['CLOUD_FREE_OBS'],1)
+
+
+def notebook_rolling(rows):
+    groups={}
+    for row in rows:
+        if row['SOURCE']=='VIIRS' and row['DATA_STATUS']=='OK_NOTEBOOK':
+            groups.setdefault(row['MA_TINH'],[]).append(row)
+    for group in groups.values():
+        for i,row in enumerate(group):
+            window=group[max(0,i-2):i+1]
+            row['TNL_MA3']=sum(r['TNL'] for r in window)/len(window)
+            ordinals=[int(r['TIME'][:4])*12+int(r['TIME'][5:]) for r in window]
+            if ordinals[-1]-ordinals[0]!=len(ordinals)-1:
+                row['QA_FLAGS']+=';NONCONSECUTIVE_OBSERVATIONS'
+            # Notebook rolling(min_periods=1) on observed rows. Flag any skipped month.
+            y,m=int(row['TIME'][:4]),int(row['TIME'][5:])
+            if i:
+                prev=group[i-1];py,pm=int(prev['TIME'][:4]),int(prev['TIME'][5:])
+                # Preserve null on a missing immediate previous month rather than
+                # mislabel multi-month growth as month-on-month.
+                if (y-py)*12+m-pm==1:row['TNL_MOM_GROWTH_PCT']=percent(row['TNL'],prev['TNL'])

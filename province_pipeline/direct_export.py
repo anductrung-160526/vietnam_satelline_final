@@ -19,7 +19,7 @@ def check_tile_limit(config):
     if n > 10000:
         raise ValueError('Earth Engine download dimensions exceed 10000')
     for product in config['products']:
-        if n*n*len(SOURCES[product]['bands'])*4 >= MAX_DOWNLOAD_BYTES:
+        if n*n*len(SOURCES[product]['bands'])*(8 if config.get('quality',{}).get('processing_mode')=='notebook_tasks' else 4) >= MAX_DOWNLOAD_BYTES:
             raise ValueError('Direct download exceeds 32 MB uncompressed; reduce tile_pixels (512 recommended)')
 
 
@@ -27,8 +27,8 @@ def download_image(image, job, path, attempts=4):
     import requests
     scale = job['scale']
     bounds = job['tile']['bounds']
-    pixels = round((bounds[2]-bounds[0])/scale)
-    if pixels*pixels*len(job['bands'])*4 >= MAX_DOWNLOAD_BYTES:
+    pixels = round((bounds[2]-bounds[0])/job.get('grid_resolution',scale))
+    if pixels*pixels*len(job['bands'])*(8 if job.get('dtype')=='float64' else 4) >= MAX_DOWNLOAD_BYTES:
         raise ValueError('Direct download tile exceeds 32 MB')
     # EE's exact-grid mode is CRS + affine + dimensions, WITHOUT region/scale.
     # The affine origin and dimensions already define the complete tile footprint.
@@ -69,6 +69,8 @@ def download_image(image, job, path, attempts=4):
         ds.nodata=-9999
         for index,name in enumerate(job['bands'],1):
             ds.set_band_description(index,name)
+    if job.get('quality',{}).get('processing_mode')=='notebook_tasks':
+        lossless_tiff(path)
 
 
 def write_statistics(image, job, geometry, path, config=None):
@@ -108,7 +110,7 @@ def transfer(config, drive, job, boundary):
                 import rasterio
                 qa=inspect_raster(path,job)
                 qa['attempts']=1
-                if (job['quality'].get('processing_mode')!='raw_source' and job['product'] in ('LANDSAT','SENTINEL2')
+                if (job['quality'].get('processing_mode','quality_filtered')=='quality_filtered' and job['product'] in ('LANDSAT','SENTINEL2')
                         and 'VALUE_RANGE_REVIEW' in qa['flags']):
                     strict=dict(job['quality'],sentinel_cloud_score_min=max(.75,job['quality']['sentinel_cloud_score_min']),
                                 landsat_cloud_buffer_m=max(120,job['quality']['landsat_cloud_buffer_m']))
@@ -118,7 +120,13 @@ def transfer(config, drive, job, boundary):
                     qa=inspect_raster(path,job)
                     qa['attempts']=2
                 from .inspect_tiff import inspect
-                inspect(path,Path('.province-local/previews'))
+                preview=Path('.province-local/previews')
+                if job['quality'].get('processing_mode')=='notebook_tasks':
+                    preview=preview/job['product']
+                    if len(list(preview.glob('*.png')))<12:
+                        inspect(path,preview)
+                else:
+                    inspect(path,preview)
                 if qa['valid_pixel_pct']==0:
                     from .quality import NoValidPixels
                     raise NoValidPixels('No valid pixels; see preview JSON; empty TIFF not uploaded')
@@ -142,3 +150,11 @@ def transfer(config, drive, job, boundary):
         if job['kind'] == 'table' and job.get('pipeline_version') == 2:
             result['statistics'] = record
         return result
+
+
+def lossless_tiff(path):
+    from rasterio.shutil import copy as copy_raster
+    target=path.with_name(path.stem+'.deflate.tif')
+    copy_raster(path,target,driver='GTiff',compress='DEFLATE',predictor=3,
+                tiled=True,blockxsize=256,blockysize=256)
+    target.replace(path)

@@ -25,7 +25,7 @@ def fair_jobs(config, boundaries, metadata, priority, cursor):
             pass
 
 def inventory_key(job):
-    return digest([job['province']['ma_tinh'], job['product'], job['period'], job['recipe_hash']])
+    return digest([job['province']['ma_tinh'], job['product'], job['period'], job['recipe_hash'],job['kind'] if job.get('quality',{}).get('processing_mode')=='notebook_tasks' else ''])
 
 def prepare_priority(config, drive, boundaries, metadata, inventory_callback):
     from .controller import control_folders, reconcile, admit
@@ -36,6 +36,7 @@ def prepare_priority(config, drive, boundaries, metadata, inventory_callback):
                             {'schema_version': 1, 'jobs': {}, 'inventory': {}, 'cursor': 0})
     if any(j['status'] == 'MIGRATING' for j in state['jobs'].values()):
         raise RuntimeError('Finish organize_only before exports')
+    if config['quality'].get('processing_mode')=='notebook_tasks':state['receipt_listing_cache']=True
     reconcile(drive, folders, state, [])
     if state.get('layout_version', 1) < LAYOUT_VERSION:
         ensure_drive_packages(drive, config['drive_root_id'])

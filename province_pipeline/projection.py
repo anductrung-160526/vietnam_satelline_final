@@ -26,7 +26,8 @@ def probe_download_projection(config):
     crs=ee_crs(config['crs'])
     if ee.Projection(crs).nominalScale().getInfo() <= 0:
         raise RuntimeError('Earth Engine projection probe returned an invalid scale')
-    params=dict(crs=crs,crs_transform=[30,0,0,0,-30,120],dimensions=[4,4],
+    transform=[30,0,0,0,-30,120] if config['crs']!='EPSG:4326' else [30/111319.49079327358,0,105,0,-30/111319.49079327358,22]
+    params=dict(crs=crs,crs_transform=transform,dimensions=[4,4],
                 format='GEO_TIFF',filePerBand=False)
     url=ee.Image.constant(1).toFloat().getDownloadURL(params)
     if not url:

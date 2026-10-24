@@ -69,6 +69,9 @@ def table_job(config, spec, metadata):
     import copy
     p, product, period = spec['province'], spec['product'], spec['period']
     source = copy.deepcopy(SOURCES[product])
+    if config['quality'].get('processing_mode')=='notebook_tasks':
+        from task_pipeline.methods import source_spec
+        source=source_spec(product,period)
     job = dict(pipeline_version=2, export_backend='direct', province=p, product=product,
                period=period, boundary_sha256=metadata['sha256'],
                boundary_provenance={k: metadata[k] for k in ('source','version','date','code_reference','sha256')},
@@ -76,6 +79,8 @@ def table_job(config, spec, metadata):
                algorithm_version=config['algorithm_version'], crs=config['crs'],
                scale=source['scale'] if spec['night'] else 30,
                quality=config['quality'], bands=source['bands'])
+    if config['quality'].get('processing_mode')=='notebook_tasks' and not spec['night']:
+        job['scale']=50
     job['recipe_hash'] = digest(dict(source=source, quality=config['quality'],
         algorithm_version=config['algorithm_version'], crs=config['crs'],
         season_months=config.get('season_months'), season_months_by_province=config.get('season_months_by_province',{})))
@@ -98,9 +103,10 @@ def generate_v2(config, boundaries, metadata, priority):
             continue
         if spec['night'] != (priority == 0):
             continue
-        if not spec['night'] and not spec['period'].endswith('-01'):
+        notebook=config['quality'].get('processing_mode')=='notebook_tasks'
+        if not notebook and not spec['night'] and not spec['period'].endswith('-01'):
             continue
-        if not spec['night']:
+        if not notebook and not spec['night']:
             spec = dict(spec, period=spec['period'][:4])
         base = table_job(config, spec, metadata)
         product, p = base['product'], base['province']
@@ -111,14 +117,19 @@ def generate_v2(config, boundaries, metadata, priority):
                 return np.column_stack([x,y])
             geometries[p['ma_tinh']] = transform(shape(boundaries[p['ma_tinh']]['geometry']),project)
         projected = geometries[p['ma_tinh']]
-        for tile in tile_grid(projected.bounds,scale,config['tile_pixels']):
+        resolution=scale/111319.49079327358 if config['crs']=='EPSG:4326' else scale
+        for tile in tile_grid(projected.bounds,resolution,config['tile_pixels']):
             if not projected.intersects(box(*tile['bounds'])):
                 continue
-            variants=(['source'] if config['quality'].get('processing_mode')=='raw_source'
+            variants=((['source'] if spec['night'] else ['composite']) if notebook else ['source'] if config['quality'].get('processing_mode')=='raw_source'
                       else (['source','filtered'] if spec['night'] else ['composite']))
             for variant in variants:
                 job = dict(base,kind='image',priority=priority,variant=variant,scale=scale,tile=tile,
                            reserved_bytes=int(config['tile_pixels']**2*len(base['bands'])*4*2+1048576))
+                if notebook:
+                    job['grid_resolution']=resolution
+                    job['dtype']='float64'
+                    job['reserved_bytes']=int(config['tile_pixels']**2*len(base['bands'])*8*2+1048576)
                 job.pop('job_id')
                 job['prefix'] = f"{p['ma_tinh']}_{p['slug']}_{product}_{spec['period']}_{variant}_{tile['x']}_{tile['y']}_{config['algorithm_version']}_{job['recipe_hash'][:8]}"
                 job['job_id'] = digest(job)[:32]

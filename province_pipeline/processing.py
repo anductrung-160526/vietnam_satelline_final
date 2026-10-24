@@ -4,6 +4,9 @@ from .sources import SOURCES
 
 
 def composite(config, job, geometry):
+    if job['quality'].get('processing_mode')=='notebook_tasks':
+        from task_pipeline.methods import composite as notebook_composite
+        return notebook_composite(config,job,geometry)
     import ee
     from .earth_engine import _landsat, _sentinel, _indices, date_range
     ids = job.get('inventory', {}).get('asset_ids', [])
@@ -79,6 +82,9 @@ def composite(config, job, geometry):
 
 
 def statistics(image, job, geometry):
+    if job['quality'].get('processing_mode')=='notebook_tasks':
+        from task_pipeline.methods import statistics as notebook_statistics
+        return notebook_statistics(image,job,geometry)
     import ee
     from .earth_engine import statistics as legacy
     base = legacy(image,job,geometry).first()

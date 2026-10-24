@@ -1,3 +1,5 @@
+> **Sáu nhánh mới theo tỉnh, 2004–2025:** xem [task_pipeline/README_VI.md](task_pipeline/README_VI.md) và [danh sách đánh số 63 tỉnh](task_pipeline/DANH_SACH_63_TINH.md). Dùng workflow `vngis-2024.yml` với pilot/full trên nhánh `vngis-tinh-...`.
+
 > Pipeline cấp tỉnh mới: [hai chế độ chạy thử Hà Nội 2025 / toàn bộ 2004–2025](province_pipeline/docs/RUN_PROFILES_VI.md). Nội dung phía dưới dành cho workflow xã/phường cũ.
 
 # Hướng dẫn chạy VNGISDash 2024 trên GitHub Actions

@@ -12,6 +12,8 @@ def out_of_range(info,job):
 
 
 def reprocess_statistics(info,job,geometry,config):
+    if job['quality'].get('processing_mode')=='notebook_tasks':
+        return dict(info,qc_attempts=1,qc_status='NOTEBOOK_TASKS')
     if job['quality'].get('processing_mode')=='raw_source':
         return dict(info,qc_attempts=1,qc_status='RAW_UNFILTERED')
     info=dict(info,qc_attempts=1,qc_status='PASS')

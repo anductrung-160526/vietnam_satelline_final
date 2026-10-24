@@ -52,9 +52,16 @@ class Drive:
                 break
 
     def find(self, parent, name):
-        found = [f for f in self.children(parent) if f['name'] == name]
-        if len(found) > 1:
-            raise RuntimeError(f'Ambiguous Drive filename under {parent}: {name}')
+        safe=name.replace('\\','\\\\').replace("'","\\'")
+        token=None;found=[]
+        while True:
+            data=self.execute(self.api.files().list(
+                q=f"'{parent}' in parents and name = '{safe}' and trashed = false",
+                pageToken=token,pageSize=1000,fields=f'nextPageToken,files({FIELDS})',
+                supportsAllDrives=True,includeItemsFromAllDrives=True))
+            found.extend(data.get('files',[]));token=data.get('nextPageToken')
+            if not token:break
+        if len(found)>1:raise RuntimeError('Ambiguous Drive filename; refusing to choose')
         return found[0] if found else None
 
     def folder(self, parent, name):

@@ -106,11 +106,13 @@ def validate(path, file, job):
         with rasterio.open(path) as ds:
             if not same_crs(ds.crs,job['crs']) or ds.count != len(job['bands']) or ds.nodata != -9999:
                 raise ValueError('TIFF CRS/bands/nodata mismatch')
-            if ds.width != ds.height or ds.width * job['scale'] != job['tile']['bounds'][2]-job['tile']['bounds'][0]:
+            import math
+            if ds.width != ds.height or not math.isclose(ds.width * job.get('grid_resolution',job['scale']),
+                    job['tile']['bounds'][2]-job['tile']['bounds'][0],rel_tol=1e-9,abs_tol=1e-10):
                 raise ValueError('TIFF dimensions do not match bounded tile')
             if not ds.transform.almost_equals(Affine(*job['tile']['transform'])):
                 raise ValueError('TIFF grid mismatch')
-            if any(t != 'float32' for t in ds.dtypes):
+            if any(t != job.get('dtype','float32') for t in ds.dtypes):
                 raise ValueError('TIFF dtype mismatch')
             for band in range(1, ds.count+1):
                 for _, window in ds.block_windows(band):

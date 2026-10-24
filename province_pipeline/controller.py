@@ -93,12 +93,14 @@ def reconcile(drive, folders, state, tasks):
     by_description = {}
     for task in tasks:
         by_description.setdefault(task.get('description'), []).append(task)
+    receipt_names={f['name'] for f in drive.children(folders['receipts'])} if state.get('receipt_listing_cache') and any(
+        j['status']=='REMOTE_READY' for j in state['jobs'].values()) else set()
     for job in state['jobs'].values():
         if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING',
                              'MISSING_SOURCE', 'INSUFFICIENT_QUALITY', 'DEFERRED'):
             continue
         if job['status'] == 'REMOTE_READY':
-            receipt = drive.read_json(folders['receipts'], job['job_id']+'.json')
+            receipt = drive.read_json(folders['receipts'], job['job_id']+'.json') if not state.get('receipt_listing_cache') or job['job_id']+'.json' in receipt_names else None
             if receipt:
                 manifest = drive.read_json(folders['manifests'], job['job_id']+'.json')
                 expected = {f['id'] for f in manifest['files']}

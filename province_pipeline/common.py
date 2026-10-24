@@ -51,7 +51,7 @@ def load_config(path, live=False):
         raise ValueError('Require 0 < low_watermark < high_watermark < 1')
     if not 128 <= c['tile_pixels'] <= 2048 or not 1 <= c['max_active_exports'] <= 10:
         raise ValueError('Invalid tile size or global concurrency')
-    if c['crs'] != 'EPSG:6933':
+    if c['crs'] != 'EPSG:6933' and not (c['crs']=='EPSG:4326' and c.get('quality',{}).get('processing_mode')=='notebook_tasks'):
         raise ValueError('v1 supports the documented equal-area EPSG:6933 grid only')
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,24}', c['algorithm_version']):
         raise ValueError('Unsafe algorithm version')
@@ -67,7 +67,7 @@ def load_config(path, live=False):
         raise ValueError('Unsupported product')
     if c.get('pipeline_version') == 2:
         from .profiles import validate_quality, PROFILES
-        if c.get('run_profile') not in PROFILES:
+        if c.get('run_profile') not in PROFILES and not re.fullmatch(r'task123_\d{3}_\d{3}_(pilot|full)',c.get('run_profile','')):
             raise ValueError('Select a supported run profile')
         validate_quality(c.get('quality',{}))
     backend = c.get('export_backend', 'batch')
