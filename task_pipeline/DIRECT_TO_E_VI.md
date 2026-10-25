@@ -109,3 +109,7 @@ Hai CSV vẫn chứa đúng dòng tỉnh/thời kỳ, null cho kỳ thiếu. Tro
 - Mỗi TIFF có reservation dựa trên dung lượng E còn trống, để lại margin 2 GiB. Nếu ổ gần đầy, code dừng, không tự giảm độ phân giải hoặc ghi file cắt cụt. Exit 4 = cần giải phóng dung lượng; exit 2 = kiểm tra lỗi/quyền/mạng rồi chạy lại; 130 = người dùng dừng. Sau bốn lần lỗi một công việc sẽ ghi FAILED, cần xem state thay vì coi là có dữ liệu.
 - Để chạy sáu nhóm, dùng sáu checkout/ZIP đúng các nhánh, mỗi thư mục có range file riêng. Có thể dùng chung Python venv và ổ E, mở một PowerShell cho mỗi nhóm; không chạy hai bản cùng nhóm. Sáu nhóm vẫn chia sẻ quota project `vngis-ee-2`; nên thử một nhóm trước.
 - Chưa có xác minh trực tiếp trên laptop/ổ E của người dùng từ cloud. Các test local dùng TIFF fixture và mock marker/EE; không mô tả chúng là đã chạy thu dữ liệu thật trên Windows.
+
+## Lỗi checkpoint trên Windows
+
+Nếu traceback dừng ở `os.fsync(stream.fileno())` với `OSError: [Errno 9] Bad file descriptor`, cập nhật `province_pipeline/common.py` của đúng checkout sau khi tiến trình dừng. Bản mới dùng `FlushFileBuffers` của Windows và vẫn dừng nếu Windows báo không ghi được. Không bỏ qua flush hoặc xóa state/receipts. Lỗi này tự nó không chứng minh ổ đầy hay hết EECU; cần xem WinError thực tế nếu bản mới tiếp tục lỗi. File TIFF đã có receipt hợp lệ được kiểm tra và tái sử dụng khi chạy lại; checkpoint cũ vẫn giữ nếu lần ghi mới chưa hoàn tất.
