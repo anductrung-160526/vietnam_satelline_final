@@ -115,3 +115,7 @@ PowerShell/Windows-volume interaction and actual user EE OAuth were not executed
 ## Whole-group stage priority
 
 217 offline tests pass. Local execution now completes night-image work across every selected province before entering CSV work, then completes CSV work before day-image work. The hosted runner supplies the entire branch scope to existing bounded priority admission, enforcing the same ordering. Six branches remain independent. Tests cover multi-province stage ordering, cached restart, stopping before CSV on a night-stage network failure, and the full cloud admission scope. Job IDs, receipts, project, sources and output paths are unchanged; existing verified results are reused. No live Windows/EE extraction was run for this change.
+
+## Windows checkpoint flush
+
+221 offline tests pass. Checkpoint writes use FlushFileBuffers on the writable Windows kernel handle instead of CRT-backed os.fsync; POSIX keeps fsync. The native call has a pointer-sized HANDLE and propagates WinError, so no disk failure is silently ignored. Python buffers are flushed before the native call and the previous checkpoint remains published until the flush succeeds. Tests mock the Windows native call, exercise 64-bit handles and disk failure propagation, and verify old-state preservation on failure. This responds to the user's Windows EBADF at os.fsync; Windows hardware interaction has not been executed here and the underlying disk/driver cause is not established. Job IDs, data, scientific methods and state schema are unchanged.
