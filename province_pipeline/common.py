@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import random
 import re
 import time
@@ -19,15 +20,40 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def _windows_fsync(fd):
+    """Flush the writable kernel handle, without the Windows CRT _commit wrapper.
+
+    Keep native errors visible: a disconnected or unwritable volume must never
+    be treated as a successful checkpoint. HANDLE is pointer-sized on Win64.
+    """
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    handle = msvcrt.get_osfhandle(fd)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    flush = kernel32.FlushFileBuffers
+    flush.argtypes = [wintypes.HANDLE]
+    flush.restype = wintypes.BOOL
+    if not flush(wintypes.HANDLE(handle)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def sync_file(stream):
+    """Flush Python buffers and require an OS-level flush before publishing."""
+    stream.flush()
+    if os.name == 'nt':
+        _windows_fsync(stream.fileno())
+    else:
+        os.fsync(stream.fileno())
+
+
 def atomic_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + '.tmp')
     with temp.open('w', encoding='utf-8') as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2)
-        stream.flush()
-        import os
-        os.fsync(stream.fileno())
+        sync_file(stream)
     temp.replace(path)
 
 
