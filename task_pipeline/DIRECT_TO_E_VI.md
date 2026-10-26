@@ -6,7 +6,7 @@ Luồng mới chạy **trên laptop Windows**:
 Earth Engine → file tạm trên E → kiểm tra → TIFF/CSV chính thức trên E
 ```
 
-Không dùng Drive API, rclone, upload, download từ Drive hoặc bước xóa dữ liệu Drive. Không cần cài self-hosted runner: chạy PowerShell trực tiếp là đủ. Máy phải bật, có mạng, không Sleep và ổ E được cắm. Giữ nguyên project `vngis-ee-2`, sáu phạm vi tỉnh, pilot/full, ưu tiên ảnh đêm, CSV rồi ảnh ngày, một TIFF tỉnh/thời kỳ và không xuất PNG.
+Không dùng Drive API, rclone, upload, download từ Drive hoặc bước xóa dữ liệu Drive. Không cần cài self-hosted runner: chạy PowerShell trực tiếp là đủ. Máy phải bật, có mạng, không Sleep và ổ E được cắm. Giữ nguyên project `vngis-ee-ha-tinh-lai-chau`, sáu phạm vi tỉnh, pilot/full, ưu tiên ảnh đêm, CSV rồi ảnh ngày, một TIFF tỉnh/thời kỳ và không xuất PNG.
 
 **Workflow GitHub cũ vẫn chạy qua Drive.** Để bỏ Drive, dùng lệnh local dưới đây, không bấm Run workflow cũ. Nếu muốn điều khiển local bằng GitHub sau này thì cần tự cài self-hosted runner trên laptop; thay đổi hiện tại không tự cài runner hoặc sửa máy Windows từ xa.
 
@@ -47,7 +47,7 @@ Ba Test-Path phải True. Không cần đăng nhập/cấu hình rclone. Thiết
 & $python -m task_pipeline.local authenticate
 ```
 
-Đăng nhập tài khoản Google đã có quyền dùng project `vngis-ee-2` trong trình duyệt được mở. Command kiểm tra Earth Engine và in PASS, không truy cập Drive. OAuth chỉ yêu cầu Earth Engine/cloud-platform.
+Đăng nhập tài khoản Google đã có quyền dùng project `vngis-ee-ha-tinh-lai-chau` trong trình duyệt được mở. Command kiểm tra Earth Engine và in PASS, không truy cập Drive. OAuth chỉ yêu cầu Earth Engine/cloud-platform.
 
 Nếu có service-account JSON hợp lệ lưu **ngoài repo**, có thể bỏ bước OAuth và truyền `-EeKey "C:\duong_dan_bao_mat\ee-key.json"` vào script chạy bên dưới. Không gửi key/token vào chat hoặc commit vào Git.
 
@@ -107,7 +107,7 @@ Hai CSV vẫn chứa đúng dòng tỉnh/thời kỳ, null cho kỳ thiếu. Tro
 - File nhận từ Drive trước đây chỉ được tái sử dụng nếu có manifest + receipt + checksum hợp lệ, đúng job và đúng volume_marker. File có sẵn không có provenance hợp lệ sẽ không bị ghi đè.
 - Thống kê đã nhận hợp lệ được nạp trước khi viết CSV gộp. Khi đổi pilot/full hoặc chuyển từ snapshot Drive, giữ bản CSV cũ trong `.panel_history`; không tạo bản sao sau mọi dòng cập nhật.
 - Mỗi TIFF có reservation dựa trên dung lượng E còn trống, để lại margin 2 GiB. Nếu ổ gần đầy, code dừng, không tự giảm độ phân giải hoặc ghi file cắt cụt. Exit 4 = cần giải phóng dung lượng; exit 2 = kiểm tra lỗi/quyền/mạng rồi chạy lại; 130 = người dùng dừng. Sau bốn lần lỗi một công việc sẽ ghi FAILED, cần xem state thay vì coi là có dữ liệu.
-- Để chạy sáu nhóm, dùng sáu checkout/ZIP đúng các nhánh, mỗi thư mục có range file riêng. Có thể dùng chung Python venv và ổ E, mở một PowerShell cho mỗi nhóm; không chạy hai bản cùng nhóm. Sáu nhóm vẫn chia sẻ quota project `vngis-ee-2`; nên thử một nhóm trước.
+- Để chạy sáu nhóm, dùng sáu checkout/ZIP đúng các nhánh, mỗi thư mục có range file riêng. Có thể dùng chung Python venv và ổ E, mở một PowerShell cho mỗi nhóm; không chạy hai bản cùng nhóm. Sáu nhóm vẫn chia sẻ quota project `vngis-ee-ha-tinh-lai-chau`; nên thử một nhóm trước.
 - Chưa có xác minh trực tiếp trên laptop/ổ E của người dùng từ cloud. Các test local dùng TIFF fixture và mock marker/EE; không mô tả chúng là đã chạy thu dữ liệu thật trên Windows.
 
 ## Lỗi checkpoint trên Windows

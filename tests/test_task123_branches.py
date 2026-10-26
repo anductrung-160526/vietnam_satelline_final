@@ -46,7 +46,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_project_and_period_remain_fixed(self):
         c=configure(base(),selection())
-        self.assertEqual(c['project'],'vngis-ee-2');self.assertEqual(c['years'],list(range(2004,2026)))
+        self.assertEqual(c['project'],'vngis-ee-ha-tinh-lai-chau');self.assertEqual(c['years'],list(range(2004,2026)))
         self.assertEqual(c['province_codes'],['01']);self.assertEqual(c['crs'],'EPSG:4326')
         with self.assertRaisesRegex(ValueError,'existing project'):
             configure(dict(base(),project='angelic-digit-434804-r9'),selection())

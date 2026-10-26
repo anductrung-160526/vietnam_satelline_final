@@ -1,5 +1,5 @@
 {
-  "project": "vngis-ee-2",
+  "project": "vngis-ee-ha-tinh-lai-chau",
   "drive_root_id": "1L_bAHogJLAiyemM2gZZUs-3fIp105Kni",
   "boundaries": "province_pipeline/config/boundaries.geojson",
   "boundary_metadata": "province_pipeline/config/boundaries.metadata.json",
