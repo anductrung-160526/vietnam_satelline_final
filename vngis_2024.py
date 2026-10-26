@@ -52,7 +52,7 @@ def _env(name, default, cast=str):
 YEAR = 2024
 MONTHS = list(range(1, 13))
 
-PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-2")               # project chịu quota Earth Engine
+PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-lam-dong-quang-tri")               # project chịu quota Earth Engine
 ASSET_ID = f"projects/{PROJECT_ID}/assets/communes_l3"             # notebook cell 11
 
 MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
