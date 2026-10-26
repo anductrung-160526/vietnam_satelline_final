@@ -24,7 +24,7 @@ from test_province_v2 import META
 
 def config(mode='pilot'):
     c=configure(base(),selection(mode=mode))
-    c.update(execution_backend='local',local_output_limit_bytes=40*1024**3,volume_marker='test')
+    c.update(execution_backend='local',volume_marker='test')
     return c
 
 
