@@ -91,6 +91,8 @@ jobs:
     if: inputs.mode == 'boundary_check'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: write
     env:
       TASK_MODE: pilot
       TASK_EE_PROJECT: vgis-ee-6
@@ -114,6 +116,22 @@ jobs:
         run: python -m province_pipeline --config .province-local/config.json sync-boundaries
       - name: Build one masked day TIFF
         run: python -u -m task_pipeline.boundary_check --province "${{ inputs.province }}" --period "${{ inputs.period }}" --out boundary_check
+      - name: Publish previews to branch boundary-check-results
+        if: always()
+        shell: bash
+        run: |
+          [ -f boundary_check/report.json ] || exit 0
+          python - <<'PY'
+          import json
+          r=json.load(open('boundary_check/report.json',encoding='utf-8'))
+          for k in ('province','period','inventory','grid','before_mask','mask','after_mask','tiff'):
+              print(f"::notice title={k}::{json.dumps(r.get(k),ensure_ascii=False)}")
+          PY
+          mkdir -p /tmp/pub && cp boundary_check/*.png boundary_check/report.json /tmp/pub/ 2>/dev/null || true
+          cd /tmp/pub && git init -q && git checkout -q -b boundary-check-results
+          git config user.name github-actions && git config user.email github-actions@users.noreply.github.com
+          git add -A && git commit -q -m "Boundary check ${{ inputs.province }} ${{ inputs.period }} (run ${{ github.run_id }})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" boundary-check-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
