@@ -108,3 +108,30 @@ class Int16DayTests(unittest.TestCase):
                 qa=inspect_raster(path,dict(j,variant='composite'))
                 self.assertGreater(qa['valid_pixel_pct'],0);self.assertNotIn('VALUE_RANGE_REVIEW',qa['flags'])
                 path.unlink()
+
+
+class DayTiffLayoutTests(unittest.TestCase):
+    def test_day_tiff_is_zstd(self):
+        j=dict(fixture(),dtype='int16')
+        def fetch_int(image,part,path):
+            t=part['tile'];h,w=t['height'],t['width']
+            with rasterio.open(path,'w',driver='GTiff',width=w,height=h,count=2,dtype='int16',
+                               crs=part['crs'],transform=Affine(*t['transform']),nodata=-9999) as ds:
+                ds.write(np.full((2,h,w),1234,dtype='int16'))
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'day.tif'
+            download(None,j,path,triangle(j),{},fetch_int)
+            with rasterio.open(path) as ds:
+                self.assertEqual(ds.compression.name.upper(),'ZSTD')
+                self.assertEqual(ds.read(1)[-1,0],1234)
+
+    def test_day_output_job_keeps_six_measured_bands(self):
+        from task_pipeline.province_image import output_job,DAY_TIFF_BANDS
+        base=dict(product='SENTINEL2',period='2025-01',province=dict(ma_tinh='01',slug='ha_noi'),
+                  bands=DAY_TIFF_BANDS+['NDVI','NDBI','MNDWI','BSI'],algorithm_version='v',recipe_hash='abcdef0123')
+        config=dict(crs='EPSG:4326',tile_pixels=512,drive_staging_budget_gib=10,high_watermark=.6)
+        job=output_job(config,base,[105,20,105.01,20.01],2)
+        self.assertEqual(job['bands'],DAY_TIFF_BANDS);self.assertEqual(job['dtype'],'int16')
+        self.assertTrue(job['prefix'].endswith('_sr6'))
+        night=output_job(config,dict(base,product='VIIRS_MONTHLY',bands=['avg_rad','cf_cvg']),[105,20,105.01,20.01],0)
+        self.assertEqual(night['bands'],['avg_rad','cf_cvg']);self.assertEqual(night['dtype'],'float64')
