@@ -8,7 +8,7 @@ Mỗi luồng (một dải tỉnh) chạy theo thứ tự:
 
 | Bước | Việc | Chạy ở đâu | Kết quả |
 |---|---|---|---|
-| 1 | Ảnh thô ban đêm: DMSP năm 2004–2013, VIIRS tháng và năm 2013–2025 | Earth Engine (tốn quota) | `VN_NTL_Panel_2004_2025\raw_data\NTL\` |
+| 1 | Ảnh thô ban đêm: DMSP năm 2004–2013, VIIRS tháng 2013–2025 | Earth Engine (tốn quota) | `VN_NTL_Panel_2004_2025\raw_data\NTL\` |
 | 2 | Ảnh thô ban ngày: Landsat tháng 2004–2014 (30 m), Sentinel-2 tháng 2015–2025 (20 m) | Earth Engine (tốn quota) | `VN_LandCover_Panel_2004_2025\raw_data\DAY\` |
 | 3 | Ảnh trung gian: lọc nhiễu ảnh đêm, ảnh năm mùa khô từ ảnh tháng | Laptop | `...\data_intermediate\` |
 | 4 | Bảng chỉ số tháng và năm (.csv, .xlsx, .dta) | Laptop | `...\data_processed\` |
