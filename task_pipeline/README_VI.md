@@ -4,7 +4,7 @@
 
 # Sáu nhánh cố định — Task 1, 2, 3 theo tỉnh, 2004–2025
 
-Đầu ra **cấp tỉnh**, không chạy từng xã/huyện. Giữ project `vngis-ee-2`; không dùng project `angelic-digit-434804-r9` ghi trong notebook, không đổi sang project của các nhánh tỉnh cũ. Sáu nhánh dùng chung project và quota, không tạo ra sáu quota độc lập.
+Đầu ra **cấp tỉnh**, không chạy từng xã/huyện. Giữ project `vngis-ee-cao-bang-hanoi`; không dùng project `angelic-digit-434804-r9` ghi trong notebook, không đổi sang project của các nhánh tỉnh cũ. Sáu nhánh dùng chung project và quota, không tạo ra sáu quota độc lập.
 
 | Nhánh | STT cố định | Pilot: toàn tỉnh đầu nhóm | Full |
 |---|---|---|---|
@@ -20,7 +20,7 @@ STT 1–63 **không phải mã thống kê**. Danh sách cố định trong `pro
 ## Chạy trên GitHub
 
 1. Hủy các chuỗi cũ đang chạy/chờ trên các nhánh cũ. Không xóa dữ liệu Drive, config local hoặc marker E. Giữ `pause:true` trong biến cũ để workflow province trên main không tiếp tục xuất; workflow Task123 không dùng cờ pause này để quyết định mode.
-2. Dùng sẵn `PROVINCE_CONFIG_JSON` cho project/Drive/budget, `EE_SERVICE_ACCOUNT_JSON` và `RCLONE_CONF`. Không cần thêm secret cho sáu nhánh. Giá trị project trong config phải là `vngis-ee-2`; sai thì báo lỗi, không âm thầm đổi project. Ranh giới tỉnh dùng GADM 4.1 đã pin/crosswalk; không cần asset communes_l3 hoặc quyền truy cập asset cũ trong notebook.
+2. Dùng sẵn `PROVINCE_CONFIG_JSON` cho project/Drive/budget, `EE_SERVICE_ACCOUNT_JSON` và `RCLONE_CONF`. Không cần thêm secret cho sáu nhánh. Giá trị project trong config phải là `vngis-ee-cao-bang-hanoi`; sai thì báo lỗi, không âm thầm đổi project. Ranh giới tỉnh dùng GADM 4.1 đã pin/crosswalk; không cần asset communes_l3 hoặc quyền truy cập asset cũ trong notebook.
 3. Actions → **Task 1-2-3 · 6 nhóm tỉnh cố định** (file `vngis-2024.yml`) → Run workflow. Nếu giao diện đang hiện tên workflow main cũ, chọn theo **file `vngis-2024.yml`**, sau đó chọn nhánh `vngis-tinh-...`.
 4. Chọn `mode=pilot` để chạy tỉnh đầu của đúng nhánh. Chọn `full` để chạy cả khoảng của đúng nhánh. Cả hai cùng 2004–2025. Có thể chạy sáu nhánh song song, nhưng tổng EE concurrency dự kiến ít nhất sáu luồng, phụ thuộc quota chung.
 5. Mỗi runner xử lý **liên tục**, tối đa khoảng 5 giờ 15 phút/lượt. Thứ tự trong toàn nhóm: TIFF đêm của tất cả tỉnh → CSV đêm/ngày của tất cả tỉnh → TIFF ngày của tất cả tỉnh. Sáu nhóm độc lập, không chờ nhau. Không khởi động runner/workflow mới sau mỗi 10 việc. Khi hết thời lượng, tự gọi lượt kế tiếp cùng nhánh/mode; nếu Drive đầy thì dừng, sau khi nhận về E cần Run workflow lại.
@@ -100,7 +100,7 @@ GitHub có thể vẫn có các run cũ đang chạy sau khi xóa nhánh; xóa n
 ## TIFF-only và cập nhật runner/receiver
 
 1. Hủy các lượt đang chạy/chờ trước khi khởi động lại bằng code mới. Không xóa dữ liệu, state, receipts hoặc marker E.
-2. Chọn nhánh như cũ và mode pilot/full. Project vẫn vngis-ee-2, một TIFF/tỉnh/tháng cho VIIRS/ảnh ngày và một TIFF/tỉnh/năm cho DMSP. Tên mới có `_province_` và không có số ô.
+2. Chọn nhánh như cũ và mode pilot/full. Project vẫn vngis-ee-cao-bang-hanoi, một TIFF/tỉnh/tháng cho VIIRS/ảnh ngày và một TIFF/tỉnh/năm cho DMSP. Tên mới có `_province_` và không có số ô.
 3. Không tạo hoặc upload PNG tự động, không kèm PNG trong manifest mới. QA pixel vẫn chạy. TIFF toàn tỉnh đã hoàn thành giữ nguyên ID, không bị tải lại chỉ vì bỏ PNG. Reservation chưa chạy theo kiểu cặp sẽ được chuyển sang TIFF-only.
 4. PNG và các manifest cặp đã tạo trước đây được giữ tương thích để tránh mất dữ liệu. Không tự xóa các PNG hoặc tile cũ.
 5. Mở TIFF float64 nhiều băng/BigTIFF bằng QGIS. TIFF ngày chọn RED/GREEN/BLUE; NTL chọn stable_lights/avg_rad và stretch. Bỏ PNG không bảo đảm trình xem TIFF web hỗ trợ các kiểu dữ liệu khoa học này.

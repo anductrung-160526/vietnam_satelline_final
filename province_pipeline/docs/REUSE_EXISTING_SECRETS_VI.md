@@ -6,7 +6,7 @@ không xuất giá trị ra log/artifact và không chuyển khóa service accou
 
 ## 1. Hai cách đăng nhập tách riêng
 
-- Earth Engine: key của secret `EE_SERVICE_ACCOUNT_JSON`, project `vngis-ee-2`.
+- Earth Engine: key của secret `EE_SERVICE_ACCOUNT_JSON`, project `vngis-ee-cao-bang-hanoi`.
 - Drive: remote trong secret `RCLONE_CONF`, mặc định tên `gdrive`, giống workflow cũ.
 - Rclone tự dùng client OAuth cũ hoặc client mặc định để refresh token. Adapter gọi rclone
   cục bộ, giữ stdout riêng, đưa access token vào Drive API trong bộ nhớ; không yêu cầu
@@ -31,7 +31,7 @@ Giữ nguyên hai secret cũ trong Settings → Secrets and variables → Action
 Tại tab Variables, thêm `PROVINCE_CONFIG_JSON` bằng nội dung
 `province_pipeline/config/example.json` rồi sửa:
 
-- `project`: `vngis-ee-2`.
+- `project`: `vngis-ee-cao-bang-hanoi`.
 - `drive_root_id`: ID của thư mục `SatelliteStaging` trên Drive tài khoản rclone.
 - `drive_staging_budget_gib`: ngân sách thực tế đã dành, phải nhỏ hơn dung lượng trống.
 - `drive_safety_margin_gib`: dự phòng cho lô đang chạy và dữ liệu ngoài staging.
