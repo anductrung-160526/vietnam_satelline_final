@@ -19,7 +19,7 @@ DTYPE_BYTES={'float64':8,'float32':4,'int16':2}
 # formulas of these bands (recomputable at any time) and remain in the CSV statistics.
 DAY_TIFF_BANDS=['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
 # Final day TIFFs: lossless ZSTD (+ horizontal predictor for integers) instead of DEFLATE.
-DAY_COMPRESSION=dict(compress='ZSTD',zstd_level=19)
+DAY_COMPRESSION=dict(compress='ZSTD',zstd_level=19,blockxsize=512,blockysize=512)
 
 def nbytes(job):
     return DTYPE_BYTES.get(job.get('dtype'),8)
@@ -91,7 +91,7 @@ def boundary_geometry(boundary,crs):
         geometry=transform(geometry,project)
     return geometry
 
-def mask_outside(path,job,boundary,rows=256):
+def mask_outside(path,job,boundary):
     """Keep only pixels touching this province's polygon; everything else becomes NoData.
 
     The bounding-box grid is unchanged (same transform/size/job identity), but pixels of
@@ -113,6 +113,8 @@ def mask_outside(path,job,boundary,rows=256):
                            blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
             if job.get('product') in DAY_PRODUCTS:
                 profile.update(DAY_COMPRESSION)
+            # Write whole tile rows so every compressed tile is written exactly once.
+            rows=profile['blockysize']
             with rasterio.open(target,'w',**profile) as dst:
                 dst.update_tags(**src.tags())
                 for b in range(1,src.count+1):
