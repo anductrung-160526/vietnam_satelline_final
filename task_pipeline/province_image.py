@@ -10,6 +10,24 @@ class ExportInterrupted(BaseException):
 class OutputLimit(RuntimeError):
     pass
 
+DAY_PRODUCTS=('LANDSAT','SENTINEL2')
+# Day TIFFs are stored as int16 = round(value*10000); GDAL scale 0.0001 restores the value.
+# Reflectance (-0.2..1.6) and indices (-1..1) fit; max rounding error 0.00005.
+DAY_SCALE=10000
+DTYPE_BYTES={'float64':8,'float32':4,'int16':2}
+
+def nbytes(job):
+    return DTYPE_BYTES.get(job.get('dtype'),8)
+
+def predictor(dtype):
+    return 3 if str(dtype).startswith('float') else 2
+
+def to_int16(image):
+    """EE side: scale, round, keep -9999 free for NoData, clamp to int16."""
+    scaled=image.multiply(DAY_SCALE).round()
+    scaled=scaled.where(scaled.eq(-9999),-9998).max(-32767).min(32767)
+    return scaled.toInt16()
+
 def grid(bounds,resolution):
     x0=math.floor(bounds[0]/resolution);x1=math.ceil(bounds[2]/resolution)
     y0=math.floor(bounds[1]/resolution);y1=math.ceil(bounds[3]/resolution)
@@ -24,17 +42,18 @@ def output_job(config,base,bounds,priority):
     scale=SOURCES[base['product']]['scale']
     resolution=scale/111319.49079327358 if config['crs']=='EPSG:4326' else scale
     whole=grid(bounds,resolution);p=base['province']
+    dtype='int16' if base['product'] in DAY_PRODUCTS else 'float64'
     job=dict(base,kind='image',priority=priority,variant='source' if priority==0 else 'composite',
-        scale=scale,grid_resolution=resolution,dtype='float64',tile=whole,image_layout='province',
+        scale=scale,grid_resolution=resolution,dtype=dtype,tile=whole,image_layout='province',
         chunk_pixels=config['tile_pixels'],preview_required=False)
     job.pop('job_id',None);job.pop('reserved_bytes',None)
-    job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"
+    job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"+('_i16' if dtype=='int16' else '')
     identity={k:v for k,v in job.items() if k!='chunk_pixels'}
     # Preserve completed TIFF identities from the initial province export release.
     # Disabling a display sidecar must not cause satellite data to be fetched again.
     identity['preview_required']=True
     job['job_id']=digest(identity)[:32]
-    raw=whole['width']*whole['height']*len(job['bands'])*8
+    raw=whole['width']*whole['height']*len(job['bands'])*nbytes(job)
     cap=(int(config['local_output_limit_bytes']) if config.get('execution_backend')=='local'
          else int(config['drive_staging_budget_gib']*1024**3*config['high_watermark']*.90))
     # Enforced output limit, not a promise of compression or permission to exceed quota.
@@ -43,7 +62,7 @@ def output_job(config,base,bounds,priority):
 
 def small(job):
     t=job['tile']
-    return max(t['width'],t['height'])<=10000 and t['width']*t['height']*len(job['bands'])*8<32_000_000
+    return max(t['width'],t['height'])<=10000 and t['width']*t['height']*len(job['bands'])*nbytes(job)<32_000_000
 
 def size_error(error):
     return any(s in str(error).lower() for s in ('request size','request too large','download limit',
@@ -52,8 +71,6 @@ def size_error(error):
 def check_stop(config):
     if CANCELLED or time.monotonic()>=config.get('_task_deadline',float('inf')):
         raise ExportInterrupted('Resume this province output in the next runner')
-
-DAY_PRODUCTS=('LANDSAT','SENTINEL2')
 
 def boundary_geometry(boundary,crs):
     from shapely.geometry import shape
@@ -85,12 +102,17 @@ def mask_outside(path,job,boundary,rows=256):
     try:
         with rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True,GDAL_CACHEMAX=64*1024**2),rasterio.open(path) as src:
             profile=src.profile.copy()
-            profile.update(driver='GTiff',nodata=-9999,compress='DEFLATE',predictor=3,tiled=True,
+            profile.update(driver='GTiff',nodata=-9999,compress='DEFLATE',predictor=predictor(src.dtypes[0]),tiled=True,
                            blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
             with rasterio.open(target,'w',**profile) as dst:
                 dst.update_tags(**src.tags())
                 for b in range(1,src.count+1):
                     dst.set_band_description(b,src.descriptions[b-1])
+                if src.dtypes[0]=='int16':
+                    dst.scales=[1/DAY_SCALE]*src.count;dst.offsets=[0.0]*src.count
+                    dst.update_tags(SCALE_FACTOR=str(1/DAY_SCALE),VALUE='stored_int16 * 0.0001')
+                else:
+                    dst.scales=src.scales;dst.offsets=src.offsets
                 for row in range(0,src.height,rows):
                     window=Window(0,row,src.width,min(rows,src.height-row))
                     inside=~geometry_mask(shapes,out_shape=(window.height,window.width),
@@ -112,6 +134,8 @@ def mask_outside(path,job,boundary,rows=256):
 def download(image,job,path,boundary,config,fetch=None,mask=True):
     from province_pipeline.direct_export import download_image
     fetch=fetch or download_image;path=Path(path);check_stop(config)
+    if image is not None and job.get('dtype')=='int16':
+        image=to_int16(image)
     if shutil.disk_usage(path.parent).free<job['reserved_bytes']+512*1024**2:
         raise OutputLimit('Not enough runner disk for reserved province output')
     try:
@@ -149,7 +173,7 @@ def stitch(image,job,path,boundary,config,fetch):
     tile=job['tile'];n=job['chunk_pixels'];res=job['grid_resolution'];requests=0
     profile=dict(driver='GTiff',width=tile['width'],height=tile['height'],count=len(job['bands']),
         dtype=job['dtype'],crs=job['crs'],transform=Affine(*tile['transform']),nodata=-9999,
-        compress='DEFLATE',predictor=3,tiled=True,blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
+        compress='DEFLATE',predictor=predictor(job['dtype']),tiled=True,blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
     with tempfile.TemporaryDirectory(prefix='chunks-',dir=path.parent) as tmp,rasterio.Env(GDAL_CACHEMAX=64*1024**2):
         with rasterio.open(path,'w',**profile) as output:
             for b,name in enumerate(job['bands'],1):output.set_band_description(b,name)
