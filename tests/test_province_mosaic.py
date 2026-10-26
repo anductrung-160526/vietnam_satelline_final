@@ -219,3 +219,47 @@ class TiffOnlyCompatibilityTests(unittest.TestCase):
         plan=prepare_priority(c,d,bounds,META,lambda j:dict(status='UNAVAILABLE',count=0))
         pending=next(job for job in plan['jobs'] if job['job_id']==j['job_id'])
         self.assertFalse(pending['preview_required'])
+
+
+class LargeDayChunkTests(unittest.TestCase):
+    def test_day_jobs_use_large_windows_without_changing_identity(self):
+        from task_pipeline import province_image
+        from task_pipeline.province_image import output_job,DAY_TIFF_BANDS
+        base=dict(product='SENTINEL2',period='2025-01',province=dict(ma_tinh='01',slug='ha_noi'),
+                  bands=DAY_TIFF_BANDS,algorithm_version='v',recipe_hash='abcdef0123')
+        config=dict(crs='EPSG:4326',tile_pixels=512,drive_staging_budget_gib=10,high_watermark=.6)
+        job=output_job(config,base,[105,20,105.5,20.5],2)
+        self.assertEqual(job['chunk_pixels'],1280)
+        self.assertLess(1280*1280*len(DAY_TIFF_BANDS)*2,32_000_000)
+        with patch.object(province_image,'chunk_pixels',lambda c,b,d:c['tile_pixels']):
+            old=output_job(config,base,[105,20,105.5,20.5],2)
+        self.assertEqual(old['chunk_pixels'],512);self.assertEqual(job['job_id'],old['job_id'])
+        night=output_job(config,dict(base,product='VIIRS_MONTHLY',bands=['avg_rad']),[105,20,105.5,20.5],0)
+        self.assertEqual(night['chunk_pixels'],512)
+
+    def test_rejected_large_window_is_split_into_identical_pixels(self):
+        j=dict(fixture(9,7),chunk_pixels=8);calls=[];real=fetcher(j,calls);rejected=[]
+        def fetch(image,part,path):
+            t=part['tile']
+            if t['width']*t['height']>9:
+                rejected.append((t['width'],t['height']));raise RuntimeError('User memory limit exceeded')
+            real(image,part,path)
+        with tempfile.TemporaryDirectory() as tmp,patch('task_pipeline.province_image.MIN_CHUNK',1):
+            path=Path(tmp)/'split.tif'
+            with patch('task_pipeline.province_image.small',return_value=False):
+                result=download(None,j,path,boundary(j),{},fetch)
+            with rasterio.open(path) as ds:
+                expected=100*np.arange(7)[:,None]+np.arange(9)[None,:]+.1234567890123
+                np.testing.assert_array_equal(ds.read(1),expected)
+        self.assertIn((8,7),rejected);self.assertEqual(result['requests'],len(calls))
+        self.assertTrue(all(w*h<=9 for w,h in calls))
+
+    def test_other_failures_are_not_split(self):
+        j=dict(fixture(9,7),chunk_pixels=8);calls=[]
+        def fetch(image,part,path):
+            calls.append(1);raise RuntimeError('Permission denied')
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch('task_pipeline.province_image.small',return_value=False):
+                with self.assertRaisesRegex(RuntimeError,'Permission'):
+                    download(None,j,Path(tmp)/'x.tif',boundary(j),{},fetch)
+        self.assertEqual(len(calls),1)
