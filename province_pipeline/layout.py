@@ -26,6 +26,8 @@ def output_directory(job):
     province=province_name(job)
     sensor='VIIRS' if product.startswith('VIIRS') else product.split('_')[0]
     if job['kind']=='table':
+        if job.get('pipeline_version') == 2:
+            return f'_staging/statistics/{province}/{product}'
         return f'{package}/data_processed/{province}/source/{product}'
     if job['variant']=='filtered':
         return f'{package}/data_intermediate/{province}'
