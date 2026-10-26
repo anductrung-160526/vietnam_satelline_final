@@ -1,313 +1,152 @@
-name: VNGISDash 2024 (chạy nối lượt)
-
-# Mỗi lượt chạy tối đa 5 giờ 15 phút.
-# Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
-# Trạng thái được lưu trên Google Drive.
-#
-# pilot: chạy thử và ghi vào VNGISDash_2024_PILOT.
-# full: chạy toàn bộ và ghi vào VNGISDash_2024.
-#
-# Dừng có trật tự:
-# - Tạo file STOP ở thư mục gốc repository; hoặc
-# - Tạo file _control/STOP trong thư mục kết quả trên Drive.
-#
-# Sau khi cập nhật mã, dùng Run workflow để chạy lượt mới.
-
+name: Task 1-2-3 · 6 nhóm tỉnh cố định
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thí điểm | full = toàn bộ xã"
+        description: 'pilot = tỉnh đầu nhóm, full = toàn nhóm; 2004-2025'
         type: choice
-        options:
-          - pilot
-          - full
+        options: [pilot, full, boundary_check]
         default: pilot
-
-      pilot_n:
-        description: "Số xã thí điểm, chỉ dùng khi mode = pilot"
-        required: false
-        default: "2"
-
-      workers:
-        description: "Số xã xử lý song song"
-        required: false
-        default: "2"
-
-      stop_after_province:
-        description: "Chế độ full: chạy đến hết tỉnh này rồi dừng; để trống để chạy toàn quốc"
-        required: false
-        type: string
-        default: "Cần Thơ"
-
+      province:
+        description: 'Chỉ dùng cho boundary_check: mã tỉnh 2 ký tự (01 = Hà Nội)'
+        default: '01'
+      period:
+        description: 'Chỉ dùng cho boundary_check: tháng YYYY-MM'
+        default: '2025-01'
 concurrency:
-  group: vngis-2024
+  group: task123-${{ github.ref_name }}
   cancel-in-progress: false
-
 permissions:
-  actions: write
   contents: read
-
-env:
-  VNGIS_MODE: ${{ inputs.mode }}
-  VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024' || 'VNGISDash_2024_PILOT' }}
-  VNGIS_RCLONE_REMOTE: gdrive
-  VNGIS_STOP_AFTER_PROVINCE: ${{ inputs.stop_after_province }}
-
+  actions: write
 jobs:
-  gate:
-    name: Kiểm tra file STOP
-    runs-on: ubuntu-latest
-
-    outputs:
-      stop: ${{ steps.chk.outputs.stop }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Kiểm tra STOP
-        id: chk
-        run: |
-          if [ -f STOP ]; then
-            echo "stop=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Có file STOP ở repo: không chạy lượt này."
-          else
-            echo "stop=false" >> "$GITHUB_OUTPUT"
-          fi
-
   run:
-    name: Chạy một lượt
-    needs: gate
-    if: needs.gate.outputs.stop != 'true'
+    if: inputs.mode != 'boundary_check'
     runs-on: ubuntu-latest
     timeout-minutes: 350
-
     env:
-      VNGIS_UPLOAD_EVERY_SEC: "300"
-      VNGIS_MAX_RUNTIME_SEC: "18900"
-
-      # Project được truyền vào ee.Initialize(project=...).
-      VNGIS_EE_PROJECT: "vngis-ee-2"
-      VNGIS_EE_HIGH_VOLUME: "false"
-
-      # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
-      # Dùng 1 để kiểm tra ổn định trước khi tăng tốc.
-      VNGIS_EE_CONCURRENCY: "1"
-      VNGIS_MONTH_THREADS: "2"
-      VNGIS_EE_MAX_RETRIES: "8"
-
-      # Định dạng ảnh ngày.
-      VNGIS_DAY_FORMAT: "float"
-      VNGIS_DAY_BANDS: "10"
-      VNGIS_DAY_SCALE: "10000"
-
+      TASK_MODE: ${{ inputs.mode || 'pilot' }}
+      TASK_EE_PROJECT: vgis-ee-6                                        # ĐỔI (thêm mới)
+      PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON_6 }}          # ĐỔI
+      EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_6 }} # ĐỔI
+      RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+      PROVINCE_RCLONE_REMOTE: gdrive
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Cài Python
-        uses: actions/setup-python@v5
-        id: py
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Cache thư viện Python và rclone
-        id: deps
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/venv
-            ~/bin/rclone
-          key: deps-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('requirements.txt') }}-rclone1
-
-      - name: Cài thư viện và rclone
-        if: steps.deps.outputs.cache-hit != 'true'
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            province_pipeline/requirements.txt
+      - name: Install dependencies and signed rclone
         run: |
-          python -m venv "$HOME/venv"
-          "$HOME/venv/bin/pip" install -q -r requirements.txt
-
-          mkdir -p "$HOME/bin"
-          cd /tmp
-
-          curl -fsSL \
-            -o rclone.zip \
-            https://downloads.rclone.org/rclone-current-linux-amd64.zip
-
-          unzip -q rclone.zip
-          cp rclone-*-linux-amd64/rclone "$HOME/bin/rclone"
-          chmod +x "$HOME/bin/rclone"
-
-      - name: Đưa venv và rclone vào PATH
-        run: |
-          echo "$HOME/venv/bin" >> "$GITHUB_PATH"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-
-      - name: Cache ranh giới GADM
-        uses: actions/cache@v4
-        with:
-          path: ~/vngis_2024/_cache
-          key: gadm41-vnm-v1
-
-      - name: Ghi khóa truy cập từ Secrets
-        env:
-          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF }}
-          EE_KEY_DATA: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
-        run: |
-          [ -n "$RCLONE_CONF_DATA" ] || {
-            echo "::error::Thiếu secret RCLONE_CONF"
-            exit 1
-          }
-
-          [ -n "$EE_KEY_DATA" ] || {
-            echo "::error::Thiếu secret EE_SERVICE_ACCOUNT_JSON"
-            exit 1
-          }
-
-          mkdir -p "$HOME/.config/rclone"
-
-          printf '%s' "$RCLONE_CONF_DATA" \
-            > "$HOME/.config/rclone/rclone.conf"
-
-          printf '%s' "$EE_KEY_DATA" \
-            > "$RUNNER_TEMP/ee-key.json"
-
-          chmod 600 \
-            "$HOME/.config/rclone/rclone.conf" \
-            "$RUNNER_TEMP/ee-key.json"
-
-          echo "Project Earth Engine: $VNGIS_EE_PROJECT"
-          echo "Thư mục đích trên Drive: $VNGIS_DRIVE_FOLDER"
-          echo "Giới hạn đồng thời EE: $VNGIS_EE_CONCURRENCY"
-
-      - name: Chạy pipeline
+          python -m pip install -r province_pipeline/requirements.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y rclone
+      - name: Prepare fixed scope and existing credentials
+        run: python -m task_pipeline.setup
+      - name: Prepare pinned province boundaries
+        run: python -m province_pipeline --config .province-local/config.json sync-boundaries
+      - name: Run continuously within this runner
         id: pipeline
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VNGIS_EE_KEY_FILE: ${{ runner.temp }}/ee-key.json
-          VNGIS_RUN_ID: ${{ github.run_id }}
-          VNGIS_WORKERS: ${{ inputs.workers }}
-          STOP_POLL_SEC: "300"
+        shell: bash
         run: |
-          set +e
-
-          python -u vngis_2024.py &
-          PID=$!
-
-          (
-            while kill -0 "$PID" 2>/dev/null; do
-              for _ in $(seq 1 "$STOP_POLL_SEC"); do
-                sleep 1
-                kill -0 "$PID" 2>/dev/null || exit 0
-              done
-
-              if gh api \
-                "repos/${GITHUB_REPOSITORY}/contents/STOP" \
-                > /dev/null 2>&1; then
-
-                echo "::notice::Phát hiện file STOP: dừng trật tự."
-                kill -TERM "$PID" 2>/dev/null
-                exit 0
-              fi
-            done
-          ) &
-
-          WATCH=$!
-
-          wait "$PID"
-          code=$?
-
-          kill "$WATCH" 2>/dev/null
-          wait "$WATCH" 2>/dev/null
-
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "Script thoát với mã $code"
-
-          exit 0
-
-      - name: Đồng bộ nốt lên Drive
-        if: always()
-        continue-on-error: true
-        run: python vngis_2024.py --sync-only
-
-      - name: Kiểm tra kết quả thí điểm
-        if: always() && inputs.mode == 'pilot' && steps.pipeline.outputs.code == '0'
-        continue-on-error: true
-        run: |
-          python verify_pilot.py \
-            --remote "${VNGIS_RCLONE_REMOTE}:${VNGIS_DRIVE_FOLDER}" \
-            --report "$RUNNER_TEMP/verify_report.md"
-
-          cat "$RUNNER_TEMP/verify_report.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Tóm tắt tiến độ
-        if: always()
-        continue-on-error: true
-        run: |
-          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import os
-          import pandas as pd
-
-          folder = os.environ["VNGIS_DRIVE_FOLDER"]
-
-          p = os.path.expanduser(
-              f"~/vngis_2024/{folder}/_control/progress.csv"
-          )
-
-          if os.path.isfile(p):
-              d = pd.read_csv(p)
-
-              print(f"### Tiến độ ({folder})\n")
-              print(
-                  f"Tổng {len(d):,} xã: "
-                  f"{d['status'].value_counts().to_dict()}\n"
-              )
-
-              bad = d[d["status"] != "done"].head(15)
-
-              if len(bad):
-                  print(
-                      "| GID_3 | trạng thái | lỗi |\n"
-                      "|---|---|---|"
-                  )
-
-                  for r in bad.itertuples():
-                      error = str(r.errors)[:150]
-                      print(
-                          f"| {r.GID_3} | {r.status} | {error} |"
-                      )
-          PY
-
-      - name: Nối lượt kế tiếp
-        if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          STOP_AFTER_PROVINCE_INPUT: ${{ inputs.stop_after_province }}
-        run: |
-          if gh api \
-            "repos/${GITHUB_REPOSITORY}/contents/STOP" \
-            > /dev/null 2>&1; then
-
-            echo "::notice::Có file STOP: dừng chuỗi, không nối lượt."
-          else
-            gh workflow run vngis-2024.yml \
-              --ref "$GITHUB_REF_NAME" \
-              -f mode="${{ inputs.mode }}" \
-              -f pilot_n="${{ inputs.pilot_n }}" \
-              -f workers="${{ inputs.workers }}" \
-              -f stop_after_province="$STOP_AFTER_PROVINCE_INPUT"
-
-            echo "Đã gọi lượt kế tiếp."
+          if [ -f STOP ]; then
+            echo 'code=130' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-
-      - name: Báo lỗi nếu script thoát bất thường
-        if: >-
-          always() && steps.pipeline.outputs.code != '' &&
-          steps.pipeline.outputs.code != '0' &&
-          steps.pipeline.outputs.code != '2' &&
-          steps.pipeline.outputs.code != '3' &&
-          steps.pipeline.outputs.code != '130'
+          set +e
+          python -u -m task_pipeline.runner --max-seconds 18900
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" != 0 ] && [ "$code" != 3 ] && [ "$code" != 4 ] && [ "$code" != 130 ]; then
+            exit "$code"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: task123-${{ github.ref_name }}-${{ inputs.mode }}
+          path: |
+            .province-local/panels/
+            .province-local/previews/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Continue only when the runner time budget is reached
+        if: steps.pipeline.outputs.code == '3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_MODE: ${{ inputs.mode }}
+        run: gh workflow run vngis-2024.yml --ref "$GITHUB_REF_NAME" -f mode="$NEXT_MODE"
+      - name: Capacity notice
+        if: steps.pipeline.outputs.code == '4'
+        run: echo '::notice::Staging share is full. Receive verified data to E, then run this branch again.'
+      - name: Clean credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/province-auth"
+  boundary_check:
+    # Thử 1 tỉnh / 1 tháng ảnh ngày đã cắt theo ranh giới. Chỉ ghi artifact, không đụng Drive/state/CSV.
+    if: inputs.mode == 'boundary_check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    env:
+      TASK_MODE: pilot
+      TASK_EE_PROJECT: vgis-ee-6
+      PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON_6 }}
+      EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_6 }}
+      RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+      PROVINCE_RCLONE_REMOTE: gdrive
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            province_pipeline/requirements.txt
+      - run: python -m pip install -r province_pipeline/requirements.txt
+      - name: Prepare config and credentials
+        run: python -m task_pipeline.setup
+      - name: Prepare pinned province boundaries
+        run: python -m province_pipeline --config .province-local/config.json sync-boundaries
+      - name: Build one masked day TIFF
+        run: python -u -m task_pipeline.boundary_check --province "${{ inputs.province }}" --period "${{ inputs.period }}" --out boundary_check
+      - name: Publish previews to branch boundary-check-results
+        if: always()
+        shell: bash
         run: |
-          echo "::error::Script thoát với mã ${{ steps.pipeline.outputs.code }}. Mở bước 'Chạy pipeline', tìm các dòng [preflight] hoặc ERROR."
-          exit 1
+          [ -f boundary_check/report.json ] || exit 0
+          python - <<'PY'
+          import json
+          r=json.load(open('boundary_check/report.json',encoding='utf-8'))
+          for k in ('province','period','inventory','grid','before_mask','mask','after_mask','tiff'):
+              print(f"::notice title={k}::{json.dumps(r.get(k),ensure_ascii=False)}")
+          PY
+          mkdir -p /tmp/pub && cp boundary_check/*.png boundary_check/report.json /tmp/pub/ 2>/dev/null || true
+          cd /tmp/pub && git init -q && git checkout -q -b boundary-check-results
+          git config user.name github-actions && git config user.email github-actions@users.noreply.github.com
+          git add -A && git commit -q -m "Boundary check ${{ inputs.province }} ${{ inputs.period }} (run ${{ github.run_id }})"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" boundary-check-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boundary-check-preview
+          path: |
+            boundary_check/*.png
+            boundary_check/report.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: boundary-check-tiff
+          path: boundary_check/*.tif
+          retention-days: 3
+      - name: Clean credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/province-auth"

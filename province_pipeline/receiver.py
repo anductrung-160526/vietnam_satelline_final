@@ -100,21 +100,31 @@ def validate(path, file, job):
     md5, sha = hashes(path)
     if not file.get('md5Checksum') or md5 != file['md5Checksum']:
         raise ValueError('Downloaded MD5 mismatch')
+    if file.get('role')=='preview':
+        import rasterio
+        with rasterio.open(path) as ds:
+            if ds.driver!='PNG' or ds.count!=3 or ds.width>1024 or ds.height>1024 or any(t!='uint8' for t in ds.dtypes):
+                raise ValueError('Preview PNG schema mismatch')
+            ds.read()
+        return sha
     if job['kind'] == 'image':
         import rasterio
         from affine import Affine
         with rasterio.open(path) as ds:
             if not same_crs(ds.crs,job['crs']) or ds.count != len(job['bands']) or ds.nodata != -9999:
                 raise ValueError('TIFF CRS/bands/nodata mismatch')
-            if ds.width != ds.height or ds.width * job['scale'] != job['tile']['bounds'][2]-job['tile']['bounds'][0]:
+            import math
+            tile=job['tile']
+            expected_width=tile.get('width',ds.height);expected_height=tile.get('height',expected_width)
+            if ds.width!=expected_width or ds.height!=expected_height or not math.isclose(ds.width * job.get('grid_resolution',job['scale']),
+                    job['tile']['bounds'][2]-job['tile']['bounds'][0],rel_tol=1e-9,abs_tol=1e-10):
                 raise ValueError('TIFF dimensions do not match bounded tile')
             if not ds.transform.almost_equals(Affine(*job['tile']['transform'])):
                 raise ValueError('TIFF grid mismatch')
-            if any(t != 'float32' for t in ds.dtypes):
+            if any(t != job.get('dtype','float32') for t in ds.dtypes):
                 raise ValueError('TIFF dtype mismatch')
-            for band in range(1, ds.count+1):
-                for _, window in ds.block_windows(band):
-                    ds.read(band, window=window)  # Decode every block, not just the header.
+            for _, window in ds.block_windows(1):
+                ds.read(window=window)  # Decode every block, not just the header.
     else:
         import pandas as pd
         frame = pd.read_csv(path, dtype={'ma_tinh': str, 'period': str, 'job_id': str})
@@ -239,12 +249,35 @@ def receive_manifest(config, drive, folders, manifest, root, dry_run=False):
     audit('received', job_id=jid, remote_deleted=receipt['remote_deleted'])
 
 
+def failure_reason(error):
+    """Only constant reason codes leave the exception boundary, never raw API bodies."""
+    status=getattr(getattr(error,'resp',None),'status',None)
+    if status in (403,404,412,429):
+        return {403:'DRIVE_PERMISSION_DENIED',404:'REMOTE_FILE_NOT_FOUND',
+                412:'REMOTE_FILE_CHANGED',429:'DRIVE_RATE_LIMIT'}[status]
+    message=str(error).lower()
+    for phrase,code in [('conditional delete support','DELETE_GUARD_UNAVAILABLE'),
+                        ('staging ancestry','STAGING_ANCESTRY_UNVERIFIED'),
+                        ('checksum','DATA_CHECKSUM_MISMATCH'),('md5','DATA_CHECKSUM_MISMATCH'),
+                        ('receipt','RECEIPT_VERIFICATION_FAILED'),('wrong external disk','WRONG_DISK'),
+                        ('disk full','LOCAL_DISK_FULL'),('source changed','REMOTE_FILE_CHANGED')]:
+        if phrase in message:
+            return code
+    return 'RECEIVE_ERROR'
+
+
 def run(config, drive, dry_run=False):
     from .controller import control_folders
     root = verify_volume(config)
     with single_receiver(root):
         folders = control_folders(drive, config['drive_root_id'])
         state = drive.read_json(folders['root'], 'state.json', {'jobs': {}})
+        from collections import Counter
+        counts=dict(Counter(j['status'] for j in state['jobs'].values()))
+        audit('receiver_summary',total_jobs=sum(counts.values()),status_counts=counts,
+              ready_jobs=counts.get('REMOTE_READY',0),dry_run=dry_run)
+        if not counts.get('REMOTE_READY',0):
+            audit('receiver_waiting',reason='NO_REMOTE_READY',next_step='Run GitHub mode reconcile_only to finalize worker reports')
         failures = []
         for job in state['jobs'].values():
             if job['status'] != 'REMOTE_READY':
@@ -255,7 +288,11 @@ def run(config, drive, dry_run=False):
             try:
                 receive_manifest(config, drive, folders, manifest, root, dry_run)
             except Exception as error:
-                audit('receive_failed', job_id=job['job_id'], error_type=type(error).__name__)
+                audit('receive_failed', job_id=job['job_id'], error_type=type(error).__name__,
+                      error_code=failure_reason(error))
                 failures.append(job['job_id'])
+        if not dry_run:
+            from .panels import sync
+            sync(config,drive,root,folders['root'])
         if failures:
             raise RuntimeError(f'{len(failures)} batches failed; sources retained for retry')
