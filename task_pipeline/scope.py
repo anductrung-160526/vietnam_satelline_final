@@ -1,9 +1,10 @@
 import json
+import os
 import re
 from pathlib import Path
 ROOT=Path(__file__).parent
 RANGES=((1,11),(12,22),(23,33),(34,43),(44,53),(54,63))
-PROJECT='vngis-ee-2'
+PROJECT=os.environ.get('TASK_EE_PROJECT','vngis-ee-2')
 
 
 def provinces():
