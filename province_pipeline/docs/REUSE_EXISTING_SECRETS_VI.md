@@ -6,7 +6,7 @@ không xuất giá trị ra log/artifact và không chuyển khóa service accou
 
 ## 1. Hai cách đăng nhập tách riêng
 
-- Earth Engine: key của secret `EE_SERVICE_ACCOUNT_JSON`, project `vngis-ee-2`.
+- Earth Engine: key của secret `EE_SERVICE_ACCOUNT_JSON`, project `vngis-ee-soc-trang-yen-bai`.
 - Drive: remote trong secret `RCLONE_CONF`, mặc định tên `gdrive`, giống workflow cũ.
 - Rclone tự dùng client OAuth cũ hoặc client mặc định để refresh token. Adapter gọi rclone
   cục bộ, giữ stdout riêng, đưa access token vào Drive API trong bộ nhớ; không yêu cầu
@@ -31,7 +31,7 @@ Giữ nguyên hai secret cũ trong Settings → Secrets and variables → Action
 Tại tab Variables, thêm `PROVINCE_CONFIG_JSON` bằng nội dung
 `province_pipeline/config/example.json` rồi sửa:
 
-- `project`: `vngis-ee-2`.
+- `project`: `vngis-ee-soc-trang-yen-bai`.
 - `drive_root_id`: ID của thư mục `SatelliteStaging` trên Drive tài khoản rclone.
 - `drive_staging_budget_gib`: ngân sách thực tế đã dành, phải nhỏ hơn dung lượng trống.
 - `drive_safety_margin_gib`: dự phòng cho lô đang chạy và dữ liệu ngoài staging.
@@ -183,3 +183,94 @@ Giai đoạn này chạy nhánh qua workflow_dispatch thủ công; schedule GitH
 phát từ default branch và main đang được bỏ qua. Không hứa nhánh tự chạy định kỳ
 24/24 khi chưa có bộ lập lịch cho nhánh. Khi đã quyết định merge, đưa cấu hình về
 PROVINCE_CONFIG_JSON để bật lịch main; xóa biến branch nếu không còn cần.
+
+## 9. Windows không thấy would_receive, state chỉ có RESERVED
+
+Worker ghi báo cáo UPLOADED riêng; controller phải kiểm tra output, tạo manifest
+và lưu REMOTE_READY trước khi receiver chọn tải. RESERVED không tự chứng minh
+ảnh chưa có trên Drive, cũng không được coi là ảnh đã tải thành công.
+
+Workflow run mới có job **finalize** sau khi matrix export kết thúc, để công bố
+manifest READY trong cùng lượt chạy. Nếu worker thất bại, finalize chỉ đối soát
+kết quả thật và giữ cơ chế retry; không gán READY cho lô thiếu output/checksum.
+
+Đối với lượt cũ chưa có finalize: Actions → Province satellite staging → Run
+workflow → branch inspriring-newton → mode **reconcile_only**. Không cần đổi pause.
+Mở bước **Reconcile existing worker reports without exporting new data**:
+
+```text
+Job statuses: {"REMOTE_READY": 2}
+Ready to receive: 2
+```
+
+Đây chỉ là ví dụ khi hai report đã upload và khớp output; không hứa luôn có hai
+lô. Nếu không có report, trạng thái vẫn RESERVED; nếu tệp chưa thấy, RUNNING;
+checksum/file ID không khớp thì BLOCKED_OUTPUT. Mode này không cấp công việc mới,
+không lấy ảnh mới và không xóa dữ liệu. Giữ single-writer concurrency như workflow.
+
+Sau khi Ready to receive > 0, chạy lại receive --dry-run rồi receive trên Windows.
+Không cần cập nhật mã Windows chỉ để đọc những manifest đã được công bố. Bản
+receiver mới còn in receiver_summary / receiver_waiting khi không có lô READY,
+tránh kết thúc im lặng sau rclone_config_check.
+
+## 10. Tác vụ Windows không phụ thuộc PATH/biến của cửa sổ đang mở
+
+Register-SatelliteTask nhận thêm -RcloneExecutable, hoặc tự tìm rclone trong phiên
+đăng ký rồi ghi đường dẫn tuyệt đối vào action. Python, config, repo và PowerShell
+đều dùng đường dẫn cố định. Vì vậy không phụ thuộc biến `$python` hay
+PROVINCE_RCLONE_CONFIG của một cửa sổ PowerShell đã đóng. Receiver không cần key EE.
+
+Action dùng ExecutionPolicy RemoteSigned ở mức process, không thay chính sách
+CurrentUser/LocalMachine và không bỏ yêu cầu chữ ký cho file có dấu nguồn Internet.
+Group Policy vẫn có hiệu lực. Nếu file script bị chặn, kiểm tra nguồn/file trước,
+không dùng ExecutionPolicy Bypass để cho qua.
+
+Mỗi lượt nhận/tổng hợp có transcript riêng tại
+`%LOCALAPPDATA%\SatellitePipeline\logs\receiver-<thời điểm>.log`. Không in nội dung
+credentials hoặc môi trường. Task chạy khi đăng nhập và lặp mỗi 5 phút, IgnoreNew
+khi lượt trước còn chạy. LastTaskResult=0 là lệnh đã kết thúc không lỗi; log vẫn cần
+kiểm tra received/ready_jobs để biết có tệp mới hay chỉ không có việc.
+
+Giữ allow_remote_delete=false khi kiểm tra task. Sau khi kết quả tải/receipt đã
+đạt, có thể bật true ở config LOCAL; không cần bật phía GitHub để receiver xóa
+những source đã verify. DELETE_GUARD_UNAVAILABLE nghĩa là điều kiện bảo vệ xóa
+chưa chứng minh được; giữ source, không thay bằng lệnh purge/move để bỏ kiểm tra.
+
+## 11. LastTaskResult 3221225786 (0xC000013A)
+
+Đây là trạng thái tiến trình bị ngắt (Control-C exit), không tự chứng minh lỗi
+Drive/ảnh/credentials. Có thể do đóng console hoặc dừng tiến trình. Nếu transcript
+chỉ có header, chưa kết luận Python đã chạy xong. So sánh LastRunTime, State và log
+đúng lượt; khi task còn Running, LastTaskResult có thể chưa là kết quả cuối lượt.
+
+Script đăng ký mới thêm -NonInteractive -WindowStyle Hidden vào host PowerShell
+để lượt chạy nền không bật console ra desktop. Nó vẫn giữ log, đường dẫn tuyệt đối,
+kiểm tra dữ liệu, và chính sách RemoteSigned. Không dùng Bypass, không thay secret.
+Sau khi cập nhật action, Start-ScheduledTask rồi đợi task về Ready và kiểm tra
+LastTaskResult=0 cùng transcript có sự kiện receiver, không chỉ header. Nếu vẫn
+bị ngắt, cần xem Task Scheduler History/Event Viewer để xác định nguyên nhân;
+không quy kết mọi lỗi C000013A là do người dùng đóng cửa sổ.
+
+## 12. DELETE_GUARD_UNAVAILABLE khi bản local đã tải
+
+Bản cũ yêu cầu ETag từ HTTP header của Drive v3 GET. Drive v3 có thể không trả
+header đó; File schema v3 cũng không có thuộc tính etag. Vì vậy bản tải/receipt
+có thể đã đạt nhưng thao tác xóa bị giữ lại, source không bị xóa.
+
+Bản mới vẫn kiểm tra ancestry, file ID, version, MD5, size và receipt/local bytes.
+Nếu v3 có HTTP ETag, dùng If-Match trên delete v3 như cũ. Nếu không, lấy File.etag
+qua Drive v2, đối chiếu id/version/md5Checksum/fileSize/parents/title, đọc lại v3
+để phát hiện thay đổi giữa các lượt đọc rồi dùng If-Match với delete **v2**. Không
+gửi validator v2 sang endpoint v3, không có nhánh xóa vô điều kiện hoặc retry
+unconditional khi server trả 412. Nếu v2 cũng không cung cấp ETag, vẫn chặn xóa.
+Hai API dùng cùng credential/scopes Drive, không cần secret mới hay tạo client.
+
+Log delete_guard chỉ cho biết guard đã chọn; chỉ event received với
+remote_deleted=true xác nhận receiver đã hoàn tất cleanup. STAGING_ANCESTRY_UNVERIFIED
+là lỗi riêng về phạm vi folder, cần kiểm tra root/parent trước khi tiếp tục.
+Cảnh báo TIFF Photometric/ExtraSamples là vấn đề khai báo kênh màu, không phải lỗi
+DELETE_GUARD_UNAVAILABLE; không lưu lại các TIFF đã nhận để làm mất checksum gốc.
+
+Giữ scheduled task tạm dừng khi cập nhật drive.py/receiver.py trên Windows. Chạy
+receive trực tiếp để kiểm tra; chỉ bật lại task sau khi cleanup đạt. Không dùng
+rclone purge/move hoặc xóa thủ công để vượt qua điều kiện bảo vệ.

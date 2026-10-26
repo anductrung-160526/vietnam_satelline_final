@@ -1,3 +1,5 @@
+> **Luồng mới theo yêu cầu CSV gộp và 2 chế độ thử/toàn bộ:** xem [RUN_PROFILES_VI.md](RUN_PROFILES_VI.md). Các bước pilot/source-panel bên dưới là hướng dẫn cũ; không dùng để cấu hình mẫu v2.
+
 # Thiết lập và chạy pilot
 
 Cây thư mục chuẩn và chuyển dữ liệu cũ: [DIRECTORY_LAYOUT.md](DIRECTORY_LAYOUT.md). Thư mục tỉnh nằm bên trong nhóm dữ liệu của từng package, không bọc bên ngoài package.

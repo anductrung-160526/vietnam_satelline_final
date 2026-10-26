@@ -1,0 +1,74 @@
+{
+  "project": "vngis-ee-soc-trang-yen-bai",
+  "drive_root_id": "1L_bAHogJLAiyemM2gZZUs-3fIp105Kni",
+  "boundaries": "province_pipeline/config/boundaries.geojson",
+  "boundary_metadata": "province_pipeline/config/boundaries.metadata.json",
+  "years": [
+    2025
+  ],
+  "province_codes": [
+    "01"
+  ],
+  "products": [
+    "DMSP",
+    "VIIRS_MONTHLY",
+    "LANDSAT",
+    "SENTINEL2"
+  ],
+  "viirs_months": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "season_months": [
+    1,
+    2,
+    3,
+    4,
+    11,
+    12
+  ],
+  "season_months_by_province": {},
+  "tile_pixels": 512,
+  "crs": "EPSG:6933",
+  "algorithm_version": "v003raw",
+  "max_active_exports": 10,
+  "drive_staging_budget_gib": 18.6,
+  "drive_safety_margin_gib": 1.8,
+  "high_watermark": 0.65,
+  "low_watermark": 0.3,
+  "pause": true,
+  "local_root": "E:\\SatelliteData",
+  "volume_marker": "",
+  "allow_remote_delete": false,
+  "boundaries_drive_id": "",
+  "boundary_metadata_drive_id": "",
+  "max_inventory_checks_per_cycle": 20,
+  "boundary_provider": "gadm41",
+  "boundary_policy": "gadm41_research",
+  "export_backend": "direct",
+  "pipeline_version": 2,
+  "run_profile": "test_hanoi_2025",
+  "quality": {
+    "min_valid_area_pct": 80,
+    "min_observations_day": 2,
+    "min_cloud_free_obs": 1,
+    "sentinel_cloud_score_min": 0.6,
+    "landsat_cloud_buffer_m": 60,
+    "lit_threshold_dmsp": 5,
+    "lit_threshold_viirs": 0.5,
+    "mask_fires": true,
+    "anomaly_robust_z": 6,
+    "max_transfer_attempts": 4,
+    "processing_mode": "raw_source"
+  }
+}
