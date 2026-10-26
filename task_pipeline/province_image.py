@@ -20,6 +20,15 @@ DTYPE_BYTES={'float64':8,'float32':4,'int16':2}
 DAY_TIFF_BANDS=['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
 # Final day TIFFs: lossless ZSTD (+ horizontal predictor for integers) instead of DEFLATE.
 DAY_COMPRESSION=dict(compress='ZSTD',zstd_level=19,blockxsize=512,blockysize=512)
+# Day downloads use larger request windows (fewer Earth Engine round trips); pixels are
+# identical. A window EE rejects as too large/heavy is split into quarters down to MIN_CHUNK.
+DAY_CHUNK_BYTES=24_000_000
+MIN_CHUNK=256
+
+def chunk_pixels(config,base,dtype):
+    """Largest 256-multiple window under DAY_CHUNK_BYTES; never below tile_pixels."""
+    n=int(math.sqrt(DAY_CHUNK_BYTES/(len(base['bands'])*DTYPE_BYTES[dtype])))//256*256
+    return min(10000,max(config['tile_pixels'],n))
 
 def nbytes(job):
     return DTYPE_BYTES.get(job.get('dtype'),8)
@@ -52,7 +61,7 @@ def output_job(config,base,bounds,priority):
     if day:base=dict(base,bands=list(DAY_TIFF_BANDS))
     job=dict(base,kind='image',priority=priority,variant='source' if priority==0 else 'composite',
         scale=scale,grid_resolution=resolution,dtype=dtype,tile=whole,image_layout='province',
-        chunk_pixels=config['tile_pixels'],preview_required=False)
+        chunk_pixels=chunk_pixels(config,base,dtype) if day else config['tile_pixels'],preview_required=False)
     job.pop('job_id',None);job.pop('reserved_bytes',None)
     job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"+('_sr6' if day else '')
     identity={k:v for k,v in job.items() if k!='chunk_pixels'}
@@ -73,7 +82,8 @@ def small(job):
 
 def size_error(error):
     return any(s in str(error).lower() for s in ('request size','request too large','download limit',
-        'pixel grid dimensions','user memory limit','must be less than or equal','too many pixels'))
+        'pixel grid dimensions','user memory limit','must be less than or equal','too many pixels',
+        'computation timed out'))
 
 def check_stop(config):
     if CANCELLED or time.monotonic()>=config.get('_task_deadline',float('inf')):
@@ -189,6 +199,28 @@ def stitch(image,job,path,boundary,config,fetch):
         compress='DEFLATE',predictor=predictor(job['dtype']),tiled=True,blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
     with tempfile.TemporaryDirectory(prefix='chunks-',dir=path.parent) as tmp,rasterio.Env(GDAL_CACHEMAX=64*1024**2):
         with rasterio.open(path,'w',**profile) as output:
+            def window_fetch(col,row,width,height):
+                window=Window(col,row,width,height);affine=output.window_transform(window)
+                bounds=[affine.c,affine.f-height*res,affine.c+width*res,affine.f]
+                patch=dict(job,tile=dict(bounds=bounds,transform=list(affine)[:6],width=width,height=height),image_layout='chunk')
+                local=Path(tmp)/'chunk.tif'
+                try:
+                    fetch(image,patch,local)
+                except Exception as error:
+                    local.unlink(missing_ok=True)
+                    if not size_error(error) or max(width,height)<=MIN_CHUNK:raise
+                    # Too large/heavy for one request: same pixels as four smaller windows.
+                    w=(width+1)//2;h=(height+1)//2;count=0
+                    for r,hh in ((row,h),(row+h,height-h)):
+                        for c,ww in ((col,w),(col+w,width-w)):
+                            if ww>0 and hh>0:count+=window_fetch(c,r,ww,hh)
+                    return count
+                with rasterio.open(local) as source:
+                    if source.width!=width or source.height!=height or source.count!=len(job['bands']) or not source.transform.almost_equals(affine) or source.crs!=rasterio.crs.CRS.from_user_input(job['crs']) or any(t!=job['dtype'] for t in source.dtypes) or source.nodata!=-9999:
+                        raise ValueError('Chunk shape/grid differs from target window')
+                    output.write(source.read(),window=window)
+                local.unlink()
+                return 1
             for b,name in enumerate(job['bands'],1):output.set_band_description(b,name)
             for row in range(0,tile['height'],n):
                 for col in range(0,tile['width'],n):
@@ -199,13 +231,7 @@ def stitch(image,job,path,boundary,config,fetch):
                     if not geometry.intersects(box(*bounds)):
                         output.write(np.full((len(job['bands']),height,width),-9999,dtype=job['dtype']),window=window)
                         continue
-                    patch=dict(job,tile=dict(bounds=bounds,transform=list(affine)[:6],width=width,height=height),image_layout='chunk')
-                    local=Path(tmp)/'chunk.tif';fetch(image,patch,local);requests+=1
-                    with rasterio.open(local) as source:
-                        if source.width!=width or source.height!=height or source.count!=len(job['bands']) or not source.transform.almost_equals(affine) or source.crs!=rasterio.crs.CRS.from_user_input(job['crs']) or any(t!=job['dtype'] for t in source.dtypes) or source.nodata!=-9999:
-                            raise ValueError('Chunk shape/grid differs from target window')
-                        output.write(source.read(),window=window)
-                    local.unlink()
+                    requests+=window_fetch(col,row,width,height)
                     if path.stat().st_size>job['reserved_bytes']:
                         raise OutputLimit('Compressed province output exceeded staging reservation')
         if path.stat().st_size>job['reserved_bytes']:
