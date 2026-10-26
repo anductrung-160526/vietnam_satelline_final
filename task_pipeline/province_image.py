@@ -15,6 +15,11 @@ DAY_PRODUCTS=('LANDSAT','SENTINEL2')
 # Reflectance (-0.2..1.6) and indices (-1..1) fit; max rounding error 0.00005.
 DAY_SCALE=10000
 DTYPE_BYTES={'float64':8,'float32':4,'int16':2}
+# Day TIFFs keep only the 6 measured reflectance bands. NDVI/NDBI/MNDWI/BSI are exact
+# formulas of these bands (recomputable at any time) and remain in the CSV statistics.
+DAY_TIFF_BANDS=['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
+# Final day TIFFs: lossless ZSTD (+ horizontal predictor for integers) instead of DEFLATE.
+DAY_COMPRESSION=dict(compress='ZSTD',zstd_level=19)
 
 def nbytes(job):
     return DTYPE_BYTES.get(job.get('dtype'),8)
@@ -42,12 +47,14 @@ def output_job(config,base,bounds,priority):
     scale=SOURCES[base['product']]['scale']
     resolution=scale/111319.49079327358 if config['crs']=='EPSG:4326' else scale
     whole=grid(bounds,resolution);p=base['province']
-    dtype='int16' if base['product'] in DAY_PRODUCTS else 'float64'
+    day=base['product'] in DAY_PRODUCTS
+    dtype='int16' if day else 'float64'
+    if day:base=dict(base,bands=list(DAY_TIFF_BANDS))
     job=dict(base,kind='image',priority=priority,variant='source' if priority==0 else 'composite',
         scale=scale,grid_resolution=resolution,dtype=dtype,tile=whole,image_layout='province',
         chunk_pixels=config['tile_pixels'],preview_required=False)
     job.pop('job_id',None);job.pop('reserved_bytes',None)
-    job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"+('_i16' if dtype=='int16' else '')
+    job['prefix']=f"{p['ma_tinh']}_{p['slug']}_{job['product']}_{job['period']}_province_{job['algorithm_version']}_{job['recipe_hash'][:8]}"+('_sr6' if day else '')
     identity={k:v for k,v in job.items() if k!='chunk_pixels'}
     # Preserve completed TIFF identities from the initial province export release.
     # Disabling a display sidecar must not cause satellite data to be fetched again.
@@ -104,6 +111,8 @@ def mask_outside(path,job,boundary,rows=256):
             profile=src.profile.copy()
             profile.update(driver='GTiff',nodata=-9999,compress='DEFLATE',predictor=predictor(src.dtypes[0]),tiled=True,
                            blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
+            if job.get('product') in DAY_PRODUCTS:
+                profile.update(DAY_COMPRESSION)
             with rasterio.open(target,'w',**profile) as dst:
                 dst.update_tags(**src.tags())
                 for b in range(1,src.count+1):
@@ -134,6 +143,8 @@ def mask_outside(path,job,boundary,rows=256):
 def download(image,job,path,boundary,config,fetch=None,mask=True):
     from province_pipeline.direct_export import download_image
     fetch=fetch or download_image;path=Path(path);check_stop(config)
+    if image is not None and job.get('product') in DAY_PRODUCTS:
+        image=image.select(job['bands'])
     if image is not None and job.get('dtype')=='int16':
         image=to_int16(image)
     if shutil.disk_usage(path.parent).free<job['reserved_bytes']+512*1024**2:
