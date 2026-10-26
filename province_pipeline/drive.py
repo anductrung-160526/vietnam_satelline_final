@@ -1,7 +1,7 @@
 """Drive API adapter: IDs, pagination, exact parent/name lookup, bounded requests."""
 import io
 import json
-from .common import retry
+from .common import retry, audit
 
 FOLDER = 'application/vnd.google-apps.folder'
 FIELDS = 'id,name,mimeType,size,md5Checksum,version,parents,trashed,appProperties'
@@ -19,6 +19,8 @@ def credentials(path):
 class Drive:
     def __init__(self, creds):
         from googleapiclient.discovery import build
+        self._credentials=creds
+        self._v2_api=None
         self.api = build('drive', 'v3', credentials=creds, cache_discovery=False)
 
     def execute(self, req):
@@ -50,9 +52,16 @@ class Drive:
                 break
 
     def find(self, parent, name):
-        found = [f for f in self.children(parent) if f['name'] == name]
-        if len(found) > 1:
-            raise RuntimeError(f'Ambiguous Drive filename under {parent}: {name}')
+        safe=name.replace('\\','\\\\').replace("'","\\'")
+        token=None;found=[]
+        while True:
+            data=self.execute(self.api.files().list(
+                q=f"'{parent}' in parents and name = '{safe}' and trashed = false",
+                pageToken=token,pageSize=1000,fields=f'nextPageToken,files({FIELDS})',
+                supportsAllDrives=True,includeItemsFromAllDrives=True))
+            found.extend(data.get('files',[]));token=data.get('nextPageToken')
+            if not token:break
+        if len(found)>1:raise RuntimeError('Ambiguous Drive filename; refusing to choose')
         return found[0] if found else None
 
     def folder(self, parent, name):
@@ -92,6 +101,26 @@ class Drive:
             req = self.api.files().create(body={'name': name, 'parents': [parent]},
                                           media_body=media, fields='id', supportsAllDrives=True)
         return self.execute(req)['id']
+
+    def write_verified_bytes(self, parent, name, content):
+        """Mutable consolidated CSV under workflow single-writer lock; verify response bytes."""
+        import hashlib
+        from googleapiclient.http import MediaIoBaseUpload
+        found = self.find(parent, name)
+        expected = hashlib.md5(content).hexdigest()
+        if found and found.get('md5Checksum') == expected:
+            return self.metadata(found['id'])
+        media = MediaIoBaseUpload(io.BytesIO(content), mimetype='text/csv', resumable=False)
+        if found:
+            request = self.api.files().update(fileId=found['id'], media_body=media,
+                                             fields=FIELDS, supportsAllDrives=True)
+        else:
+            request = self.api.files().create(body={'name':name,'parents':[parent]},
+                    media_body=media,fields=FIELDS,supportsAllDrives=True)
+        result = self.execute(request)
+        if result.get('md5Checksum') != expected or int(result.get('size',0)) != len(content):
+            raise RuntimeError('Aggregate upload checksum mismatch')
+        return result
 
     def upload_verified(self, parent, path):
         """Unique job folder + checksummed upload; reconcile a lost response without duplicates."""
@@ -189,9 +218,46 @@ class Drive:
             if node['name'] == '_control':
                 raise RuntimeError('Control files must never be deleted')
             parent = node.get('parents', [])
-        if parent != [root] or not current.get('_etag'):
-            raise RuntimeError('Cannot prove staging ancestry or conditional delete support')
-        req = self.api.files().delete(fileId=current['id'], supportsAllDrives=True)
-        req.headers['If-Match'] = current['_etag']
+        if parent != [root]:
+            raise RuntimeError('Cannot prove staging ancestry; deletion blocked')
+        if current.get('_etag'):
+            req = self.api.files().delete(fileId=current['id'], supportsAllDrives=True)
+            req.headers['If-Match'] = current['_etag']
+            api_version='v3'
+        else:
+            # Drive v3's File schema has no etag property and its GET may omit the
+            # HTTP header. Drive v2 exposes an explicit File.etag. Read and delete
+            # through that SAME API; never send a v2 validator to a v3 mutation.
+            v2=self._conditional_v2_api()
+            snapshot=self.execute(v2.files().get(fileId=current['id'],supportsAllDrives=True,
+                fields='id,etag,version,md5Checksum,fileSize,parents(id),title'))
+            normalized=dict(id=snapshot.get('id'),version=snapshot.get('version'),
+                md5Checksum=snapshot.get('md5Checksum'),size=snapshot.get('fileSize'),
+                parents=[p['id'] for p in snapshot.get('parents',[])])
+            if any(normalized.get(k)!=expected.get(k) for k in ('id','version','md5Checksum','size','parents')):
+                raise RuntimeError('Source changed since verification; deletion blocked')
+            if expected.get('name') and snapshot.get('title')!=expected['name']:
+                raise RuntimeError('Source name changed since verification; deletion blocked')
+            if not snapshot.get('etag'):
+                raise RuntimeError('Cannot prove conditional delete support: Drive v2 ETag also unavailable')
+            # Reject an update racing between the v3 and v2 reads, even if the
+            # unchanged MD5 alone would not reveal a metadata-only modification.
+            checked=self.metadata(current['id'])
+            if any(checked.get(k)!=expected.get(k) for k in ('version','md5Checksum','size','parents')):
+                raise RuntimeError('Source changed since verification; deletion blocked')
+            req=v2.files().delete(fileId=current['id'],supportsAllDrives=True)
+            req.headers['If-Match']=snapshot['etag']
+            api_version='v2'
+        audit('delete_guard',api_version=api_version,condition='If-Match')
         # No retry of destructive requests with an unknown outcome.
         req.execute()
+
+    def _conditional_v2_api(self):
+        api=getattr(self,'_v2_api',None)
+        if api is None:
+            if not getattr(self,'_credentials',None):
+                raise RuntimeError('Cannot prove conditional delete support: no authenticated Drive v2 client')
+            from googleapiclient.discovery import build
+            api=build('drive','v2',credentials=self._credentials,cache_discovery=False)
+            self._v2_api=api
+        return api

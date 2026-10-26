@@ -151,15 +151,15 @@ class EarthEngineRequestTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json") as key:
             json.dump({"client_email": "runner@other-project.iam.gserviceaccount.com"}, key)
             key.flush()
-            with patch.object(v, "EE_KEY_FILE", key.name), patch.object(v, "PROJECT_ID", "vngis-ee-2"), \
+            with patch.object(v, "EE_KEY_FILE", key.name), patch.object(v, "PROJECT_ID", "vngis-ee-lam-dong-quang-tri"), \
                  patch.object(v, "EE_HIGH_VOLUME", False), \
                  patch.object(v.ee, "ServiceAccountCredentials", return_value="fake-credentials"), \
                  patch.object(v.ee, "Initialize") as initialize, \
                  patch.object(v.ee.data, "setDeadline"), patch.object(v.ee, "FeatureCollection"), \
                  self.assertLogs(v.log, level="INFO") as logs:
                 v.init_earth_engine()
-        initialize.assert_called_once_with(credentials="fake-credentials", project="vngis-ee-2")
-        self.assertIn("project=vngis-ee-2", logs.output[0])
+        initialize.assert_called_once_with(credentials="fake-credentials", project="vngis-ee-lam-dong-quang-tri")
+        self.assertIn("project=vngis-ee-lam-dong-quang-tri", logs.output[0])
         self.assertIn("runner@other-project", logs.output[0])
 
 

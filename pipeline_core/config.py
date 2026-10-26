@@ -12,7 +12,7 @@ YEARS = list(range(START_YEAR, END_YEAR + 1))
 MONTHS = list(range(1, 13))
 
 # Dự án Google Earth Engine
-DEFAULT_EE_PROJECT = os.environ.get("VNGIS_EE_PROJECT", "vngis-ee-2")
+DEFAULT_EE_PROJECT = os.environ.get("VNGIS_EE_PROJECT", "vngis-ee-lam-dong-quang-tri")
 
 # Đường dẫn GADM 4.1 cho Việt Nam
 GADM_VNM_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/shp/gadm41_VNM_shp.zip"
