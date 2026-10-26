@@ -40,7 +40,7 @@ class ProfilePanelTests(unittest.TestCase):
     def test_full_exact_expected_rows_and_sources(self):
         counts=Counter((s['night'],s['product']) for s in table_specs(config('full_2004_2025')))
         self.assertEqual(counts,{(True,'DMSP'):630,(True,'VIIRS_MONTHLY'):9072,
-                                 (False,'LANDSAT'):10584,(False,'SENTINEL2'):6048})
+                                 (False,'LANDSAT'):8316,(False,'SENTINEL2'):8316})
 
     def test_identity_stable_when_switching_profile(self):
         c=config();s=next(table_specs(c))
@@ -143,13 +143,13 @@ class QueueTests(unittest.TestCase):
         self.assertFalse(plan['jobs'])
         self.assertEqual(d.documents['root/_control','state.json']['jobs']['0-0']['status'],'MISSING_SOURCE')
 
-    def test_completed_stage_advances_to_csv(self):
+    def test_completed_night_stage_advances_to_day_images(self):
         d=self.fixture()
         for j in self.jobs(0):
             d.documents['root/_control','state.json']['jobs'][j['job_id']]=dict(j,status='FAILED')
         with patch('province_pipeline.priority.fair_jobs',side_effect=lambda c,b,m,p,cursor:iter(self.jobs(p))):
             plan=prepare_priority(config('full_2004_2025'),d,{},META,lambda j:dict(status='AVAILABLE',count=1))
-        self.assertEqual({j['priority'] for j in plan['jobs']},{1})
+        self.assertEqual({j['priority'] for j in plan['jobs']},{2})
 
     def test_inventory_calls_bounded(self):
         d=self.fixture();c=config('full_2004_2025');c['max_inventory_checks_per_cycle']=2
@@ -285,7 +285,8 @@ class StageIntegrationTests(unittest.TestCase):
                     state['jobs'][job['job_id']]['status']='DELETED_REMOTE'
                 if state['current_stage']=='complete':break
         self.assertEqual(state['current_stage'],'complete')
-        self.assertEqual(observed,sorted(observed))
+        order={0:0,2:1,1:2}  # night images -> day images -> tables
+        self.assertEqual(observed,sorted(observed,key=order.get))
         tables=[j for j in state['jobs'].values() if j['kind']=='table']
         self.assertEqual(len(tables),24)
 

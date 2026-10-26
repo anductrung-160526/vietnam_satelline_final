@@ -1,3 +1,5 @@
+> **Đã thay thế:** hướng dẫn mới (cấu trúc thư mục chung, 6 luồng song song, thứ tự ảnh đêm → ảnh ngày → ảnh trung gian → bảng) nằm ở [HUONG_DAN_CHAY_LOCAL.md](HUONG_DAN_CHAY_LOCAL.md). Tài liệu dưới đây chỉ để tham khảo.
+
 # Chạy trực tiếp vào ổ E, bỏ hoàn toàn Google Drive
 
 Luồng mới chạy **trên laptop Windows**:
