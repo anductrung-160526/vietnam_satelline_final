@@ -44,7 +44,16 @@ def inventory(job,geometry):
     import ee
     product,period=job['product'],job['period']
     selected=None;window=0
-    if product=='VIIRS_MONTHLY':
+    if product=='VIIRS_ANNUAL_EOG':
+        # Each official annual collection is optional: a missing asset or year is UNAVAILABLE,
+        # never an error that stops the branch. Missing years are built locally later.
+        for cid in source_spec(product,period)['collections']:
+            try:
+                col=collection(product,period,geometry,collection_id=cid)
+                if col.size().getInfo()>0:selected=col;break
+            except Exception:
+                continue
+    elif product=='VIIRS_MONTHLY':
         # Notebook Task3 fallback is another VIIRS processing product, never another sensor.
         for cid in (VIIRS_A,VIIRS_B):
             col=collection(product,period,geometry,collection_id=cid)
@@ -60,7 +69,7 @@ def inventory(job,geometry):
     info=ee.Dictionary(dict(count=selected.size(),asset_ids=selected.aggregate_array('system:id'))).getInfo()
     return dict(info,status='AVAILABLE' if info['count'] else 'UNAVAILABLE',product=product,
                 period=period,window_days=window,actual_start=dates(period,window)[0],actual_end_exclusive=dates(period,window)[1],
-                collections=[cid] if product=='VIIRS_MONTHLY' else source_spec(product,period)['collections'])
+                collections=[cid] if product in ('VIIRS_MONTHLY','VIIRS_ANNUAL_EOG') else source_spec(product,period)['collections'])
 
 
 def indices(image):
@@ -97,6 +106,8 @@ def composite(config,job,geometry):
         image=indices(clean.median())
     elif p=='DMSP':
         image=ee.Image(coll.sort('system:index',False).first()).select('stable_lights')
+    elif p=='VIIRS_ANNUAL_EOG':
+        image=ee.Image(coll.first()).select(source_spec(p,job['period'])['bands'])
     else:
         image=coll.select(['avg_rad','cf_cvg']).mean()
     return image.clip(geometry).toDouble().set('source_count',coll.size())

@@ -29,7 +29,7 @@ def apply_profile(config, profile, processing=None):
     return c
 
 def source_for(year, night):
-    return ('DMSP' if year <= 2013 else 'VIIRS_MONTHLY') if night else ('LANDSAT' if year <= 2017 else 'SENTINEL2')
+    return ('DMSP' if year <= 2013 else 'VIIRS_MONTHLY') if night else ('LANDSAT' if year <= 2014 else 'SENTINEL2')
 
 def table_specs(config):
     selected = set(config['province_codes'])
