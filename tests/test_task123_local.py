@@ -57,7 +57,7 @@ class RawJobTests(unittest.TestCase):
     def test_sources_and_years_follow_the_plan(self):
         p=provinces()[0]
         night=Counter(s['product'] for s in raw.specs(p,raw.NIGHT))
-        self.assertEqual(night,{'DMSP':10,'VIIRS_MONTHLY':13*12,'VIIRS_ANNUAL_EOG':13})
+        self.assertEqual(night,{'DMSP':10,'VIIRS_MONTHLY':13*12})
         day=list(raw.specs(p,raw.DAY))
         self.assertEqual(Counter(s['product'] for s in day),{'LANDSAT':11*12,'SENTINEL2':11*12})
         self.assertEqual({s['period'][:4] for s in day if s['product']=='LANDSAT'},{str(y) for y in range(2004,2015)})
