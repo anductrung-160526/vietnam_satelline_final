@@ -30,7 +30,7 @@ from . import derive
 
 STOP=False
 STAGES=('night_raw','day_raw','intermediate','processed')
-IMAGE_TYPE={'DMSP':'DMSP','VIIRS_MONTHLY':'VIIRS','VIIRS_ANNUAL_EOG':'VIIRS','LANDSAT':'Landsat','SENTINEL2':'Sentinel-2'}
+IMAGE_TYPE={'DMSP':'DMSP','VIIRS_MONTHLY':'VIIRS','LANDSAT':'Landsat','SENTINEL2':'Sentinel-2'}
 
 
 def request_stop(*_):
@@ -181,7 +181,7 @@ def export(config,root,control,job,boundary):
         atomic_json(receipt_path(control,job),receipt)
         dest.parent.mkdir(parents=True,exist_ok=True)
         path.replace(dest)
-    package=NTL_PACKAGE if job['product'] in ('DMSP','VIIRS_MONTHLY','VIIRS_ANNUAL_EOG') else DAY_PACKAGE
+    package=NTL_PACKAGE if job['product'] in ('DMSP','VIIRS_MONTHLY') else DAY_PACKAGE
     append_log(root,package,IMAGE_TYPE.get(job['product'],job['product']),
                f"{job['province']['ma_tinh']} {job['province']['ten_tinh']} {job['period']}: {dest.name} ({int(file['size'])/1024**2:.1f} MB)")
     audit('saved_local',job_id=job['job_id'],destination=str(dest),backend='local_e')

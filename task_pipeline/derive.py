@@ -5,8 +5,8 @@ Stage B (data_intermediate, images)
        composites in the region's dry-season months (all months of the year if none);
        land-cover classification waits for training samples in samples/.
   NTL  VIIRS monthly filtered (cf_cvg=0 -> NoData, negative -> 0, temporal spikes such as
-       fires capped at the pixel's annual median), VIIRS annual (official EOG
-       average_masked when downloaded, else median of filtered months), DMSP annual.
+       fires capped at the pixel's annual median), VIIRS annual (median of the
+       filtered months of that year), DMSP annual.
        DMSP-VIIRS inter-calibration is NOT applied until a validated method is chosen;
        every NTL file and table row carries HARMONIZATION=PENDING.
 Stage C (data_processed, tables; key ma_tinh + nam [+ thang])
@@ -209,15 +209,13 @@ def viirs_filtered(raw,province,root):
 
 
 def viirs_annual(raw,filtered,province,root):
+    """Annual VIIRS = per-pixel median of the filtered months of that year."""
     import numpy as np
     import rasterio
     p=province;name=f"{p['ma_tinh']}_{p['slug']}";out={}
-    years=sorted({period[:4] for period in filtered}|{period for prod,period in raw if prod=='VIIRS_ANNUAL_EOG'})
-    for year in years:
+    for year in sorted({period[:4] for period in filtered}):
         target=Path(root)/NTL_PACKAGE/'data_intermediate'/'VIIRS_ANNUAL'/name/f'{name}_VIIRS_{year}_annual.tif'
-        official=raw.get(('VIIRS_ANNUAL_EOG',year))
-        inputs=[official] if official else [filtered[k] for k in sorted(filtered) if k[:4]==year]
-        if not inputs:continue
+        inputs=[filtered[k] for k in sorted(filtered) if k[:4]==year]
         if up_to_date(target,inputs):
             out[year]=target;continue
         sources=[rasterio.open(x) for x in inputs]
@@ -225,25 +223,17 @@ def viirs_annual(raw,filtered,province,root):
             first=sources[0];profile=zstd_profile(first.profile,1,'float32')
             def blocks():
                 for w in windows(first.height,first.width):
-                    if official:
-                        names=list(first.descriptions)
-                        band=names.index('average_masked')+1 if 'average_masked' in names else 1
-                        cov=first.read(names.index('cf_cvg')+1,window=w) if 'cf_cvg' in names else None
-                        rad=first.read(band,window=w).astype('float64')
-                        valid=(rad!=NODATA)&((cov!=NODATA)&(cov>0) if cov is not None else True)
-                        rad=np.maximum(rad,0)
-                    else:
-                        stack=np.stack([s.read(1,window=w) for s in sources]).astype('float64')
-                        stack[stack==NODATA]=np.nan
-                        import warnings
-                        with warnings.catch_warnings():
-                            warnings.simplefilter('ignore',RuntimeWarning)
-                            rad=np.nanmedian(stack,axis=0)
-                        valid=~np.isnan(rad)
+                    stack=np.stack([s.read(1,window=w) for s in sources]).astype('float64')
+                    stack[stack==NODATA]=np.nan
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore',RuntimeWarning)
+                        rad=np.nanmedian(stack,axis=0)
+                    valid=~np.isnan(rad)
                     yield w,np.where(valid,rad,NODATA).astype('float32')[None],valid
             write(target,profile,['avg_rad_annual'],blocks(),
-                  dict(SOURCE='VIIRS_ANNUAL_EOG' if official else 'LOCAL_MEDIAN_OF_FILTERED_MONTHS',YEAR=year,
-                       UNIT='nW/cm2/sr',HARMONIZATION='PENDING',MONTHS_USED=str(0 if official else len(inputs))),inputs)
+                  dict(SOURCE='MEDIAN_OF_FILTERED_VIIRS_MONTHS',YEAR=year,UNIT='nW/cm2/sr',
+                       HARMONIZATION='PENDING',MONTHS_USED=str(len(inputs))),inputs)
         finally:
             for s in sources:s.close()
         out[year]=target
@@ -443,7 +433,7 @@ README={
 Bộ dữ liệu ánh sáng ban đêm cấp tỉnh, 63 tỉnh, thành phố (trước sáp nhập), 2004–2025.
 
 - raw_data/NTL/DMSP/: DMSP-OLS stable_lights tổng hợp năm 2004–2013 (Earth Engine, NOAA/NCEI), cắt theo tỉnh.
-- raw_data/NTL/VIIRS/: VIIRS DNB tháng (VCMSLCFG, thiếu tháng dùng VCMCFG) và năm (EOG VNL) 2013–2025.
+- raw_data/NTL/VIIRS/: VIIRS DNB tháng (VCMSLCFG, thiếu tháng dùng VCMCFG) 2013–2025; ảnh năm VIIRS tổng hợp từ ảnh tháng (data_intermediate).
 - data_intermediate/: ảnh đã lọc nhiễu, cắt ranh giới (DMSP/, VIIRS_MONTHLY/, VIIRS_ANNUAL/). Hiệu chỉnh liên kết DMSP–VIIRS: PENDING.
 - data_processed/: ntl_annual, ntl_monthly, ntl_overlap_2013 (.csv/.xlsx/.dta), khóa ma_tinh + nam (+ thang).
 - metadata/: Codebook. logs/: nhật ký cập nhật. Mã nguồn: repository vietnam_satelline_final (task_pipeline/).

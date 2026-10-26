@@ -21,11 +21,6 @@ SOURCES = {
     'VIIRS_ANNUAL': {'collections': ['NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG'], 'scale': 500,
                      'bands': ['avg_rad','cf_cvg'], 'unit': 'nW_cm-2_sr-1',
                      'reference': 'https://developers.google.com/earth-engine/datasets/catalog/NOAA_VIIRS_DNB_MONTHLY_V1_VCMSLCFG'},
-    # Official EOG annual VNL composites (V2.1 2013-2021, V2.2 later years); a year missing
-    # from both is reported UNAVAILABLE and built locally from the monthly raw images.
-    'VIIRS_ANNUAL_EOG': {'collections': ['NOAA/VIIRS/DNB/ANNUAL_V21','NOAA/VIIRS/DNB/ANNUAL_V22'], 'scale': 500,
-                         'bands': ['average','average_masked','cf_cvg'], 'unit': 'nW_cm-2_sr-1',
-                         'reference': 'https://developers.google.com/earth-engine/datasets/catalog/NOAA_VIIRS_DNB_ANNUAL_V21'},
 }
 BANDS = ['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'

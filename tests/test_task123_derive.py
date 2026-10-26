@@ -81,7 +81,7 @@ class NightTests(unittest.TestCase):
             with rasterio.open(filtered['2014-05']) as ds:self.assertEqual(ds.read(1)[0,0],-9999)
             annual=derive.viirs_annual(raw,filtered,P,tmp)
             with rasterio.open(annual['2014']) as ds:
-                self.assertEqual(ds.read(1)[0,0],2.0);self.assertEqual(ds.tags()['SOURCE'],'LOCAL_MEDIAN_OF_FILTERED_MONTHS')
+                self.assertEqual(ds.read(1)[0,0],2.0);self.assertEqual(ds.tags()['SOURCE'],'MEDIAN_OF_FILTERED_VIIRS_MONTHS')
             dmsp=derive.dmsp_annual(raw,P,tmp)
             cache=derive.Cache(Path(tmp)/'c.json')
             monthly=derive.ntl_monthly_rows(P,filtered,10.0,cache)
