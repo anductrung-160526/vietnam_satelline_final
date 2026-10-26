@@ -13,7 +13,7 @@ Chạy:
     python vngis_2024.py --sync-only
 
 Biến cấu hình chính:
-    VNGIS_EE_PROJECT       mặc định vngis-ee-2
+    VNGIS_EE_PROJECT       mặc định vngis-ee-soc-trang-yen-bai
     VNGIS_EE_CONCURRENCY   mặc định 1
     VNGIS_EE_MAX_RETRIES   mặc định 8
     VNGIS_WORKERS          mặc định 2
@@ -76,7 +76,7 @@ def _env(name, default, cast=str):
 YEAR = 2024
 MONTHS = list(range(1, 13))
 
-PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-2")
+PROJECT_ID = _env("VNGIS_EE_PROJECT", "vngis-ee-soc-trang-yen-bai")
 ASSET_ID = f"projects/{PROJECT_ID}/assets/communes_l3"
 
 MODE = _env("VNGIS_MODE", "pilot").lower()
