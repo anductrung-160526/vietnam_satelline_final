@@ -98,6 +98,15 @@ class LocalTests(unittest.TestCase):
             state=json.loads((Path(tmp)/'_control/001_011/.local_state/state.json').read_text())
             self.assertEqual(Counter(j['status'] for j in state['jobs'].values()),{'MISSING_SOURCE':4})
 
+    def test_start_from_day_skips_night_raw(self):
+        c=config();j=image_job(c);visited=[]
+        def jobs(active,boundaries,metadata,kind,province):
+            visited.append(kind);return iter([])
+        with tempfile.TemporaryDirectory() as tmp,patch('task_pipeline.local.verify_volume',return_value=Path(tmp)):
+            code=run(c,Path(tmp),{'01':square(c)},META,inventory=Mock(),control=Path(tmp)/'_control/001_011',
+                     job_source=jobs,local=Mock(return_value=0),start='day')
+        self.assertEqual(code,0);self.assertEqual(visited,['day'])
+
     def test_night_failure_stops_before_day_and_local_stages(self):
         c=config();j=image_job(c);visited=[]
         def jobs(active,boundaries,metadata,kind,province):
