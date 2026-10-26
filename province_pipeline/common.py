@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import random
 import re
 import time
@@ -19,15 +20,40 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def _windows_fsync(fd):
+    """Flush the writable kernel handle, without the Windows CRT _commit wrapper.
+
+    Keep native errors visible: a disconnected or unwritable volume must never
+    be treated as a successful checkpoint. HANDLE is pointer-sized on Win64.
+    """
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    handle = msvcrt.get_osfhandle(fd)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    flush = kernel32.FlushFileBuffers
+    flush.argtypes = [wintypes.HANDLE]
+    flush.restype = wintypes.BOOL
+    if not flush(wintypes.HANDLE(handle)):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def sync_file(stream):
+    """Flush Python buffers and require an OS-level flush before publishing."""
+    stream.flush()
+    if os.name == 'nt':
+        _windows_fsync(stream.fileno())
+    else:
+        os.fsync(stream.fileno())
+
+
 def atomic_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + '.tmp')
     with temp.open('w', encoding='utf-8') as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2)
-        stream.flush()
-        import os
-        os.fsync(stream.fileno())
+        sync_file(stream)
     temp.replace(path)
 
 
@@ -51,7 +77,7 @@ def load_config(path, live=False):
         raise ValueError('Require 0 < low_watermark < high_watermark < 1')
     if not 128 <= c['tile_pixels'] <= 2048 or not 1 <= c['max_active_exports'] <= 10:
         raise ValueError('Invalid tile size or global concurrency')
-    if c['crs'] != 'EPSG:6933':
+    if c['crs'] != 'EPSG:6933' and not (c['crs']=='EPSG:4326' and c.get('quality',{}).get('processing_mode')=='notebook_tasks'):
         raise ValueError('v1 supports the documented equal-area EPSG:6933 grid only')
     if not re.fullmatch(r'[a-zA-Z0-9_-]{1,24}', c['algorithm_version']):
         raise ValueError('Unsafe algorithm version')
@@ -65,6 +91,11 @@ def load_config(path, live=False):
     from .sources import SOURCES
     if not c['products'] or not set(c['products']) <= set(SOURCES):
         raise ValueError('Unsupported product')
+    if c.get('pipeline_version') == 2:
+        from .profiles import validate_quality, PROFILES
+        if c.get('run_profile') not in PROFILES and not re.fullmatch(r'task123_\d{3}_\d{3}_(pilot|full)',c.get('run_profile','')):
+            raise ValueError('Select a supported run profile')
+        validate_quality(c.get('quality',{}))
     backend = c.get('export_backend', 'batch')
     if backend not in ('batch', 'direct'):
         raise ValueError('export_backend must be batch or direct')
