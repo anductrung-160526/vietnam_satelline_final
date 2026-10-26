@@ -19,8 +19,9 @@ jobs:
     timeout-minutes: 350
     env:
       TASK_MODE: ${{ inputs.mode || 'pilot' }}
-      PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON }}
-      EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
+      TASK_EE_PROJECT: vgis-ee-6                                        # ĐỔI (thêm mới)
+      PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON_6 }}          # ĐỔI
+      EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_6 }} # ĐỔI
       RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
       PROVINCE_RCLONE_REMOTE: gdrive
     steps:
