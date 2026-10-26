@@ -3,7 +3,7 @@
 Night raw keeps the job identities of earlier releases (same table_job -> output_job
 path as generate_v2), so TIFFs already on disk are recognised and never fetched twice.
 
-    night: DMSP annual 2004-2013, VIIRS monthly 2013-2025, EOG VIIRS annual 2013-2025
+    night: DMSP annual 2004-2013, VIIRS monthly 2013-2025 (annual VIIRS is built locally)
     day:   LANDSAT monthly 2004-2014 (30 m), SENTINEL2 monthly 2015-2025 (20 m)
 """
 DMSP_YEARS=range(2004,2014)
@@ -21,8 +21,6 @@ def specs(province,kind):
         for y in VIIRS_YEARS:
             for m in range(1,13):
                 yield dict(province=province,product='VIIRS_MONTHLY',period=f'{y}-{m:02}',night=True)
-        for y in VIIRS_YEARS:
-            yield dict(province=province,product='VIIRS_ANNUAL_EOG',period=str(y),night=True)
     elif kind==DAY:
         for product,years in (('LANDSAT',LANDSAT_YEARS),('SENTINEL2',SENTINEL_YEARS)):
             for y in years:
