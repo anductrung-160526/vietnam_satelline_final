@@ -193,7 +193,9 @@ def raw_stage(config,root,control,state,save,boundaries,metadata,kind,inventory,
     from province_pipeline.priority import inventory_key
     for province in config['task_scope']['provinces']:
         active=dict(config,province_codes=[province['ma_tinh']])
-        if (shutil.disk_usage(root).free-2*1024**3)<=0:return 4
+        # Output limit comes from free space on E (half of it, keeping a 2 GiB margin).
+        active['local_output_limit_bytes']=max(0,(shutil.disk_usage(root).free-2*1024**3)//2)
+        if active['local_output_limit_bytes']<=0:return 4
         state['current_province']=province['number'];state['current_stage']=kind+'_raw'
         for job in job_source(active,boundaries,metadata,kind,province):
             verify_volume(config)
