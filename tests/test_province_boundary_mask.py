@@ -122,7 +122,7 @@ class DayTiffLayoutTests(unittest.TestCase):
             path=Path(tmp)/'day.tif'
             download(None,j,path,triangle(j),{},fetch_int)
             with rasterio.open(path) as ds:
-                self.assertEqual(ds.compression.name.upper(),'ZSTD')
+                self.assertEqual(ds.compression.name.upper(),'ZSTD');self.assertEqual(ds.block_shapes[0],(512,512))
                 self.assertEqual(ds.read(1)[-1,0],1234)
 
     def test_day_output_job_keeps_six_measured_bands(self):
