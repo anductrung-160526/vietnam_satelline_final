@@ -82,3 +82,29 @@ class BoundaryMaskTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class Int16DayTests(unittest.TestCase):
+    def test_int16_day_tiff_is_scaled_masked_and_valid(self):
+        j=dict(fixture(),dtype='int16')
+        def fetch_int(image,part,path):
+            t=part['tile'];h,w=t['height'],t['width']
+            with rasterio.open(path,'w',driver='GTiff',width=w,height=h,count=2,dtype='int16',
+                               crs=part['crs'],transform=Affine(*t['transform']),nodata=-9999) as ds:
+                ds.write(np.full((2,h,w),2500,dtype='int16'))
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'day.tif'
+            from unittest.mock import patch
+            for chunked in (False,True):
+                with patch('task_pipeline.province_image.small',return_value=not chunked):
+                    download(None,j,path,triangle(j),{},fetch_int)
+                with rasterio.open(path) as ds:
+                    self.assertEqual(ds.dtypes,('int16','int16'));self.assertEqual(ds.scales,(1e-4,1e-4))
+                    self.assertEqual(ds.read(1)[-1,0],2500);self.assertEqual(ds.read(1)[0,-1],-9999)
+                    self.assertEqual(ds.tags()['SCALE_FACTOR'],'0.0001')
+                f=dict(size=str(path.stat().st_size),md5Checksum=hashes(path)[0])
+                self.assertEqual(validate(path,f,j),hashes(path)[1])
+                from province_pipeline.quality import inspect_raster
+                qa=inspect_raster(path,dict(j,variant='composite'))
+                self.assertGreater(qa['valid_pixel_pct'],0);self.assertNotIn('VALUE_RANGE_REVIEW',qa['flags'])
+                path.unlink()

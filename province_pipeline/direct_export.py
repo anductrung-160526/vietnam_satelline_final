@@ -31,7 +31,7 @@ def download_image(image, job, path, attempts=4):
     width=job['tile'].get('width',pixels);height=job['tile'].get('height',pixels)
     if max(width,height)>10000:
         raise ValueError('Download dimensions exceed the 10000-pixel limit')
-    if width*height*len(job['bands'])*(8 if job.get('dtype')=='float64' else 4) >= MAX_DOWNLOAD_BYTES:
+    if width*height*len(job['bands'])*{'float64':8,'int16':2}.get(job.get('dtype'),4) >= MAX_DOWNLOAD_BYTES:
         raise ValueError('Direct download tile exceeds 32 MB')
     # EE's exact-grid mode is CRS + affine + dimensions, WITHOUT region/scale.
     # The affine origin and dimensions already define the complete tile footprint.
@@ -39,6 +39,8 @@ def download_image(image, job, path, attempts=4):
                   dimensions=[width,height], format='GEO_TIFF', filePerBand=False)
     # Explicit default value is preserved as NoData metadata by local TIFF rewrite below.
     image = image.unmask(-9999, sameFootprint=False)
+    if job.get('dtype') == 'int16':
+        image = image.toInt16()  # unmask may widen the type; keep the declared int16 grid.
     for attempt in range(attempts):
         try:
             url = image.getDownloadURL(params)
@@ -166,7 +168,10 @@ def transfer(config, drive, job, boundary):
 
 def lossless_tiff(path):
     from rasterio.shutil import copy as copy_raster
+    import rasterio
     target=path.with_name(path.stem+'.deflate.tif')
-    copy_raster(path,target,driver='GTiff',compress='DEFLATE',predictor=3,
+    with rasterio.open(path) as ds:
+        float_data=ds.dtypes[0].startswith('float')
+    copy_raster(path,target,driver='GTiff',compress='DEFLATE',predictor=3 if float_data else 2,
                 tiled=True,blockxsize=256,blockysize=256)
     target.replace(path)
