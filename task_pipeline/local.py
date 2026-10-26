@@ -281,7 +281,7 @@ def local_stages(config,root,control,state,boundaries,metadata,job_source):
     return 0
 
 
-def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=None,job_source=None,local=None):
+def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=None,job_source=None,local=None,start='night'):
     """Earth Engine requests and local filesystem writes only. No Drive, no remote deletion."""
     if inventory is None:
         def inventory(job):
@@ -300,7 +300,8 @@ def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=N
         verify_volume(config);atomic_json(state_path,state)
     exit_code=0
     with single_receiver(control):
-        for kind in (raw_jobs.NIGHT,raw_jobs.DAY):
+        kinds=(raw_jobs.NIGHT,raw_jobs.DAY) if start=='night' else (raw_jobs.DAY,)
+        for kind in kinds:
             audit('local_stage_started',stage=kind+'_raw',province_codes=config['province_codes'])
             exit_code=raw_stage(config,root,control,state,save,boundaries,metadata,kind,inventory,exporter,job_source)
             save()
@@ -331,6 +332,7 @@ def main():
         p=sub.add_parser(name);p.add_argument('--mode',choices=['pilot','full'],default='pilot')
         p.add_argument('--config');p.add_argument('--root');p.add_argument('--ee-key');p.add_argument('--project')
         p.add_argument('--range',help='Province range, e.g. 54-63 (default: branch_range.json)')
+        p.add_argument('--start',choices=['night','day'],default='night',help='day: skip the night raw stage')
     args=parser.parse_args();logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     if args.command=='migrate':
         from .migrate import main as migrate
@@ -360,6 +362,6 @@ def main():
         raise SystemExit(code)
     from province_pipeline.earth_engine import initialize
     initialize(c,credentials(args.ee_key))
-    raise SystemExit(run(c,root,boundaries,metadata,control=control))
+    raise SystemExit(run(c,root,boundaries,metadata,control=control,start=args.start))
 
 if __name__=='__main__':main()
