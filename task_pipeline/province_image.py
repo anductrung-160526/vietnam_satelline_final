@@ -53,7 +53,63 @@ def check_stop(config):
     if CANCELLED or time.monotonic()>=config.get('_task_deadline',float('inf')):
         raise ExportInterrupted('Resume this province output in the next runner')
 
-def download(image,job,path,boundary,config,fetch=None):
+DAY_PRODUCTS=('LANDSAT','SENTINEL2')
+
+def boundary_geometry(boundary,crs):
+    from shapely.geometry import shape
+    geometry=shape(boundary['geometry'])
+    if crs!='EPSG:4326':
+        import numpy as np
+        from shapely import transform
+        from rasterio.warp import transform as warp
+        def project(xy):
+            x,y=warp('EPSG:4326',crs,xy[:,0],xy[:,1]);return np.column_stack([x,y])
+        geometry=transform(geometry,project)
+    return geometry
+
+def mask_outside(path,job,boundary,rows=256):
+    """Keep only pixels touching this province's polygon; everything else becomes NoData.
+
+    The bounding-box grid is unchanged (same transform/size/job identity), but pixels of
+    neighbouring provinces are written as -9999 and excluded by an internal GDAL mask, so
+    GIS viewers show the province outline instead of a rectangle. Returns pixel counts.
+    """
+    import numpy as np
+    import rasterio
+    from rasterio.features import geometry_mask
+    from rasterio.windows import Window
+    from shapely.geometry import mapping
+    path=Path(path);target=path.with_name(path.stem+'.masked.tif')
+    shapes=[mapping(boundary_geometry(boundary,job['crs']))]
+    inside_total=outside_cleared=0
+    try:
+        with rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True,GDAL_CACHEMAX=64*1024**2),rasterio.open(path) as src:
+            profile=src.profile.copy()
+            profile.update(driver='GTiff',nodata=-9999,compress='DEFLATE',predictor=3,tiled=True,
+                           blockxsize=256,blockysize=256,BIGTIFF='IF_SAFER')
+            with rasterio.open(target,'w',**profile) as dst:
+                dst.update_tags(**src.tags())
+                for b in range(1,src.count+1):
+                    dst.set_band_description(b,src.descriptions[b-1])
+                for row in range(0,src.height,rows):
+                    window=Window(0,row,src.width,min(rows,src.height-row))
+                    inside=~geometry_mask(shapes,out_shape=(window.height,window.width),
+                                          transform=src.window_transform(window),all_touched=True)
+                    data=src.read(window=window)
+                    outside_cleared+=int(((data!=-9999).any(axis=0)&~inside).sum())
+                    data[:,~inside]=-9999
+                    dst.write(data,window=window)
+                    valid=inside&(data!=-9999).any(axis=0)
+                    dst.write_mask((valid*255).astype('uint8'),window=window)
+                    inside_total+=int(inside.sum())
+                dst.update_tags(BOUNDARY_MASK='province_polygon_all_touched',
+                                BOUNDARY_SHA256=str(job.get('boundary_sha256','')))
+        target.replace(path)
+    finally:
+        target.unlink(missing_ok=True)
+    return dict(boundary_mask=True,inside_pixels=inside_total,outside_pixels_cleared=outside_cleared)
+
+def download(image,job,path,boundary,config,fetch=None,mask=True):
     from province_pipeline.direct_export import download_image
     fetch=fetch or download_image;path=Path(path);check_stop(config)
     if shutil.disk_usage(path.parent).free<job['reserved_bytes']+512*1024**2:
@@ -62,11 +118,17 @@ def download(image,job,path,boundary,config,fetch=None):
         if small(job):
             try:
                 fetch(image,job,path)
-                return dict(strategy='whole',requests=1)
+                result=dict(strategy='whole',requests=1)
             except Exception as error:
                 if not size_error(error):raise
                 path.unlink(missing_ok=True)
-        return stitch(image,job,path,boundary,config,fetch)
+                result=stitch(image,job,path,boundary,config,fetch)
+        else:
+            result=stitch(image,job,path,boundary,config,fetch)
+        # Day images: the province shape only, never the rectangle of neighbouring land.
+        if mask and job.get('product') in DAY_PRODUCTS:
+            result.update(mask_outside(path,job,boundary))
+        return result
     except BaseException:
         path.unlink(missing_ok=True)
         raise
