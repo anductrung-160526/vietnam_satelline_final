@@ -1,0 +1,68 @@
+name: Kiểm tra ảnh ngày cắt theo ranh giới tỉnh
+# Chạy thử 1 tỉnh / 1 tháng. Chỉ ghi ra artifact, không đụng Drive, state hay CSV.
+on:
+  workflow_dispatch:
+    inputs:
+      province:
+        description: 'Mã tỉnh 2 ký tự (01 = Hà Nội)'
+        default: '01'
+      period:
+        description: 'Tháng YYYY-MM'
+        default: '2025-01'
+      product:
+        description: 'SENTINEL2 (2018-2025) hoặc LANDSAT (2004-2017)'
+        type: choice
+        options: [SENTINEL2, LANDSAT]
+        default: SENTINEL2
+concurrency:
+  group: boundary-check-${{ github.ref_name }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TASK_MODE: pilot
+      TASK_EE_PROJECT: vgis-ee-6
+      PROVINCE_CONFIG_JSON: ${{ vars.PROVINCE_CONFIG_JSON_6 }}
+      EE_SERVICE_ACCOUNT_JSON: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_6 }}
+      RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+      PROVINCE_RCLONE_REMOTE: gdrive
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            province_pipeline/requirements.txt
+      - run: python -m pip install -r province_pipeline/requirements.txt
+      - name: Prepare config and credentials
+        run: python -m task_pipeline.setup
+      - name: Prepare pinned province boundaries
+        run: python -m province_pipeline --config .province-local/config.json sync-boundaries
+      - name: Build one masked day TIFF
+        run: >-
+          python -u -m task_pipeline.boundary_check --province "${{ inputs.province }}"
+          --period "${{ inputs.period }}" --product "${{ inputs.product }}" --out boundary_check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boundary-check-preview
+          path: |
+            boundary_check/*.png
+            boundary_check/report.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: boundary-check-tiff
+          path: boundary_check/*.tif
+          retention-days: 3
+      - name: Clean credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/province-auth"
