@@ -1,0 +1,52 @@
+{
+  "project": "vgis-ee-6",
+  "province": "Hà Nội",
+  "product": "SENTINEL2",
+  "period": "2025-01",
+  "grid": {
+    "width": 4076,
+    "height": 4569,
+    "resolution_deg": 0.00017966305682390427
+  },
+  "inventory": {
+    "status": "AVAILABLE",
+    "count": 24,
+    "window_days": 0,
+    "collections": [
+      "COPERNICUS/S2_SR_HARMONIZED"
+    ]
+  },
+  "download": {
+    "strategy": "internal_chunks",
+    "requests": 54
+  },
+  "before_mask": {
+    "outside_pixels": 9573809,
+    "outside_pixels_with_data": 0
+  },
+  "preview_before": {
+    "png": "boundary_check/preview_before_mask.png",
+    "width": 1427,
+    "height": 1600,
+    "valid_pct": 48.58
+  },
+  "mask": {
+    "boundary_mask": true,
+    "inside_pixels": 9049435,
+    "outside_pixels_cleared": 0
+  },
+  "after_mask": {
+    "outside_pixels": 9573809,
+    "outside_pixels_with_data": 0
+  },
+  "preview_after": {
+    "png": "boundary_check/preview_after_mask.png",
+    "width": 1427,
+    "height": 1600,
+    "valid_pct": 48.58
+  },
+  "tiff": {
+    "name": "01_ha_noi_SENTINEL2_2025-01_province_v004tasks_35ab3e3c_sr6.tif",
+    "size_mb": 69.6
+  }
+}
