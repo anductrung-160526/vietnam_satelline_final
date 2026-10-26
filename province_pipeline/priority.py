@@ -5,7 +5,7 @@ import uuid
 from .common import audit, digest
 TERMINAL = {'REMOTE_READY', 'DELETED_REMOTE', 'ACKED', 'FAILED', 'BLOCKED_OUTPUT',
             'MISSING_SOURCE', 'INSUFFICIENT_QUALITY'}
-STAGES = {0: 'night_images', 1: 'indices_csv', 2: 'day_images'}
+STAGES = {0: 'night_images', 2: 'day_images', 1: 'indices_csv'}  # night -> day -> tables
 
 def fair_jobs(config, boundaries, metadata, priority, cursor):
     from .jobs import generate_v2

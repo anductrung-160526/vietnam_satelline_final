@@ -282,7 +282,7 @@ def sync(config,drive,root,control):
 def write_docs(root):
     import json
     policy=dict(source_policy={'night':'DMSP 2004-2013 annual; VIIRS 2014-2025 monthly',
-                              'day':'LANDSAT 2004-2017 monthly; SENTINEL2 2018-2025 monthly'},
+                              'day':'LANDSAT 2004-2014 monthly; SENTINEL2 2015-2025 monthly'},
         missing='CSV empty field = null; never substitute another source or period',
         calibration='NOT_CALIBRATED. No cross-sensor growth or invented calibrated values.',
         annual='VIIRS SOL_YEAR = arithmetic mean of 12 valid monthly province SOL values; not an official annual image; repeated on monthly rows, do not sum.',
