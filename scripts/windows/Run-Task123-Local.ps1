@@ -2,6 +2,7 @@ param(
     [ValidateSet("run", "derive", "migrate")][string]$Command = "run",
     [ValidateSet("pilot", "full")][string]$Mode = "full",
     [ValidateSet("1-11", "12-22", "23-33", "34-43", "44-53", "54-63")][string]$Range,
+    [ValidateSet("night", "day")][string]$Start = "night",
     [string]$Python = "python",
     [string]$Root = "E:\SatelliteData",
     [string]$Project,
@@ -22,6 +23,7 @@ if ($Command -eq "migrate") {
 } else {
     $arguments = @("-u", "-m", "task_pipeline.local", $Command, "--mode", $Mode, "--root", $Root)
     if ($Range) { $arguments += @("--range", $Range) }
+    if ($Command -eq "run") { $arguments += @("--start", $Start) }
     if ($Project) { $arguments += @("--project", $Project) }
     if ($Config) { $arguments += @("--config", $Config) }
     if ($EeKey) { $arguments += @("--ee-key", $EeKey) }
