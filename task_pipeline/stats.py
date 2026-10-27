@@ -2,7 +2,7 @@
 
 No image is downloaded: Earth Engine reduces every composite to a few numbers.
 
-    day   LANDSAT    2004-2025  30 m   QA_PIXEL mask (fill, dilated cloud, cirrus, cloud, cloud
+    day   LANDSAT    2004-2014  30 m   QA_PIXEL mask (fill, dilated cloud, cirrus, cloud, cloud
                                        shadow, snow) + saturation -> monthly median
           SENTINEL2  2015-2025  10 m   Cloud Score+ cs_cdf >= 0.60 (clouds AND shadows, whole
                                        archive; QA60 is empty Jan 2022 - Feb 2024) -> monthly median
@@ -44,7 +44,7 @@ from .methods import dates,VIIRS_A,VIIRS_B
 
 RANGES=((1,11),(12,22),(23,33),(34,43),(44,53),(54,63))
 SOURCES={  # product: (years, scale m)
-    'LANDSAT':(range(2004,2026),30),
+    'LANDSAT':(range(2004,2015),30),   # Landsat ONLY 2004-2014; Sentinel-2 from 2015
     'SENTINEL2':(range(2015,2026),10),
     'VIIRS':(range(2014,2026),500),
     'DMSP':(range(2004,2014),1000),

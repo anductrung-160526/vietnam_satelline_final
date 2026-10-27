@@ -13,8 +13,10 @@ HN=dict(ma_tinh='01',ten_tinh='Hà Nội')
 
 class StatsTests(unittest.TestCase):
     def test_periods_follow_the_data_plan(self):
-        self.assertEqual(len(stats.periods('LANDSAT')),22*12)
-        self.assertEqual(stats.periods('LANDSAT')[0],'2004-01');self.assertEqual(stats.periods('LANDSAT')[-1],'2025-12')
+        self.assertEqual(len(stats.periods('LANDSAT')),11*12)
+        self.assertEqual(stats.periods('LANDSAT')[0],'2004-01');self.assertEqual(stats.periods('LANDSAT')[-1],'2014-12')
+        # No year is covered by both day sources: Landsat 2004-2014, Sentinel-2 2015-2025.
+        self.assertFalse({p[:4] for p in stats.periods('LANDSAT')}&{p[:4] for p in stats.periods('SENTINEL2')})
         self.assertEqual(len(stats.periods('SENTINEL2')),11*12);self.assertEqual(stats.periods('SENTINEL2')[0],'2015-01')
         self.assertEqual(len(stats.periods('VIIRS')),12*12);self.assertEqual(stats.periods('VIIRS')[0],'2014-01');self.assertEqual(stats.periods('DMSP'),[str(y) for y in range(2004,2014)])
         self.assertEqual({p:stats.SOURCES[p][1] for p in stats.SOURCES},dict(LANDSAT=30,SENTINEL2=10,VIIRS=500,DMSP=1000))

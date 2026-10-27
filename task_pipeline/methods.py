@@ -1,6 +1,6 @@
 """Task 1/2/3 notebook science, adapted from communes to fixed provincial geometry.
 
-Historic extension: LANDSAT 2004-2017, S2 2018-2025; DMSP 2004-2013,
+Periods: LANDSAT 2004-2014, SENTINEL2 2015-2025 (never Landsat after 2014); DMSP 2004-2013,
 VIIRS 2014-2025. Provider fallbacks/window expansion are explicitly recorded.
 """
 import calendar
