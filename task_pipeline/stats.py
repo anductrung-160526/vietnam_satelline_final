@@ -285,6 +285,10 @@ def main():
     parser.add_argument('--workers',type=int,default=1,help='concurrent Earth Engine requests (default 1: gentlest on the noncommercial quota)')
     parser.add_argument('--merge-only',action='store_true',help='only rebuild the CSVs from finished lines')
     args=parser.parse_args();logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
+    # Piped into Tee-Object, stdout is block-buffered and progress lines would appear only
+    # much later; flush every line instead.
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
     if args.merge_only:
         print('rows (day, night):',merge(args.root));return
     c,root,control=local.prepare('full',None,args.root,args.project,args.range)
