@@ -2,6 +2,8 @@
 
     python -m task_pipeline.try_one --province 01 --product LANDSAT --period 2005-01 --project vngis-ee-2
     add --no-mask (keep the whole bounding rectangle) and/or --no-compress (plain TIFF)
+    add --scenes (Landsat/Sentinel-2): every source scene as delivered, one TIFF each,
+        no cloud/QA mask and no median composite, to inspect what the satellite recorded
 
 Writes under a separate test root (default E:\\SatelliteData_test), so the real
 E:\\SatelliteData state, receipts and files are never touched.
@@ -34,6 +36,42 @@ def uncompress(path):
     plain.replace(path)
 
 
+SCENE_BANDS={'modern':['SR_B2','SR_B3','SR_B4','SR_B5','SR_B6','SR_B7'],
+             'legacy':['SR_B1','SR_B2','SR_B3','SR_B4','SR_B5','SR_B7'],
+             'sentinel':['B2','B3','B4','B8','B11','B12']}
+
+
+def raw_scene(asset_id,bands):
+    """One delivered scene in reflectance units: no QA/cloud mask, no compositing."""
+    import ee
+    image=ee.Image(asset_id)
+    if 'COPERNICUS' in asset_id:
+        return image.select(SCENE_BANDS['sentinel'],bands).multiply(0.0001)
+    names=SCENE_BANDS['modern' if any(s in asset_id for s in ('LC08','LC09')) else 'legacy']
+    return image.select(names,bands).multiply(0.0000275).add(-0.2)
+
+
+def scenes(args,job,boundary,root,config,began):
+    import ee
+    out=Path(root)/'scenes'/f"{job['province']['ma_tinh']}_{job['product']}_{job['period']}";out.mkdir(parents=True,exist_ok=True)
+    geometry=ee.Geometry(boundary['geometry']);ids=job['inventory']['asset_ids']
+    print(f'{len(ids)} source scenes; writing each unmasked to {out}')
+    for asset_id in ids:
+        name=asset_id.split('/')[-1]
+        # Landsat ids end with <sensor>_<path><row>_<date>; S2 ids start with the date.
+        path=out/(name+'.tif')
+        if path.exists():print('  exists',path.name);continue
+        part=dict(job,prefix=name)
+        result=province_image.download(raw_scene(asset_id,job['bands']).clip(geometry),part,path,boundary,config,mask=False)
+        if args.no_compress:uncompress(path)
+        import rasterio
+        with rasterio.open(path) as ds:
+            valid=(ds.read(1)!=-9999).mean()*100
+        print(f"  {path.name}: {path.stat().st_size/1024**2:.1f} MB, {result['requests']} requests, {valid:.1f}% pixels with data")
+    print(f'DONE in {time.monotonic()-began:.0f} s')
+    print('Folder:',out)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--province',default='01',help='ma_tinh, e.g. 01 = Ha Noi')
@@ -43,7 +81,9 @@ def main():
     parser.add_argument('--root',default=r'E:\SatelliteData_test')
     parser.add_argument('--no-mask',action='store_true',help='keep pixels outside the province boundary')
     parser.add_argument('--no-compress',action='store_true',help='write an uncompressed TIFF')
+    parser.add_argument('--scenes',action='store_true',help='each raw source scene, unmasked, one TIFF each')
     args=parser.parse_args()
+    if args.scenes and args.product not in ('LANDSAT','SENTINEL2'):raise SystemExit('--scenes is for LANDSAT/SENTINEL2')
     # Each variant gets its own test folder, so variants never collide with each other.
     args.root+=('_nomask' if args.no_mask else '')+('_nocompress' if args.no_compress else '');logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     from .scope import provinces
@@ -82,6 +122,8 @@ def main():
     print('Source scenes:',record.get('count'),'status:',record['status'])
     if record['status']!='AVAILABLE':raise SystemExit('No usable source image for this period')
     job['inventory']=record
+    if args.scenes:
+        return scenes(args,job,boundary,root,c,began)
     stats={}
     download=province_image.download
     def counted(image,job,path,boundary,config,**k):
