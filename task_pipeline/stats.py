@@ -13,8 +13,12 @@ No image is downloaded: Earth Engine reduces every composite to a few numbers.
                                        lit (>= 1.5 nW) SOL/pixels, cloud-free obs, spikes capped
           DMSP       2004-2013  1 km   stable_lights (NOAA already removes fires, ephemeral
                                        lights and background); same statistics, lit >= threshold
-    Not applied (documented as PENDING): DMSP-VIIRS inter-calibration, DMSP inter-satellite
-    calibration and saturation correction.
+    Not applied by decision (hieu_chinh = CHUA_HIEU_CHINH): DMSP-VIIRS inter-calibration (no
+    external harmonised product, no VIIRS 2013), DMSP inter-satellite calibration (the newest
+    satellite of a year is used) and saturation correction. thay_doi_ntl therefore never
+    compares DMSP with VIIRS: 2014 has no previous-year value.
+    Land-cover columns (dt_nong_nghiep ... dt_nn_chuyen_doi) are created empty until the
+    classification with reference samples is done.
 
     python -m task_pipeline.stats --range 1-11 --project vngis-ee-2
 
@@ -193,7 +197,7 @@ def row(product,period,province,area_km2,values):
     base=dict(ma_tinh=province['ma_tinh'],ten_tinh=province['ten_tinh'],nam=int(period[:4]),
               thang=int(period[5:]) if len(period)==7 else 0,nguon_anh=product,period=period,
               scale_m=SOURCES[product][1],dien_tich_km2=round(area_km2,4),tile_scale=values.get('tile_scale'),
-              phuong_phap=METHOD[product],hieu_chinh='PENDING' if product in KINDS['night'] else None)
+              phuong_phap=METHOD[product],hieu_chinh='CHUA_HIEU_CHINH' if product in KINDS['night'] else None)
     if 'error' in values:return dict(base,status='FAILED',error=values['error'])
     if product in KINDS['day']:
         if not values.get('n_scenes'):return dict(base,status='NO_SCENES',n_scenes=0)
@@ -230,9 +234,12 @@ def load_done(path):
     return done
 
 
+# Codebook land-cover variables (ha / %); empty until the 5-class classification exists.
+LANDCOVER_COLUMNS=['dt_nong_nghiep','dt_do_thi','dt_rung','dt_mat_nuoc','dt_dat_khac',
+                   'ty_le_nong_nghiep','dt_nn_chuyen_doi']
 DAY_COLUMNS=['ma_tinh','ten_tinh','nam','thang','nguon_anh','period','scale_m','status','n_scenes',
              *[f'{i}_{s}' for i in INDICES for s in ('mean','stdDev')],'ty_le_pixel_hop_le','dien_tich_km2',
-             'phuong_phap','tile_scale']
+             'phuong_phap','tile_scale',*LANDCOVER_COLUMNS]
 NTL_COLUMNS=['ma_tinh','ten_tinh','nam','thang','nguon_anh','period','scale_m','status','n_images','source_collection',
               'sol_ntl','mat_do_ntl','thay_doi_ntl','rad_mean','rad_stdDev','rad_min','rad_max','pixel_count',
               'lit_sol','lit_pixels','lit_threshold','cf_cvg_mean','spikes_capped','dien_tich_km2',

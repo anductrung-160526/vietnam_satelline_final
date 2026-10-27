@@ -32,7 +32,7 @@ class StatsTests(unittest.TestCase):
         v={'n_images':1,'rad_sum':1000.,'rad_mean':2.,'rad_count':500,'lit_sol':900.,'lit_pixels':300,'source_collection':'VCMSLCFG','tile_scale':4}
         r=stats.row('VIIRS','2020-05',HN,500.,v)
         self.assertEqual((r['sol_ntl'],r['mat_do_ntl'],r['thang'],r['lit_threshold']),(1000.,2.,5,1.5))
-        self.assertEqual((r['phuong_phap'],r['hieu_chinh']),('VCMSLCFG_FILTERED_v1','PENDING'))
+        self.assertEqual((r['phuong_phap'],r['hieu_chinh']),('VCMSLCFG_FILTERED_v1','CHUA_HIEU_CHINH'))
         d=stats.row('DMSP','2010',HN,500.,dict(v,source_collection='F182010'))
         self.assertEqual((d['thang'],d['scale_m'],d['lit_threshold']),(0,1000,None))
         self.assertEqual(stats.row('VIIRS','2013-01',HN,1,{'n_images':0})['status'],'NO_IMAGES')
@@ -63,7 +63,11 @@ class StatsTests(unittest.TestCase):
             self.assertEqual(ntl['VIIRS','2020-06']['thay_doi_ntl'],'')
             self.assertAlmostEqual(float(ntl['DMSP','2010']['thay_doi_ntl']),-20.0)
             self.assertEqual(ntl['VIIRS','2020-05']['mat_do_ntl'],'1.5')
-            self.assertTrue((Path(tmp)/'VN_LandCover_Panel_2004_2025'/'data_processed'/'day_indices_monthly_ee.csv').exists())
+            with open(Path(tmp)/'VN_LandCover_Panel_2004_2025'/'data_processed'/'day_indices_monthly_ee.csv',encoding='utf-8-sig') as f:
+                day=list(csv.DictReader(f))
+            self.assertEqual(day[0]['status'],'NO_SCENES')
+            for column in stats.LANDCOVER_COLUMNS:self.assertEqual(day[0][column],'')
+            self.assertEqual(ntl['VIIRS','2020-05']['hieu_chinh'],'CHUA_HIEU_CHINH')
 
     def test_compute_escalates_tile_scale_then_retries_transient(self):
         ee=types.SimpleNamespace(EEException=type('EEException',(Exception,),{}))
