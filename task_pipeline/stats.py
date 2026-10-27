@@ -109,7 +109,9 @@ def day_request(product,period,geometry,tile_scale):
     # graph is always valid; the n_scenes==0 branch below then reports NO_SCENES.
     from province_pipeline.sources import BANDS
     empty=ee.Image.constant([0]*len(BANDS)).rename(BANDS).toFloat().updateMask(0)
-    image=indices(clean.merge(ee.ImageCollection([empty])).median()).select(list(INDICES))
+    # Every image is cast to float32 first: Earth Engine only merges collections whose bands
+    # have identical types, and Landsat/Sentinel-2 scaling gives varying numeric ranges.
+    image=indices(clean.map(lambda i:i.toFloat()).merge(ee.ImageCollection([empty])).median()).select(list(INDICES))
     reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(),sharedInputs=True)
     stats=image.reduceRegion(reducer,geometry=geometry,scale=scale,crs='EPSG:4326',maxPixels=1e13,tileScale=tile_scale)
     # Share of the province with a valid (cloud-free) composite pixel, area-weighted.
@@ -130,12 +132,12 @@ def night_request(product,period,geometry,tile_scale,dmsp_threshold):
         col=ee.ImageCollection(ee.Algorithms.If(a.size().gt(0),a,b))
         source=ee.String(ee.Algorithms.If(a.size().gt(0),'VCMSLCFG',ee.Algorithms.If(b.size().gt(0),'VCMCFG','none')))
         empty=ee.Image.constant([0,0]).rename(['avg_rad','cf_cvg']).toFloat().updateMask(0)
-        image=col.select(['avg_rad','cf_cvg']).merge(ee.ImageCollection([empty])).mean()
+        image=col.select(['avg_rad','cf_cvg']).map(lambda i:i.toFloat()).merge(ee.ImageCollection([empty])).mean()
         # Same filter as derive.viirs_filtered (the image pipeline), on the server:
         # no cloud-free observation -> NoData; negative -> 0; a spike (fire, boat, flare)
         # above max(3 x the pixel's annual median, median + 5) -> that annual median.
         def clean(img):
-            return img.select('avg_rad').max(0).updateMask(img.select('cf_cvg').gt(0))
+            return img.select('avg_rad').max(0).updateMask(img.select('cf_cvg').gt(0)).toFloat()
         year=period[:4]
         annual=ee.ImageCollection(VIIRS_A).filterBounds(geometry).filterDate(f'{year}-01-01',f'{int(year)+1}-01-01')
         median=annual.map(clean).merge(ee.ImageCollection([empty.select('avg_rad')])).median()
