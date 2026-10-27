@@ -282,7 +282,7 @@ def main():
     parser.add_argument('--project');parser.add_argument('--ee-key')
     parser.add_argument('--root',default=r'E:\SatelliteData')
     parser.add_argument('--kinds',default='night,day',help='night,day (order = run order)')
-    parser.add_argument('--workers',type=int,default=8,help='concurrent Earth Engine requests')
+    parser.add_argument('--workers',type=int,default=1,help='concurrent Earth Engine requests (default 1: gentlest on the noncommercial quota)')
     parser.add_argument('--merge-only',action='store_true',help='only rebuild the CSVs from finished lines')
     args=parser.parse_args();logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     if args.merge_only:
