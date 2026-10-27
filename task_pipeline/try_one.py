@@ -4,6 +4,9 @@
     add --no-mask (keep the whole bounding rectangle) and/or --no-compress (plain TIFF)
     add --scenes (Landsat/Sentinel-2): every source scene as delivered, one TIFF each,
         no cloud/QA mask and no median composite, to inspect what the satellite recorded
+    add --scale 50 --resample-to 20 [--compare]: fetch at a coarser pixel size, resample it
+        onto the finer grid (bilinear) and write viewable true-colour TIFFs; --compare also
+        fetches the native-resolution image for a side-by-side quality check
 
 Writes under a separate test root (default E:\\SatelliteData_test), so the real
 E:\\SatelliteData state, receipts and files are never touched.
@@ -72,6 +75,92 @@ def scenes(args,job,boundary,root,config,began):
     print('Folder:',out)
 
 
+def fetch(c,root,control,job,boundary,mask=True):
+    """Inventory + export of one job; returns (path, seconds, Earth Engine requests)."""
+    import ee
+    from .methods import inventory
+    began=time.monotonic()
+    if not local.prior(c,root,control,job):
+        record=inventory(job,ee.Geometry(boundary['geometry']))
+        print(f"  {job['scale']} m: {record.get('count')} source scenes, {record['status']}")
+        if record['status']!='AVAILABLE':raise SystemExit('No usable source image for this period')
+        job['inventory']=record
+        stats={};download=province_image.download
+        def counted(image,job,path,boundary,config,**k):
+            result=download(image,job,path,boundary,config,mask=mask,**k);stats.update(result);return result
+        province_image.download=counted
+        try:
+            local.export(c,root,control,job,boundary)
+        finally:
+            province_image.download=download
+        requests=stats.get('requests')
+    else:
+        requests='already fetched'
+    receipt=local.prior(c,root,control,job)
+    return local.resolve(root,control,receipt['relative_path']),time.monotonic()-began,requests
+
+
+def resample(source,target,job):
+    """Bilinear resampling of every band onto the finer grid of `job`; NoData stays NoData."""
+    import numpy as np
+    import rasterio
+    from affine import Affine
+    from rasterio.warp import reproject,Resampling
+    t=job['tile']
+    with rasterio.open(source) as src:
+        data=np.full((src.count,t['height'],t['width']),-9999,dtype='int16')
+        for b in range(src.count):
+            reproject(src.read(b+1),data[b],src_transform=src.transform,src_crs=src.crs,src_nodata=-9999,
+                      dst_transform=Affine(*t['transform']),dst_crs=src.crs,dst_nodata=-9999,
+                      resampling=Resampling.bilinear)
+        profile=dict(driver='GTiff',width=t['width'],height=t['height'],count=src.count,dtype='int16',
+                     crs=src.crs,transform=Affine(*t['transform']),nodata=-9999,compress='DEFLATE',
+                     predictor=2,tiled=True,BIGTIFF='IF_SAFER')
+        with rasterio.open(target,'w',**profile) as dst:
+            dst.write(data)
+            for b in range(src.count):dst.set_band_description(b+1,src.descriptions[b])
+            dst.update_tags(**src.tags(),RESAMPLED_FROM=str(source.name),RESAMPLING='bilinear')
+
+
+def truecolor(source,target):
+    """Plain (non-geo) 8-bit RGB TIFF with ONE fixed stretch, so variants compare fairly."""
+    import numpy as np
+    import rasterio
+    with rasterio.open(source) as src:
+        names=list(src.descriptions)
+        rgb=src.read([names.index(n)+1 for n in ('RED','GREEN','BLUE')]).astype('float32')
+    bad=(rgb==-9999).any(0)
+    # Reflectance 0 .. 0.3 (stored x10000) -> 0 .. 255, the usual true-colour range for land.
+    out=np.clip(rgb/3000*255,0,255).astype('uint8');out[:,bad]=0
+    import warnings
+    warnings.filterwarnings('ignore',category=rasterio.errors.NotGeoreferencedWarning)
+    with rasterio.open(target,'w',driver='GTiff',width=out.shape[2],height=out.shape[1],count=3,
+                       dtype='uint8',photometric='RGB',PROFILE='BASELINE') as dst:
+        dst.write(out)
+
+
+def coarse(args,c,root,control,job,make_job,boundary):
+    """Fetch at --scale, optionally resample to --resample-to, write viewable TIFFs."""
+    out=Path(root)/'compare'/f"{job['province']['ma_tinh']}_{job['product']}_{job['period']}";out.mkdir(parents=True,exist_ok=True)
+    base=f"{job['province']['ma_tinh']}_{job['province']['slug']}_{job['product']}_{job['period']}"
+    path,seconds,requests=fetch(c,root,control,job,boundary)
+    print(f"Fetched {args.scale} m in {seconds:.0f} s ({requests} requests): {path}")
+    truecolor(path,out/f'{base}_{args.scale}m_truecolor.tif')
+    if args.resample_to:
+        fine=make_job(args.resample_to)
+        geo=out/f'{base}_{args.scale}m_resampled_{args.resample_to}m.tif'
+        resample(path,geo,fine)
+        truecolor(geo,out/f'{base}_{args.scale}m_resampled_{args.resample_to}m_truecolor.tif')
+        print(f'Resampled {args.scale} m -> {args.resample_to} m (bilinear): {geo}')
+    if args.compare:
+        native=make_job()
+        path,seconds,requests=fetch(c,root,control,native,boundary)
+        print(f"Fetched native {native['scale']} m in {seconds:.0f} s ({requests} requests): {path}")
+        truecolor(path,out/f"{base}_{native['scale']}m_native_truecolor.tif")
+    print('Viewable true-colour TIFFs (same fixed colour stretch):',out)
+    for f in sorted(out.glob('*_truecolor.tif')):print('  ',f.name)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--province',default='01',help='ma_tinh, e.g. 01 = Ha Noi')
@@ -82,10 +171,15 @@ def main():
     parser.add_argument('--no-mask',action='store_true',help='keep pixels outside the province boundary')
     parser.add_argument('--no-compress',action='store_true',help='write an uncompressed TIFF')
     parser.add_argument('--scenes',action='store_true',help='each raw source scene, unmasked, one TIFF each')
+    parser.add_argument('--scale',type=int,help='fetch at this pixel size in metres instead of the native one')
+    parser.add_argument('--resample-to',type=int,help='resample the fetched image to this pixel size (bilinear)')
+    parser.add_argument('--compare',action='store_true',help='also fetch the native-resolution image')
     args=parser.parse_args()
+    if (args.resample_to or args.compare) and not args.scale:raise SystemExit('--resample-to/--compare need --scale')
+    if args.scale and args.scenes:raise SystemExit('--scale cannot be combined with --scenes')
     if args.scenes and args.product not in ('LANDSAT','SENTINEL2'):raise SystemExit('--scenes is for LANDSAT/SENTINEL2')
     # Each variant gets its own test folder, so variants never collide with each other.
-    args.root+=('_nomask' if args.no_mask else '')+('_nocompress' if args.no_compress else '');logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
+    args.root+=('_nomask' if args.no_mask else '')+('_nocompress' if args.no_compress else '')+(f'_s{args.scale}' if args.scale else '');logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     from .scope import provinces
     province=next((p for p in provinces() if p['ma_tinh']==args.province),None)
     if province is None:raise SystemExit(f'Unknown province code {args.province}')
@@ -102,9 +196,21 @@ def main():
     c=dict(c,province_codes=[province['ma_tinh']],
            local_output_limit_bytes=max(0,(shutil.disk_usage(root).free-2*1024**3)//2))
     kind=raw_jobs.DAY if args.product in ('LANDSAT','SENTINEL2') else raw_jobs.NIGHT
-    job=next((j for j in raw_jobs.jobs(c,boundaries,metadata,kind,province)
-              if j['product']==args.product and j['period']==args.period),None)
-    if job is None:raise SystemExit(f'No {args.product} job for period {args.period}')
+    def make_job(scale=None):
+        from province_pipeline.sources import SOURCES
+        native=SOURCES[args.product]['scale']
+        SOURCES[args.product]['scale']=scale or native
+        try:
+            found=next((j for j in raw_jobs.jobs(c,boundaries,metadata,kind,province)
+                        if j['product']==args.product and j['period']==args.period),None)
+        finally:
+            SOURCES[args.product]['scale']=native
+        if found is None:raise SystemExit(f'No {args.product} job for period {args.period}')
+        if scale and scale!=native:found['prefix']+=f'_{scale}m'
+        return found
+    job=make_job(args.scale)
+    if args.scale:
+        return coarse(args,c,root,control,job,make_job,boundaries[province['ma_tinh']])
     t=job['tile']
     print(f"Grid {t['width']} x {t['height']} px, {len(job['bands'])} bands {job['dtype']}, "
           f"window {job['chunk_pixels']} px, scale {job['scale']} m")
