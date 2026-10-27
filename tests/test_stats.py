@@ -16,7 +16,7 @@ class StatsTests(unittest.TestCase):
         self.assertEqual(len(stats.periods('LANDSAT')),22*12)
         self.assertEqual(stats.periods('LANDSAT')[0],'2004-01');self.assertEqual(stats.periods('LANDSAT')[-1],'2025-12')
         self.assertEqual(len(stats.periods('SENTINEL2')),11*12);self.assertEqual(stats.periods('SENTINEL2')[0],'2015-01')
-        self.assertEqual(len(stats.periods('VIIRS')),13*12);self.assertEqual(stats.periods('DMSP'),[str(y) for y in range(2004,2014)])
+        self.assertEqual(len(stats.periods('VIIRS')),12*12);self.assertEqual(stats.periods('VIIRS')[0],'2014-01');self.assertEqual(stats.periods('DMSP'),[str(y) for y in range(2004,2014)])
         self.assertEqual({p:stats.SOURCES[p][1] for p in stats.SOURCES},dict(LANDSAT=30,SENTINEL2=10,VIIRS=500,DMSP=1000))
 
     def test_day_row(self):
@@ -32,6 +32,7 @@ class StatsTests(unittest.TestCase):
         v={'n_images':1,'rad_sum':1000.,'rad_mean':2.,'rad_count':500,'lit_sol':900.,'lit_pixels':300,'source_collection':'VCMSLCFG','tile_scale':4}
         r=stats.row('VIIRS','2020-05',HN,500.,v)
         self.assertEqual((r['sol_ntl'],r['mat_do_ntl'],r['thang'],r['lit_threshold']),(1000.,2.,5,1.5))
+        self.assertEqual((r['phuong_phap'],r['hieu_chinh']),('VCMSLCFG_FILTERED_v1','PENDING'))
         d=stats.row('DMSP','2010',HN,500.,dict(v,source_collection='F182010'))
         self.assertEqual((d['thang'],d['scale_m'],d['lit_threshold']),(0,1000,None))
         self.assertEqual(stats.row('VIIRS','2013-01',HN,1,{'n_images':0})['status'],'NO_IMAGES')
@@ -39,9 +40,12 @@ class StatsTests(unittest.TestCase):
     def test_resume_ignores_torn_lines_and_retries_failures(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/'x.jsonl'
-            ok=dict(ma_tinh='01',nguon_anh='VIIRS',period='2020-01',status='OK')
-            bad=dict(ma_tinh='01',nguon_anh='VIIRS',period='2020-02',status='FAILED')
-            p.write_text(json.dumps(ok)+'\n'+json.dumps(bad)+'\n{"ma_tinh": "01", "ngu',encoding='utf-8')
+            m=stats.METHOD['VIIRS']
+            ok=dict(ma_tinh='01',nguon_anh='VIIRS',period='2020-01',status='OK',phuong_phap=m)
+            bad=dict(ma_tinh='01',nguon_anh='VIIRS',period='2020-02',status='FAILED',phuong_phap=m)
+            old=dict(ma_tinh='01',nguon_anh='VIIRS',period='2020-03',status='OK',phuong_phap='older')
+            gone=dict(ma_tinh='01',nguon_anh='VIIRS',period='2013-05',status='OK',phuong_phap=m)
+            p.write_text(''.join(json.dumps(r)+'\n' for r in (ok,bad,old,gone))+'{"ma_tinh": "01", "ngu',encoding='utf-8')
             self.assertEqual(set(stats.load_done(p)),{('01','VIIRS','2020-01')})
 
     def test_merge_builds_csvs_and_year_on_year_change(self):

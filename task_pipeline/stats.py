@@ -2,11 +2,19 @@
 
 No image is downloaded: Earth Engine reduces every composite to a few numbers.
 
-    day   LANDSAT    2004-2025  30 m   cloud/QA-masked monthly median -> NDVI, NDBI, MNDWI, BSI
-          SENTINEL2  2015-2025  10 m   (mean, stdDev, valid pixel share, scene count)
-    night VIIRS      2013-2025  500 m  monthly: SOL (sum of radiance), mean, stdDev, min, max,
-                                       count, lit (>= 1.5 nW) SOL and pixels, cloud-free obs.
-          DMSP       2004-2013  1 km   annual stable_lights: same statistics, lit >= threshold
+    day   LANDSAT    2004-2025  30 m   QA_PIXEL mask (fill, dilated cloud, cirrus, cloud, cloud
+                                       shadow, snow) + saturation -> monthly median
+          SENTINEL2  2015-2025  10 m   Cloud Score+ cs_cdf >= 0.60 (clouds AND shadows, whole
+                                       archive; QA60 is empty Jan 2022 - Feb 2024) -> monthly median
+                                       -> NDVI, NDBI, MNDWI, BSI mean/stdDev, valid share, scenes
+    night VIIRS      2014-2025  500 m  same filter as derive.viirs_filtered: cf_cvg=0 -> NoData,
+                                       negative -> 0, spike > max(3 x annual median, median+5)
+                                       -> annual median; then SOL, mean, stdDev, min, max, count,
+                                       lit (>= 1.5 nW) SOL/pixels, cloud-free obs, spikes capped
+          DMSP       2004-2013  1 km   stable_lights (NOAA already removes fires, ephemeral
+                                       lights and background); same statistics, lit >= threshold
+    Not applied (documented as PENDING): DMSP-VIIRS inter-calibration, DMSP inter-satellite
+    calibration and saturation correction.
 
     python -m task_pipeline.stats --range 1-11 --project vngis-ee-2
 
@@ -34,12 +42,17 @@ RANGES=((1,11),(12,22),(23,33),(34,43),(44,53),(54,63))
 SOURCES={  # product: (years, scale m)
     'LANDSAT':(range(2004,2026),30),
     'SENTINEL2':(range(2015,2026),10),
-    'VIIRS':(range(2013,2026),500),
+    'VIIRS':(range(2014,2026),500),
     'DMSP':(range(2004,2014),1000),
 }
 KINDS={'day':('LANDSAT','SENTINEL2'),'night':('VIIRS','DMSP')}
 INDICES=('NDVI','NDBI','MNDWI','BSI')
 VIIRS_LIT=1.5
+# Recorded on every line; lines computed with another method version are recomputed.
+METHOD={'LANDSAT':'L2_QA_PIXEL_v1','SENTINEL2':'CLOUDSCOREPLUS_0.60_v1',
+        'VIIRS':'VCMSLCFG_FILTERED_v1','DMSP':'STABLE_LIGHTS_v1'}
+CS_PLUS='GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED'
+CS_THRESHOLD=0.60
 TILE_SCALES=(4,8,16)
 HEAVY=('timed out','memory limit','too many pixels','computation timed out','capacity exceeded')
 TRANSIENT=('429','too many','rate limit','quota','503','502','500','unavailable','deadline',
@@ -59,11 +72,17 @@ def landsat(image):
 
 
 def sentinel(image):
-    """Notebook Task 1 mask: QA60 opaque cloud and cirrus bits, SR/TOA scaled to reflectance."""
+    """Cloud Score+ (clouds and their shadows), scaled to reflectance.
+
+    The notebook's QA60 mask misses shadows, and QA60 is empty from Jan 2022 to Feb 2024,
+    so it would leave those months unmasked. Cloud Score+ covers the whole archive.
+    """
     from province_pipeline.sources import BANDS
-    qa=image.select('QA60')
-    mask=qa.bitwiseAnd(1<<10).eq(0).And(qa.bitwiseAnd(1<<11).eq(0))
-    return image.updateMask(mask).divide(10000).select(['B2','B3','B4','B8','B11','B12'],BANDS)
+    import ee
+    # A scene without a Cloud Score+ match is dropped (fully masked), never left unmasked.
+    clear=ee.Image(ee.Algorithms.If(image.bandNames().contains('cs_cdf'),
+                                    image.select('cs_cdf').gte(CS_THRESHOLD),ee.Image(0)))
+    return image.updateMask(clear).select(['B2','B3','B4','B8','B11','B12'],BANDS).divide(10000)
 
 
 def day_request(product,period,geometry,tile_scale):
@@ -80,7 +99,7 @@ def day_request(product,period,geometry,tile_scale):
     else:
         cid='COPERNICUS/S2_SR_HARMONIZED' if int(period[:4])>=2019 else 'COPERNICUS/S2_HARMONIZED'
         col=ee.ImageCollection(cid).filterBounds(geometry).filterDate(start,end)
-        clean=col.map(sentinel)
+        clean=col.linkCollection(ee.ImageCollection(CS_PLUS),['cs_cdf']).map(sentinel)
     _,scale=SOURCES[product]
     # A fully masked placeholder keeps the band names when a month has no scene, so the
     # graph is always valid; the n_scenes==0 branch below then reports NO_SCENES.
@@ -108,7 +127,18 @@ def night_request(product,period,geometry,tile_scale,dmsp_threshold):
         source=ee.String(ee.Algorithms.If(a.size().gt(0),'VCMSLCFG',ee.Algorithms.If(b.size().gt(0),'VCMCFG','none')))
         empty=ee.Image.constant([0,0]).rename(['avg_rad','cf_cvg']).toFloat().updateMask(0)
         image=col.select(['avg_rad','cf_cvg']).merge(ee.ImageCollection([empty])).mean()
-        rad=image.select('avg_rad');threshold=VIIRS_LIT
+        # Same filter as derive.viirs_filtered (the image pipeline), on the server:
+        # no cloud-free observation -> NoData; negative -> 0; a spike (fire, boat, flare)
+        # above max(3 x the pixel's annual median, median + 5) -> that annual median.
+        def clean(img):
+            return img.select('avg_rad').max(0).updateMask(img.select('cf_cvg').gt(0))
+        year=period[:4]
+        annual=ee.ImageCollection(VIIRS_A).filterBounds(geometry).filterDate(f'{year}-01-01',f'{int(year)+1}-01-01')
+        median=annual.map(clean).merge(ee.ImageCollection([empty.select('avg_rad')])).median()
+        rad=clean(image)
+        spike=rad.gt(median.multiply(3).max(median.add(5)))
+        rad=rad.where(spike,median)
+        threshold=VIIRS_LIT
     else:
         col=ee.ImageCollection('NOAA/DMSP-OLS/NIGHTTIME_LIGHTS').filterBounds(geometry).filterDate(start,end)
         # Several satellites can cover one year: the newest one, as in the image pipeline.
@@ -128,6 +158,7 @@ def night_request(product,period,geometry,tile_scale,dmsp_threshold):
                         .reduceRegion(ee.Reducer.sum(),**kw))
     if product=='VIIRS':
         stats=stats.combine(image.select('cf_cvg').rename('cf_cvg_mean').reduceRegion(ee.Reducer.mean(),**kw))
+        stats=stats.combine(spike.rename('spikes_capped').reduceRegion(ee.Reducer.sum(),**kw))
     return ee.Dictionary(ee.Algorithms.If(col.size().gt(0),
         stats.set('n_images',col.size()).set('source_collection',source),
         ee.Dictionary({'n_images':0})))
@@ -161,7 +192,8 @@ def compute(product,period,province,geometry,dmsp_threshold,attempts=6):
 def row(product,period,province,area_km2,values):
     base=dict(ma_tinh=province['ma_tinh'],ten_tinh=province['ten_tinh'],nam=int(period[:4]),
               thang=int(period[5:]) if len(period)==7 else 0,nguon_anh=product,period=period,
-              scale_m=SOURCES[product][1],dien_tich_km2=round(area_km2,4),tile_scale=values.get('tile_scale'))
+              scale_m=SOURCES[product][1],dien_tich_km2=round(area_km2,4),tile_scale=values.get('tile_scale'),
+              phuong_phap=METHOD[product],hieu_chinh='PENDING' if product in KINDS['night'] else None)
     if 'error' in values:return dict(base,status='FAILED',error=values['error'])
     if product in KINDS['day']:
         if not values.get('n_scenes'):return dict(base,status='NO_SCENES',n_scenes=0)
@@ -179,25 +211,32 @@ def row(product,period,province,area_km2,values):
                 rad_mean=values.get('rad_mean'),rad_stdDev=values.get('rad_stdDev'),rad_min=values.get('rad_min'),
                 rad_max=values.get('rad_max'),pixel_count=values.get('rad_count'),
                 lit_sol=values.get('lit_sol'),lit_pixels=values.get('lit_pixels'),
-                lit_threshold=VIIRS_LIT if product=='VIIRS' else None,cf_cvg_mean=values.get('cf_cvg_mean'))
+                lit_threshold=VIIRS_LIT if product=='VIIRS' else None,cf_cvg_mean=values.get('cf_cvg_mean'),
+                spikes_capped=values.get('spikes_capped'))
 
 
 def load_done(path):
-    """Keys already computed (FAILED rows are retried). Torn last lines are ignored."""
+    """Keys already computed with the current method (FAILED rows, lines of an older method
+    and periods no longer in scope are recomputed or dropped). Torn last lines are ignored."""
     done={}
     if path.exists():
         for line in path.read_text(encoding='utf-8').splitlines():
             try:rec=json.loads(line)
             except ValueError:continue
-            if rec.get('status')!='FAILED':done[(rec['ma_tinh'],rec['nguon_anh'],rec['period'])]=rec
+            product=rec.get('nguon_anh')
+            if (rec.get('status')!='FAILED' and product in METHOD and rec.get('phuong_phap')==METHOD[product]
+                    and rec.get('period') in periods(product)):
+                done[(rec['ma_tinh'],product,rec['period'])]=rec
     return done
 
 
 DAY_COLUMNS=['ma_tinh','ten_tinh','nam','thang','nguon_anh','period','scale_m','status','n_scenes',
-             *[f'{i}_{s}' for i in INDICES for s in ('mean','stdDev')],'ty_le_pixel_hop_le','dien_tich_km2','tile_scale']
+             *[f'{i}_{s}' for i in INDICES for s in ('mean','stdDev')],'ty_le_pixel_hop_le','dien_tich_km2',
+             'phuong_phap','tile_scale']
 NTL_COLUMNS=['ma_tinh','ten_tinh','nam','thang','nguon_anh','period','scale_m','status','n_images','source_collection',
               'sol_ntl','mat_do_ntl','thay_doi_ntl','rad_mean','rad_stdDev','rad_min','rad_max','pixel_count',
-              'lit_sol','lit_pixels','lit_threshold','cf_cvg_mean','dien_tich_km2','tile_scale']
+              'lit_sol','lit_pixels','lit_threshold','cf_cvg_mean','spikes_capped','dien_tich_km2',
+              'phuong_phap','hieu_chinh','tile_scale']
 
 
 def merge(root):
