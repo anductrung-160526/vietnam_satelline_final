@@ -5,7 +5,7 @@
     add --scenes (Landsat/Sentinel-2): every source scene as delivered, one TIFF each,
         no cloud/QA mask and no median composite, to inspect what the satellite recorded
     add --scale 50 --resample-to 20 [--compare]: fetch at a coarser pixel size, resample it
-        onto the finer grid (bilinear) and write viewable true-colour TIFFs; --compare also
+        onto the finer grid (--resampling nearest|bilinear, default nearest) and write viewable true-colour TIFFs; --compare also
         fetches the native-resolution image for a side-by-side quality check
 
 Writes under a separate test root (default E:\\SatelliteData_test), so the real
@@ -100,8 +100,8 @@ def fetch(c,root,control,job,boundary,mask=True):
     return local.resolve(root,control,receipt['relative_path']),time.monotonic()-began,requests
 
 
-def resample(source,target,job):
-    """Bilinear resampling of every band onto the finer grid of `job`; NoData stays NoData."""
+def resample(source,target,job,method='nearest'):
+    """Resample every band onto the finer grid of `job` (nearest or bilinear); NoData stays NoData."""
     import numpy as np
     import rasterio
     from affine import Affine
@@ -112,14 +112,14 @@ def resample(source,target,job):
         for b in range(src.count):
             reproject(src.read(b+1),data[b],src_transform=src.transform,src_crs=src.crs,src_nodata=-9999,
                       dst_transform=Affine(*t['transform']),dst_crs=src.crs,dst_nodata=-9999,
-                      resampling=Resampling.bilinear)
+                      resampling=getattr(Resampling,method))
         profile=dict(driver='GTiff',width=t['width'],height=t['height'],count=src.count,dtype='int16',
                      crs=src.crs,transform=Affine(*t['transform']),nodata=-9999,compress='DEFLATE',
                      predictor=2,tiled=True,BIGTIFF='IF_SAFER')
         with rasterio.open(target,'w',**profile) as dst:
             dst.write(data)
             for b in range(src.count):dst.set_band_description(b+1,src.descriptions[b])
-            dst.update_tags(**src.tags(),RESAMPLED_FROM=str(source.name),RESAMPLING='bilinear')
+            dst.update_tags(**src.tags(),RESAMPLED_FROM=str(source.name),RESAMPLING=method)
 
 
 def truecolor(source,target):
@@ -148,10 +148,11 @@ def coarse(args,c,root,control,job,make_job,boundary):
     truecolor(path,out/f'{base}_{args.scale}m_truecolor.tif')
     if args.resample_to:
         fine=make_job(args.resample_to)
-        geo=out/f'{base}_{args.scale}m_resampled_{args.resample_to}m.tif'
-        resample(path,geo,fine)
-        truecolor(geo,out/f'{base}_{args.scale}m_resampled_{args.resample_to}m_truecolor.tif')
-        print(f'Resampled {args.scale} m -> {args.resample_to} m (bilinear): {geo}')
+        name=f'{base}_{args.scale}m_resampled_{args.resample_to}m_{args.resampling}'
+        geo=out/f'{name}.tif'
+        resample(path,geo,fine,args.resampling)
+        truecolor(geo,out/f'{name}_truecolor.tif')
+        print(f'Resampled {args.scale} m -> {args.resample_to} m ({args.resampling}): {geo}')
     if args.compare:
         native=make_job()
         path,seconds,requests=fetch(c,root,control,native,boundary)
@@ -172,7 +173,9 @@ def main():
     parser.add_argument('--no-compress',action='store_true',help='write an uncompressed TIFF')
     parser.add_argument('--scenes',action='store_true',help='each raw source scene, unmasked, one TIFF each')
     parser.add_argument('--scale',type=int,help='fetch at this pixel size in metres instead of the native one')
-    parser.add_argument('--resample-to',type=int,help='resample the fetched image to this pixel size (bilinear)')
+    parser.add_argument('--resample-to',type=int,help='resample the fetched image to this pixel size')
+    parser.add_argument('--resampling',choices=['nearest','bilinear'],default='nearest',
+                        help='resampling method for --resample-to (default: nearest neighbour)')
     parser.add_argument('--compare',action='store_true',help='also fetch the native-resolution image')
     args=parser.parse_args()
     if (args.resample_to or args.compare) and not args.scale:raise SystemExit('--resample-to/--compare need --scale')
