@@ -143,3 +143,22 @@ class NationalTests(unittest.TestCase):
             with rasterio.open(vrt) as ds:data=ds.read(1)
             expected=1000*np.arange(g['height'])[:,None]+np.arange(g['width'])[None,:]
             np.testing.assert_array_equal(data,expected)
+
+    def test_six_shards_share_one_year_and_the_last_writes_the_vrt(self):
+        b={'01':province(105,20,105+20*RES,20+12*RES)}
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[];exact,_=national.national_geometry(b)
+            g,_,_=national.plan('LANDSAT',exact.bounds);origin=(g['transform'][2],g['transform'][5])
+            fetch=fake_fetch(origin,calls)
+            folder=Path(tmp)/'VN_LandCover_Panel_2004_2025'/'raw_data'/'DAY'/'LANDSAT'/'VN_LANDSAT_2010'
+            with patch.object(national,'tile_pixels',lambda product:4),patch.object(national,'compress',lambda path,dtype:None):
+                for i in range(6):
+                    self.assertFalse((folder/'VN_LANDSAT_2010.vrt').exists())
+                    self.assertTrue(national.run_year('LANDSAT',2010,tmp,b,1,fetch=fetch,image=object(),
+                                                      pause_seconds=0,max_idle_rounds=2,shard=(i,6)))
+            self.assertEqual(len(calls),len({(w,h,i) for i,(_,w,h) in enumerate(calls)}))
+            files=list((folder/'tiles').glob('*.tif'))
+            self.assertEqual(len(files),len(calls))          # every tile fetched exactly once
+            with rasterio.open(folder/'VN_LANDSAT_2010.vrt') as ds:data=ds.read(1)
+            expected=1000*np.arange(g['height'])[:,None]+np.arange(g['width'])[None,:]
+            np.testing.assert_array_equal(data,expected)

@@ -223,7 +223,7 @@ def write_vrt(product,year,folder,g,resolution,tiles):
     return target
 
 
-def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_seconds=300,max_idle_rounds=6):
+def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_seconds=300,max_idle_rounds=6,shard=(0,1)):
     from shapely.geometry import box
     from shapely.prepared import prep
     from province_pipeline.sources import NTL_PACKAGE,DAY_PACKAGE
@@ -235,11 +235,14 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     exact,light=national_geometry(boundaries)
     g,resolution,tiles=plan(product,exact.bounds)
     inside=prep(exact)
-    todo=[t for t in tiles if inside.intersects(box(*tile_bounds(g,resolution,t[1],t[0],t[2],t[3])))]
+    every=[t for t in tiles if inside.intersects(box(*tile_bounds(g,resolution,t[1],t[0],t[2],t[3])))]
+    # --shard i/n: this process takes every n-th tile, so n projects share one year.
+    index,count=shard
+    todo=every[index::count]
     if image is None:
         import ee
         image=year_image(product,year,ee.Geometry(json.loads(json.dumps(light.__geo_interface__))))
-    state=folder/'tiles.json'
+    state=folder/('tiles.json' if count==1 else f'tiles_{index+1}of{count}.json')
     saved=json.loads(state.read_text()) if state.exists() else {}
     # files: every tile file on disk (feeds the VRT); complete: top-level tiles fully done
     # (a split tile counts only when ALL its sub-tiles arrived, so nothing is left out).
@@ -247,7 +250,8 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     complete={k for k in saved.get('complete',[]) if f'r{int(k.split("_")[0]):06d}_c{int(k.split("_")[1]):06d}' in
               {n[:15] for n in done}}
     print(f'{product} {year}: grid {g["width"]} x {g["height"]} px at {p["scale"]} m, '
-          f'{len(todo)} tiles over Vietnam ({len(tiles)-len(todo)} empty skipped), tile {tile_pixels(product)} px')
+          f'{len(every)} tiles over Vietnam ({len(tiles)-len(every)} empty skipped), tile {tile_pixels(product)} px'
+          +(f'; shard {index+1}/{count} takes {len(todo)}' if count>1 else ''))
     lock=threading.Lock()
     def save():
         tmp=state.with_suffix('.tmp')
@@ -293,7 +297,19 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     if STOP.is_set():
         print(f'  {product} {year}: stopped; run the same command again to continue.')
         return False
-    vrt=write_vrt(product,year,folder,g,resolution,done)
+    # The national VRT needs every shard: union of all state files of this year.
+    files=set();finished_tiles=set()
+    for path in folder.glob('tiles*.json'):
+        try:other=json.loads(path.read_text())
+        except ValueError:continue
+        files|={n for n in other.get('files',[]) if (folder/'tiles'/n).exists()}
+        finished_tiles|=set(other.get('complete',[]))
+    missing=[t for t in every if f'{t[0]}_{t[1]}' not in finished_tiles]
+    if missing:
+        print(f'  {product} {year}: this shard is done; {len(missing)} tiles of other shards still missing. '
+              'The VRT is written by whichever shard finishes last.')
+        return True
+    vrt=write_vrt(product,year,folder,g,resolution,files)
     print(f'  {product} {year}: COMPLETE -> {vrt}')
     return True
 
@@ -311,7 +327,12 @@ def main():
     parser.add_argument('--project',required=True);parser.add_argument('--ee-key')
     parser.add_argument('--root',default=r'E:\SatelliteData')
     parser.add_argument('--workers',type=int,default=1,help='concurrent downloads (default 1, gentlest on quota)')
-    args=parser.parse_args();logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
+    parser.add_argument('--shard',default='1/1',help='i/n: this project takes part i of n of every year (e.g. 3/6)')
+    args=parser.parse_args()
+    try:
+        part,count=(int(x) for x in args.shard.split('/'));assert 1<=part<=count
+    except (ValueError,AssertionError):
+        raise SystemExit('--shard must look like 3/6 (part 3 of 6)') from None;logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     import sys
     sys.stdout.reconfigure(line_buffering=True)
     years=parse_years(args.years);allowed=PRODUCTS[args.product]['years']
@@ -331,7 +352,7 @@ def main():
     complete=True
     for year in years:
         if STOP.is_set():break
-        complete&=run_year(args.product,year,root,boundaries,args.workers)
+        complete&=run_year(args.product,year,root,boundaries,args.workers,shard=(part-1,count))
     if STOP.is_set():print('Stopped; run the same command again to continue.');raise SystemExit(130)
     raise SystemExit(0 if complete else 2)
 
