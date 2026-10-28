@@ -162,3 +162,30 @@ class NationalTests(unittest.TestCase):
             with rasterio.open(folder/'VN_LANDSAT_2010.vrt') as ds:data=ds.read(1)
             expected=1000*np.arange(g['height'])[:,None]+np.arange(g['width'])[None,:]
             np.testing.assert_array_equal(data,expected)
+
+    def test_tile_the_disk_reports_corrupted_is_downloaded_again(self):
+        b={'01':province(105,20,105+8*RES,20+8*RES)}
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[];exact,_=national.national_geometry(b)
+            g,_,_=national.plan('LANDSAT',exact.bounds);origin=(g['transform'][2],g['transform'][5])
+            fetch=fake_fetch(origin,calls)
+            self.assertTrue(self._run(tmp,b,fetch))
+            first=len(calls)
+            broken=next(Path(tmp).rglob('tiles/r000000_c000000.tif'))
+            real_stat=Path.stat
+            def stat(self,*a,**k):
+                if self.name==broken.name:raise OSError(1392,'The file or directory is corrupted and unreadable')
+                return real_stat(self,*a,**k)
+            real_unlink=Path.unlink
+            def unlink(self,*a,**k):
+                if self.name==broken.name:raise OSError(1392,'corrupted')
+                return real_unlink(self,*a,**k)
+            # Forget the year so every tile is checked again on disk.
+            for state in Path(tmp).rglob('tiles*.json'):state.unlink()
+            with patch.object(Path,'stat',stat),patch.object(Path,'unlink',unlink):
+                self.assertTrue(self._run(tmp,b,fetch))
+            self.assertEqual(len(calls),first+1)            # only the corrupted tile again
+            self.assertTrue((broken.parent/'r000000_c000000b.tif').exists())
+            vrt=next(Path(tmp).rglob('VN_LANDSAT_2010.vrt'))
+            self.assertIn('r000000_c000000b.tif',vrt.read_text())
+            self.assertNotIn('r000000_c000000.tif<',vrt.read_text())

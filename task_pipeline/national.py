@@ -151,11 +151,37 @@ def download(image,job,path,attempts=4):
         for i,name in enumerate(job['bands'],1):ds.set_band_description(i,name)
 
 
+def on_disk(path):
+    """True if the file exists and the file system can read it. A file the disk reports as
+    corrupted (WinError 1392 after an unplug or power loss) counts as missing."""
+    try:
+        return path.exists() and path.stat().st_size>0
+    except OSError as error:
+        logging.warning('Unreadable file on disk, it will be downloaded again: %s (%s)',path.name,error)
+        return False
+
+
+def usable_path(path):
+    """Where to write a tile: its own name, or, if a corrupted file that Windows refuses to
+    delete sits there, the same name with a 'b' suffix (the VRT lists whatever was written)."""
+    try:
+        path.exists() and path.stat()
+        return path
+    except OSError:
+        try:
+            path.unlink();return path
+        except OSError:
+            return path.with_name(path.stem+'b.tif')
+
+
 def fetch_tile(image,product,g,resolution,row,col,width,height,folder,fetch=None,suffix=''):
     """Download one window; on a 'too heavy' error split it into 4 sub-tiles. Returns file names."""
     fetch=fetch or download
     p=PRODUCTS[product];path=folder/tile_name(row,col,suffix)
-    if path.exists():return [path.name]
+    if on_disk(path):return [path.name]
+    alternate=path.with_name(path.stem+'b.tif')
+    if on_disk(alternate):return [alternate.name]
+    path=usable_path(path)
     bounds=tile_bounds(g,resolution,col,row,width,height)
     job=dict(scale=p['scale'],grid_resolution=resolution,crs='EPSG:4326',bands=p['bands'],dtype=p['dtype'],
              tile=dict(bounds=bounds,transform=[resolution,0,bounds[0],0,-resolution,bounds[3]],width=width,height=height),
@@ -246,7 +272,7 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     saved=json.loads(state.read_text()) if state.exists() else {}
     # files: every tile file on disk (feeds the VRT); complete: top-level tiles fully done
     # (a split tile counts only when ALL its sub-tiles arrived, so nothing is left out).
-    done={n for n in saved.get('files',[]) if (folder/'tiles'/n).exists()}
+    done={n for n in saved.get('files',[]) if on_disk(folder/'tiles'/n)}
     complete={k for k in saved.get('complete',[]) if f'r{int(k.split("_")[0]):06d}_c{int(k.split("_")[1]):06d}' in
               {n[:15] for n in done}}
     print(f'{product} {year}: grid {g["width"]} x {g["height"]} px at {p["scale"]} m, '
@@ -302,7 +328,7 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     for path in folder.glob('tiles*.json'):
         try:other=json.loads(path.read_text())
         except ValueError:continue
-        files|={n for n in other.get('files',[]) if (folder/'tiles'/n).exists()}
+        files|={n for n in other.get('files',[]) if on_disk(folder/'tiles'/n)}
         finished_tiles|=set(other.get('complete',[]))
     missing=[t for t in every if f'{t[0]}_{t[1]}' not in finished_tiles]
     if missing:
