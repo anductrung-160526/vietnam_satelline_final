@@ -206,3 +206,29 @@ class NationalTests(unittest.TestCase):
             self.assertFalse(list(folder.glob('*.merging.tif')))
             self.assertTrue(national.merge_year('LANDSAT',2010,tmp))          # already up to date
             self.assertFalse(national.merge_year('LANDSAT',2011,tmp))         # no VRT yet
+
+    def test_clip_writes_one_masked_geotiff_per_province(self):
+        tri=dict(geometry=dict(type='Polygon',coordinates=[[[105,20],[105+20*RES,20],[105,20+12*RES],[105,20]]]))
+        b={'01':tri,'02':province(105+30*RES,20,105+40*RES,20+12*RES)}
+        provinces=[dict(ma_tinh='01',slug='ha_noi',ten_tinh='Hà Nội'),dict(ma_tinh='02',slug='ha_giang',ten_tinh='Hà Giang')]
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[];exact,_=national.national_geometry(b)
+            g,_,_=national.plan('LANDSAT',exact.bounds);origin=(g['transform'][2],g['transform'][5])
+            self.assertTrue(self._run(tmp,b,fake_fetch(origin,calls)))
+            # Tiny blocks so each province is written in many pieces, as a big one would be.
+            self.assertTrue(national.clip_year('LANDSAT',2010,tmp,b,provinces,block_rows=3,block_cols=5))
+            out=Path(tmp)/'VN_LandCover_Panel_2004_2025'/'data_intermediate'/'annual_province'/'LANDSAT'
+            hn=out/'01_ha_noi'/'01_ha_noi_LANDSAT_2010.tif';hg=out/'02_ha_giang'/'02_ha_giang_LANDSAT_2010.tif'
+            vrt=next(Path(tmp).rglob('VN_LANDSAT_2010.vrt'))
+            with rasterio.open(hn) as a,rasterio.open(vrt) as src:
+                data=a.read(1);self.assertEqual(a.count,6);self.assertEqual(a.tags()['MA_TINH'],'01')
+                self.assertTrue((data==-9999).any())           # triangle: corner outside masked
+                self.assertTrue((data!=-9999).any())
+                col=round((a.transform.c-src.transform.c)/RES);row=round((src.transform.f-a.transform.f)/RES)
+                full=src.read(1)[row:row+a.height,col:col+a.width]
+                np.testing.assert_array_equal(data[data!=-9999],full[data!=-9999])
+            with rasterio.open(hg) as a:
+                self.assertTrue((a.read(1)!=-9999).all())      # rectangle fully inside
+            before=hn.stat().st_mtime_ns
+            self.assertTrue(national.clip_year('LANDSAT',2010,tmp,b,provinces))
+            self.assertEqual(hn.stat().st_mtime_ns,before)      # up to date: not rewritten

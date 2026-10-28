@@ -394,6 +394,70 @@ def merge_year(product,year,root,overviews=False,strip_rows=512,strip_cols=8192)
     return True
 
 
+def clip_year(product,year,root,boundaries,provinces,block_rows=512,block_cols=8192):
+    """Cut the year's national image into one GeoTIFF per province: the province's bounding
+    window, pixels outside the province (not touching its boundary) set to NoData.
+    Reads the merged .tif when present, otherwise the VRT. Up-to-date outputs are skipped."""
+    import math
+    import rasterio
+    import rasterio.windows
+    from rasterio.features import geometry_mask
+    from rasterio.windows import Window
+    from province_pipeline.sources import NTL_PACKAGE,DAY_PACKAGE
+    p=PRODUCTS[product]
+    package=DAY_PACKAGE if p['kind']=='DAY' else NTL_PACKAGE
+    folder=Path(root)/package/'raw_data'/p['kind']/product/f'VN_{product}_{year}'
+    merged=folder/f'VN_{product}_{year}.tif';vrt=folder/f'VN_{product}_{year}.vrt'
+    source=merged if merged.exists() else vrt
+    if not source.exists():
+        print(f'{product} {year}: no national image yet (download not complete) - skipped');return False
+    out_root=Path(root)/package/'data_intermediate'/'annual_province'/product
+    began=time.monotonic();written=0
+    with rasterio.open(source) as src:
+        for province in provinces:
+            if STOP.is_set():return False
+            code=province['ma_tinh'];name=f"{code}_{province['slug']}"
+            target=out_root/name/f'{name}_{product}_{year}.tif'
+            if target.exists() and target.stat().st_mtime>=source.stat().st_mtime:continue
+            geometry=boundaries[code]['geometry']
+            from shapely.geometry import shape
+            bounds=shape(geometry).bounds
+            # Whole pixels covering the province's bounding box (same grid as the national image).
+            t=src.transform
+            col0=max(0,math.floor((bounds[0]-t.c)/t.a));col1=min(src.width,math.ceil((bounds[2]-t.c)/t.a))
+            row0=max(0,math.floor((t.f-bounds[3])/-t.e));row1=min(src.height,math.ceil((t.f-bounds[1])/-t.e))
+            window=Window(col0,row0,col1-col0,row1-row0)
+            transform=src.window_transform(window)
+            target.parent.mkdir(parents=True,exist_ok=True)
+            tmp=target.with_name(target.stem+'.clipping.tif')
+            profile=dict(driver='GTiff',width=window.width,height=window.height,count=src.count,dtype=src.dtypes[0],
+                         crs=src.crs,transform=transform,nodata=-9999,compress='ZSTD',zstd_level=9,
+                         predictor=2 if src.dtypes[0]=='int16' else 3,tiled=True,blockxsize=512,blockysize=512,
+                         BIGTIFF='IF_SAFER')
+            valid=0
+            with rasterio.open(tmp,'w',**profile) as dst:
+                for b in range(src.count):dst.set_band_description(b+1,src.descriptions[b])
+                # Blocks of 512 x 8192 px: bounded RAM even for Khanh Hoa with the Truong Sa
+                # islands, whose bounding box is huge and almost all sea.
+                for r in range(0,window.height,block_rows):
+                    for c in range(0,window.width,block_cols):
+                        part=Window(c,r,min(block_cols,window.width-c),min(block_rows,window.height-r))
+                        part_transform=rasterio.windows.transform(part,transform)
+                        inside=geometry_mask([geometry],out_shape=(part.height,part.width),transform=part_transform,
+                                             invert=True,all_touched=True)
+                        if not inside.any():continue      # nothing of the province here: stays NoData
+                        data=src.read(window=Window(col0+c,row0+r,part.width,part.height))
+                        data[:,~inside]=-9999
+                        valid+=int((data[0]!=-9999).sum())
+                        dst.write(data,window=part)
+                dst.update_tags(**src.tags(),MA_TINH=code,TEN_TINH=province['ten_tinh'],
+                                CLIP='province boundary (GADM 4.1), pixels touching it kept',VALID_PIXELS=str(valid))
+            tmp.replace(target);written+=1
+    print(f'{product} {year}: {written} province files written ({len(provinces)-written} up to date) '
+          f'in {time.monotonic()-began:.0f} s -> {out_root}')
+    return True
+
+
 def parse_years(text):
     if '-' in text:
         a,b=(int(x) for x in text.split('-'));return list(range(a,b+1))
@@ -410,6 +474,7 @@ def main():
     parser.add_argument('--shard',default='1/1',help='i/n: this project takes part i of n of every year (e.g. 3/6)')
     parser.add_argument('--merge',action='store_true',help='no download: turn each finished year VRT into one GeoTIFF')
     parser.add_argument('--overviews',action='store_true',help='with --merge: also build pyramids (faster zooming in QGIS)')
+    parser.add_argument('--clip',action='store_true',help='no download: cut each finished year into 63 province GeoTIFFs')
     args=parser.parse_args()
     logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     try:
@@ -427,6 +492,18 @@ def main():
         for year in years:
             if STOP.is_set():break
             ok&=merge_year(args.product,year,args.root,args.overviews)
+        raise SystemExit(130 if STOP.is_set() else 0 if ok else 2)
+    if args.clip:
+        from .scope import provinces
+        c,root,_=local.prepare('full',None,args.root,args.project,'1-11')
+        from province_pipeline.prepare_gadm import prepare as prepare_boundaries
+        from province_pipeline.boundaries import load_boundaries
+        if not Path(c['boundaries']).exists() or not Path(c['boundary_metadata']).exists():prepare_boundaries(c)
+        boundaries,_=load_boundaries(c)
+        ok=True
+        for year in years:
+            if STOP.is_set():break
+            ok&=clip_year(args.product,year,root,boundaries,provinces())
         raise SystemExit(130 if STOP.is_set() else 0 if ok else 2)
     if not args.project:raise SystemExit('--project is required to download')
     c,root,_=local.prepare('full',None,args.root,args.project,'1-11')
