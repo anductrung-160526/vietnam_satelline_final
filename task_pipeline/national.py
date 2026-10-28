@@ -340,6 +340,60 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     return True
 
 
+def merge_year(product,year,root,overviews=False,strip_rows=512,strip_cols=8192):
+    """Write the year's VRT as ONE GeoTIFF next to it: same pixels, lossless ZSTD, internal
+    512 px blocks, BigTIFF. Written strip by strip (bounded memory), then renamed into place,
+    so an interrupted merge never leaves a half file under the final name."""
+    import numpy as np
+    import rasterio
+    from rasterio.windows import Window
+    from province_pipeline.sources import NTL_PACKAGE,DAY_PACKAGE
+    p=PRODUCTS[product]
+    package=DAY_PACKAGE if p['kind']=='DAY' else NTL_PACKAGE
+    folder=Path(root)/package/'raw_data'/p['kind']/product/f'VN_{product}_{year}'
+    vrt=folder/f'VN_{product}_{year}.vrt';target=folder/f'VN_{product}_{year}.tif'
+    if not vrt.exists():
+        print(f'{product} {year}: no VRT yet (download not complete) - skipped');return False
+    if target.exists() and target.stat().st_mtime>=vrt.stat().st_mtime:
+        print(f'{product} {year}: {target.name} already up to date');return True
+    tmp=target.with_name(target.stem+'.merging.tif')
+    began=time.monotonic()
+    with rasterio.open(vrt) as src:
+        profile=dict(driver='GTiff',width=src.width,height=src.height,count=src.count,dtype=src.dtypes[0],
+                     crs=src.crs,transform=src.transform,nodata=-9999,compress='ZSTD',zstd_level=9,
+                     predictor=2 if src.dtypes[0]=='int16' else 3,tiled=True,blockxsize=512,blockysize=512,
+                     BIGTIFF='YES',NUM_THREADS='ALL_CPUS')
+        with rasterio.open(tmp,'w',**profile) as dst:
+            for b in range(src.count):dst.set_band_description(b+1,src.descriptions[b])
+            dst.update_tags(**src.tags(),MERGED_FROM=vrt.name)
+            # Strips of whole 512 px blocks, read 8192 columns at a time (~50 MB): bounded RAM
+            # even for the 10 m national grid, and every compressed block is written once.
+            for row in range(0,src.height,strip_rows):
+                h=min(strip_rows,src.height-row)
+                for col in range(0,src.width,strip_cols):
+                    window=Window(col,row,min(strip_cols,src.width-col),h)
+                    data=src.read(window=window)
+                    if (data!=-9999).any():dst.write(data,window=window)   # all-NoData stays empty (tiny)
+                if STOP.is_set():raise KeyboardInterrupt
+                if row//strip_rows%20==0:
+                    print(f'  {product} {year}: {100*(row+h)/src.height:.0f}% merged',flush=True)
+            if overviews:
+                from rasterio.enums import Resampling
+                dst.build_overviews([2,4,8,16,32],Resampling.average)
+    # Check the result before it takes the final name.
+    with rasterio.open(tmp) as out,rasterio.open(vrt) as src:
+        if (out.width,out.height,out.count)!=(src.width,src.height,src.count) or out.transform!=src.transform:
+            raise RuntimeError('Merged GeoTIFF grid differs from the VRT')
+        for row in np.linspace(0,src.height-1,20).astype(int):
+            w=Window(0,int(row),src.width,1)
+            if not np.array_equal(out.read(window=w),src.read(window=w)):
+                raise RuntimeError(f'Merged GeoTIFF differs from the tiles at row {row}')
+    tmp.replace(target)
+    print(f'{product} {year}: merged -> {target} ({target.stat().st_size/1024**3:.2f} GB, '
+          f'{time.monotonic()-began:.0f} s)')
+    return True
+
+
 def parse_years(text):
     if '-' in text:
         a,b=(int(x) for x in text.split('-'));return list(range(a,b+1))
@@ -350,20 +404,31 @@ def main():
     parser=argparse.ArgumentParser(description='Annual whole-Vietnam composites -> resumable tiles on drive E')
     parser.add_argument('--product',required=True,choices=list(PRODUCTS))
     parser.add_argument('--years',required=True,help='e.g. 2004-2014 or 2010,2012')
-    parser.add_argument('--project',required=True);parser.add_argument('--ee-key')
+    parser.add_argument('--project',help='Earth Engine project (not needed with --merge)');parser.add_argument('--ee-key')
     parser.add_argument('--root',default=r'E:\SatelliteData')
     parser.add_argument('--workers',type=int,default=1,help='concurrent downloads (default 1, gentlest on quota)')
     parser.add_argument('--shard',default='1/1',help='i/n: this project takes part i of n of every year (e.g. 3/6)')
+    parser.add_argument('--merge',action='store_true',help='no download: turn each finished year VRT into one GeoTIFF')
+    parser.add_argument('--overviews',action='store_true',help='with --merge: also build pyramids (faster zooming in QGIS)')
     args=parser.parse_args()
+    logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     try:
         part,count=(int(x) for x in args.shard.split('/'));assert 1<=part<=count
     except (ValueError,AssertionError):
-        raise SystemExit('--shard must look like 3/6 (part 3 of 6)') from None;logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
+        raise SystemExit('--shard must look like 3/6 (part 3 of 6)') from None
     import sys
     sys.stdout.reconfigure(line_buffering=True)
     years=parse_years(args.years);allowed=PRODUCTS[args.product]['years']
     wrong=[y for y in years if y not in allowed]
     if wrong:raise SystemExit(f'{args.product} is only used for {allowed[0]}-{allowed[-1]}; not {wrong} (project rule)')
+    signal.signal(signal.SIGINT,lambda *_:(STOP.set(),setattr(province_image,'CANCELLED',True)))
+    if args.merge:
+        ok=True
+        for year in years:
+            if STOP.is_set():break
+            ok&=merge_year(args.product,year,args.root,args.overviews)
+        raise SystemExit(130 if STOP.is_set() else 0 if ok else 2)
+    if not args.project:raise SystemExit('--project is required to download')
     c,root,_=local.prepare('full',None,args.root,args.project,'1-11')
     from province_pipeline.prepare_gadm import prepare as prepare_boundaries
     from province_pipeline.boundaries import load_boundaries
@@ -374,7 +439,6 @@ def main():
     import ee
     ee.data.setDeadline(300000)   # annual composites need more than the default 2 minutes per tile
     print('Earth Engine project:',c['project'],'| workers',args.workers)
-    signal.signal(signal.SIGINT,lambda *_:(STOP.set(),setattr(province_image,'CANCELLED',True)))
     complete=True
     for year in years:
         if STOP.is_set():break

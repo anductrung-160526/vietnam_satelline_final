@@ -189,3 +189,20 @@ class NationalTests(unittest.TestCase):
             vrt=next(Path(tmp).rglob('VN_LANDSAT_2010.vrt'))
             self.assertIn('r000000_c000000b.tif',vrt.read_text())
             self.assertNotIn('r000000_c000000.tif<',vrt.read_text())
+
+    def test_merge_writes_one_geotiff_identical_to_the_tiles(self):
+        b={'01':province(105,20,105+20*RES,20+12*RES),'02':province(105+30*RES,20,105+40*RES,20+12*RES)}
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[];exact,_=national.national_geometry(b)
+            g,_,_=national.plan('LANDSAT',exact.bounds);origin=(g['transform'][2],g['transform'][5])
+            self.assertTrue(self._run(tmp,b,fake_fetch(origin,calls)))
+            self.assertTrue(national.merge_year('LANDSAT',2010,tmp,strip_rows=5,strip_cols=7))
+            folder=next(Path(tmp).rglob('VN_LANDSAT_2010'))
+            with rasterio.open(folder/'VN_LANDSAT_2010.tif') as out,rasterio.open(folder/'VN_LANDSAT_2010.vrt') as src:
+                self.assertEqual(out.driver,'GTiff');self.assertEqual(out.compression.name.upper(),'ZSTD')
+                self.assertEqual((out.count,out.nodata,out.descriptions[5]),(6,-9999,'SWIR2'))
+                self.assertEqual(out.transform,src.transform)
+                np.testing.assert_array_equal(out.read(),src.read())
+            self.assertFalse(list(folder.glob('*.merging.tif')))
+            self.assertTrue(national.merge_year('LANDSAT',2010,tmp))          # already up to date
+            self.assertFalse(national.merge_year('LANDSAT',2011,tmp))         # no VRT yet
