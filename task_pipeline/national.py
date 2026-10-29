@@ -458,6 +458,28 @@ def clip_year(product,year,root,boundaries,provinces,block_rows=512,block_cols=8
     return True
 
 
+def setup(root,project):
+    """Config + output root. On the Windows laptop: the usual drive-E checks (volume marker,
+    serial). Elsewhere (a Linux cloud VM): no removable-drive check, output under `root`."""
+    import os
+    if os.name=='nt':
+        c,root,_=local.prepare('full',None,root,project,'1-11')
+        return c,root
+    import json as _json
+    from .scope import configure
+    source=Path('province_pipeline/config/local.json')
+    if not source.exists():source=Path('province_pipeline/config/example.json')
+    base=_json.loads(source.read_text(encoding='utf-8-sig'))
+    selection=local.selection_for('full','1-11')
+    base['project']=project or local.RANGE_PROJECTS[(1,11)]
+    c=configure(dict(base),selection) if base['project']==local.PROJECT else local.configure_for(base,selection)
+    c.update(execution_backend='cloud_vm',local_root=str(root),boundary_provider='gadm41',
+             boundary_policy='gadm41_research',boundaries='province_pipeline/config/boundaries.geojson',
+             boundary_metadata='province_pipeline/config/boundaries.metadata.json')
+    Path(root).mkdir(parents=True,exist_ok=True)
+    return c,Path(root)
+
+
 def parse_years(text):
     if '-' in text:
         a,b=(int(x) for x in text.split('-'));return list(range(a,b+1))
@@ -469,7 +491,9 @@ def main():
     parser.add_argument('--product',required=True,choices=list(PRODUCTS))
     parser.add_argument('--years',required=True,help='e.g. 2004-2014 or 2010,2012')
     parser.add_argument('--project',help='Earth Engine project (not needed with --merge)');parser.add_argument('--ee-key')
-    parser.add_argument('--root',default=r'E:\SatelliteData')
+    import os
+    parser.add_argument('--root',default=r'E:\SatelliteData' if os.name=='nt' else '/data/SatelliteData',
+                        help='output root (Windows: drive E; Linux cloud VM: /data/SatelliteData)')
     parser.add_argument('--workers',type=int,default=1,help='concurrent downloads (default 1, gentlest on quota)')
     parser.add_argument('--shard',default='1/1',help='i/n: this project takes part i of n of every year (e.g. 3/6)')
     parser.add_argument('--merge',action='store_true',help='no download: turn each finished year VRT into one GeoTIFF')
@@ -495,7 +519,7 @@ def main():
         raise SystemExit(130 if STOP.is_set() else 0 if ok else 2)
     if args.clip:
         from .scope import provinces
-        c,root,_=local.prepare('full',None,args.root,args.project,'1-11')
+        c,root=setup(args.root,args.project)
         from province_pipeline.prepare_gadm import prepare as prepare_boundaries
         from province_pipeline.boundaries import load_boundaries
         if not Path(c['boundaries']).exists() or not Path(c['boundary_metadata']).exists():prepare_boundaries(c)
@@ -506,7 +530,7 @@ def main():
             ok&=clip_year(args.product,year,root,boundaries,provinces())
         raise SystemExit(130 if STOP.is_set() else 0 if ok else 2)
     if not args.project:raise SystemExit('--project is required to download')
-    c,root,_=local.prepare('full',None,args.root,args.project,'1-11')
+    c,root=setup(args.root,args.project)
     from province_pipeline.prepare_gadm import prepare as prepare_boundaries
     from province_pipeline.boundaries import load_boundaries
     if not Path(c['boundaries']).exists() or not Path(c['boundary_metadata']).exists():prepare_boundaries(c)
