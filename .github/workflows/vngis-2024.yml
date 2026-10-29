@@ -1,11 +1,11 @@
-name: VNGISDash 2024 (chạy nối lượt)
+name: VNGIS luồng 07 · cấp xã 2024 (tự nối lượt)
 
 # Mỗi lượt chạy tối đa 5 giờ 15 phút.
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot: chạy thử và ghi vào VNGISDash_2024_PILOT.
-# full: chạy toàn bộ và ghi vào VNGISDash_2024.
+# pilot: chạy thử trong tỉnh đã chọn, ghi vào VNGISDash_2024_FLOW07_PILOT.
+# full: chạy mọi xã trong tỉnh đã chọn, ghi vào VNGISDash_2024_FLOW07.
 #
 # Dừng có trật tự:
 # - Tạo file STOP ở thư mục gốc repository; hoặc
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thí điểm | full = toàn bộ xã"
+        description: "pilot = thử 2 xã | full = mọi xã của tỉnh đã chọn (2024)"
         type: choice
         options:
           - pilot
@@ -34,14 +34,14 @@ on:
         required: false
         default: "2"
 
-      stop_after_province:
-        description: "Chế độ full: chạy đến hết tỉnh này rồi dừng; để trống để chạy toàn quốc"
-        required: false
+      province:
+        description: "Tỉnh cần tải: NAME_1 hoặc GID_1 của GADM (ví dụ Ha Noi)"
+        required: true
         type: string
-        default: "Cần Thơ"
+
 
 concurrency:
-  group: vngis-2024
+  group: vngis-communes-flow-07
   cancel-in-progress: false
 
 permissions:
@@ -51,9 +51,11 @@ permissions:
 env:
   VNGIS_MODE: ${{ inputs.mode }}
   VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024' || 'VNGISDash_2024_PILOT' }}
+  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024_FLOW07' || 'VNGISDash_2024_FLOW07_PILOT' }}
   VNGIS_RCLONE_REMOTE: gdrive
-  VNGIS_STOP_AFTER_PROVINCE: ${{ inputs.stop_after_province }}
+  VNGIS_STOP_AFTER_PROVINCE: ""
+  VNGIS_PROVINCE: ${{ inputs.province }}
+  VNGIS_COMMUNES_ASSET: projects/vngis-ee-2/assets/communes_l3
 
 jobs:
   gate:
@@ -66,6 +68,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Kiểm tra tỉnh đã chọn
+        run: |
+          python - <<'PYTHON'
+          import os
+          if not os.environ["VNGIS_PROVINCE"].strip():
+              raise SystemExit("Cần nhập province: NAME_1 hoặc GID_1 của GADM.")
+          PYTHON
 
       - name: Kiểm tra STOP
         id: chk
@@ -89,7 +99,7 @@ jobs:
       VNGIS_MAX_RUNTIME_SEC: "18900"
 
       # Project được truyền vào ee.Initialize(project=...).
-      VNGIS_EE_PROJECT: "vngis-ee-2"
+      VNGIS_EE_PROJECT: "vgis-ee-07"
       VNGIS_EE_HIGH_VOLUME: "false"
 
       # Giới hạn chung cho truy vấn, tạo URL và tải ảnh.
@@ -153,7 +163,7 @@ jobs:
       - name: Ghi khóa truy cập từ Secrets
         env:
           RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONF }}
-          EE_KEY_DATA: ${{ secrets.EE_SERVICE_ACCOUNT_JSON }}
+          EE_KEY_DATA: ${{ secrets.EE_SERVICE_ACCOUNT_JSON_07 }}
         run: |
           [ -n "$RCLONE_CONF_DATA" ] || {
             echo "::error::Thiếu secret RCLONE_CONF"
@@ -161,7 +171,7 @@ jobs:
           }
 
           [ -n "$EE_KEY_DATA" ] || {
-            echo "::error::Thiếu secret EE_SERVICE_ACCOUNT_JSON"
+            echo "::error::Thiếu secret EE_SERVICE_ACCOUNT_JSON_07"
             exit 1
           }
 
@@ -203,7 +213,7 @@ jobs:
               done
 
               if gh api \
-                "repos/${GITHUB_REPOSITORY}/contents/STOP" \
+                "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
                 > /dev/null 2>&1; then
 
                 echo "::notice::Phát hiện file STOP: dừng trật tự."
@@ -283,20 +293,23 @@ jobs:
         if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
         env:
           GH_TOKEN: ${{ github.token }}
-          STOP_AFTER_PROVINCE_INPUT: ${{ inputs.stop_after_province }}
+          MODE_INPUT: ${{ inputs.mode }}
+          PILOT_N_INPUT: ${{ inputs.pilot_n }}
+          WORKERS_INPUT: ${{ inputs.workers }}
+          PROVINCE_INPUT: ${{ inputs.province }}
         run: |
           if gh api \
-            "repos/${GITHUB_REPOSITORY}/contents/STOP" \
+            "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
             > /dev/null 2>&1; then
 
             echo "::notice::Có file STOP: dừng chuỗi, không nối lượt."
           else
             gh workflow run vngis-2024.yml \
               --ref "$GITHUB_REF_NAME" \
-              -f mode="${{ inputs.mode }}" \
-              -f pilot_n="${{ inputs.pilot_n }}" \
-              -f workers="${{ inputs.workers }}" \
-              -f stop_after_province="$STOP_AFTER_PROVINCE_INPUT"
+              -f mode="$MODE_INPUT" \
+              -f pilot_n="$PILOT_N_INPUT" \
+              -f workers="$WORKERS_INPUT" \
+              -f province="$PROVINCE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi
@@ -311,3 +324,4 @@ jobs:
         run: |
           echo "::error::Script thoát với mã ${{ steps.pipeline.outputs.code }}. Mở bước 'Chạy pipeline', tìm các dòng [preflight] hoặc ERROR."
           exit 1
+
