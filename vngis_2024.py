@@ -4,8 +4,8 @@ VNGISDash 2024: pipeline tự động cấp xã chạy trên GitHub Actions.
 
 Nguồn khoa học: VNGISDash_Task123_Merged_final.ipynb. Pipeline chỉ giữ 3 chức năng:
   (1) trích xuất chỉ số từ ảnh ngày (Task 1) và ảnh đêm (Task 3.2), (2) lấy ảnh tif ngày (Task 2),
-  (3) lấy ảnh tif đêm (Task 3.1). Luồng 07 chọn một tỉnh qua VNGIS_PROVINCE: pilot lấy VNGIS_PILOT_N xã,
-  full chạy mọi xã trong tỉnh đã chọn.
+  (3) lấy ảnh tif đêm (Task 3.1). Không có bước chọn tỉnh, xã: VNGIS_MODE=pilot tự lấy VNGIS_PILOT_N xã,
+  VNGIS_MODE=full chạy mọi xã.
 
 Cấu trúc đầu ra (cấp 1 = thư mục trên Drive):
   Day/<GID_1>_<tỉnh>/<GID_3>_<xã>/<GID_3>_day_2024MM.tif
@@ -53,8 +53,7 @@ YEAR = 2024
 MONTHS = list(range(1, 13))
 
 PROJECT_ID = _env("VNGIS_EE_PROJECT", "vgis-ee-07")               # project chịu quota Earth Engine
-ASSET_ID = _env("VNGIS_COMMUNES_ASSET", "projects/vngis-ee-2/assets/communes_l3")
-PROVINCE = _env("VNGIS_PROVINCE", "")
+ASSET_ID = _env("VNGIS_COMMUNES_ASSET", "projects/vngis-ee-2/assets/communes_l3")             # notebook cell 11
 
 MODE = _env("VNGIS_MODE", "pilot").lower()                        # pilot | full
 if MODE not in ("pilot", "full"):
@@ -1265,18 +1264,8 @@ def province_boundary(admin, requested):
 
 
 def load_targets(admin):
-    """Chọn tỉnh trước khi lấy toàn bộ xã hoặc PILOT_N xã theo thứ tự mã,
+    """Không chọn tỉnh, xã bằng tay. full: mọi xã. pilot: tự lấy PILOT_N xã đầu tiên theo thứ tự mã,
     xen kẽ phường (đô thị) và xã (nông thôn) để thử cả hai loại; thiếu loại nào thì lấy bù theo thứ tự."""
-    if PROVINCE.strip():
-        key = normalize_str_t1(PROVINCE.strip())
-        provinces = admin[["GID_1", "NAME_1"]].drop_duplicates()
-        matches = provinces[
-            (provinces["GID_1"] == PROVINCE.strip())
-            | (provinces["NAME_1"].map(normalize_str_t1) == key)
-        ]["GID_1"].unique()
-        if len(matches) != 1:
-            raise ValueError(f"Tỉnh '{PROVINCE}' không khớp duy nhất với GADM NAME_1/GID_1.")
-        admin = admin[admin["GID_1"] == matches[0]].reset_index(drop=True)
     df = admin.iloc[sorted(range(len(admin)), key=lambda i: natural_sort_key(admin.iloc[i]["GID_3"]))]
     df = df.reset_index(drop=True)
     if MODE == "full":
@@ -1648,4 +1637,3 @@ if __name__ == "__main__" and os.environ.get("VNGIS_SKIP_MAIN") != "1":
         log.info("Đồng bộ nốt xong.")
         sys.exit(0)
     sys.exit(main())
-

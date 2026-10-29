@@ -1,11 +1,11 @@
-name: VNGIS luồng 07 · cấp xã 2024 (tự nối lượt)
+name: VNGIS luồng 07 · cấp quốc gia 2024 (tự nối lượt)
 
 # Mỗi lượt chạy tối đa 5 giờ 15 phút.
 # Nếu chưa hoàn tất, workflow tự gọi lượt tiếp theo.
 # Trạng thái được lưu trên Google Drive.
 #
-# pilot: chạy thử trong tỉnh đã chọn, ghi vào VNGISDash_2024_FLOW07_PILOT.
-# full: chạy mọi xã trong tỉnh đã chọn, ghi vào VNGISDash_2024_FLOW07.
+# pilot: tháng 1 trên toàn bộ Việt Nam; root NATIONAL_PILOT riêng.
+# full: 12 tháng trên toàn bộ Việt Nam; root NATIONAL riêng.
 #
 # Dừng có trật tự:
 # - Tạo file STOP ở thư mục gốc repository; hoặc
@@ -17,31 +17,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "pilot = thử 2 xã | full = mọi xã của tỉnh đã chọn (2024)"
+        description: "pilot = tháng 1 toàn quốc | full = 12 tháng toàn quốc (2024)"
         type: choice
         options:
           - pilot
           - full
         default: pilot
 
-      pilot_n:
-        description: "Số xã thí điểm, chỉ dùng khi mode = pilot"
-        required: false
-        default: "2"
-
-      workers:
-        description: "Số xã xử lý song song"
-        required: false
-        default: "2"
-
-      province:
-        description: "Tỉnh cần tải: NAME_1 hoặc GID_1 của GADM (ví dụ Ha Noi)"
-        required: true
-        type: string
-
-
 concurrency:
-  group: vngis-communes-flow-07
+  group: vngis-national-flow-07
   cancel-in-progress: false
 
 permissions:
@@ -50,11 +34,9 @@ permissions:
 
 env:
   VNGIS_MODE: ${{ inputs.mode }}
-  VNGIS_PILOT_N: ${{ inputs.pilot_n }}
-  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024_FLOW07' || 'VNGISDash_2024_FLOW07_PILOT' }}
+  VNGIS_DRIVE_FOLDER: ${{ inputs.mode == 'full' && 'VNGISDash_2024_FLOW07_NATIONAL' || 'VNGISDash_2024_FLOW07_NATIONAL_PILOT' }}
   VNGIS_RCLONE_REMOTE: gdrive
   VNGIS_STOP_AFTER_PROVINCE: ""
-  VNGIS_PROVINCE: ${{ inputs.province }}
   VNGIS_COMMUNES_ASSET: projects/vngis-ee-2/assets/communes_l3
 
 jobs:
@@ -68,14 +50,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Kiểm tra tỉnh đã chọn
-        run: |
-          python - <<'PYTHON'
-          import os
-          if not os.environ["VNGIS_PROVINCE"].strip():
-              raise SystemExit("Cần nhập province: NAME_1 hoặc GID_1 của GADM.")
-          PYTHON
 
       - name: Kiểm tra STOP
         id: chk
@@ -197,12 +171,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VNGIS_EE_KEY_FILE: ${{ runner.temp }}/ee-key.json
           VNGIS_RUN_ID: ${{ github.run_id }}
-          VNGIS_WORKERS: ${{ inputs.workers }}
+          VNGIS_WORKERS: "1"
           STOP_POLL_SEC: "300"
         run: |
           set +e
 
-          python -u vngis_2024.py &
+          python -u flow07_national.py &
           PID=$!
 
           (
@@ -239,64 +213,29 @@ jobs:
       - name: Đồng bộ nốt lên Drive
         if: always()
         continue-on-error: true
-        run: python vngis_2024.py --sync-only
+        run: python flow07_national.py --sync-only
 
-      - name: Kiểm tra kết quả thí điểm
-        if: always() && inputs.mode == 'pilot' && steps.pipeline.outputs.code == '0'
-        continue-on-error: true
-        run: |
-          python verify_pilot.py \
-            --remote "${VNGIS_RCLONE_REMOTE}:${VNGIS_DRIVE_FOLDER}" \
-            --report "$RUNNER_TEMP/verify_report.md"
-
-          cat "$RUNNER_TEMP/verify_report.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Tóm tắt tiến độ
+      - name: Tóm tắt quốc gia
         if: always()
-        continue-on-error: true
         run: |
-          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PYTHON' >> "$GITHUB_STEP_SUMMARY"
           import os
-          import pandas as pd
-
-          folder = os.environ["VNGIS_DRIVE_FOLDER"]
-
-          p = os.path.expanduser(
-              f"~/vngis_2024/{folder}/_control/progress.csv"
-          )
-
-          if os.path.isfile(p):
-              d = pd.read_csv(p)
-
-              print(f"### Tiến độ ({folder})\n")
-              print(
-                  f"Tổng {len(d):,} xã: "
-                  f"{d['status'].value_counts().to_dict()}\n"
-              )
-
-              bad = d[d["status"] != "done"].head(15)
-
-              if len(bad):
-                  print(
-                      "| GID_3 | trạng thái | lỗi |\n"
-                      "|---|---|---|"
-                  )
-
-                  for r in bad.itertuples():
-                      error = str(r.errors)[:150]
-                      print(
-                          f"| {r.GID_3} | {r.status} | {error} |"
-                      )
-          PY
+          from pathlib import Path
+          print("Luồng 07: Việt Nam, cấp quốc gia, năm 2024.")
+          print("Drive: " + os.environ["VNGIS_DRIVE_FOLDER"])
+          print("Ảnh: National/DAY và National/NIGHT; mở VRT cùng thư mục tiles trong QGIS.")
+          p = Path.home()/"vngis_2024"/os.environ["VNGIS_DRIVE_FOLDER"]/"_control/national_progress.json"
+          if p.exists():
+              print(p.read_text())
+          else:
+              print("Chưa hoàn tất; các ô đã tải lên Drive được giữ để tiếp tục.")
+          PYTHON
 
       - name: Nối lượt kế tiếp
         if: steps.pipeline.outputs.code == '3' || steps.pipeline.outputs.code == '2'
         env:
           GH_TOKEN: ${{ github.token }}
           MODE_INPUT: ${{ inputs.mode }}
-          PILOT_N_INPUT: ${{ inputs.pilot_n }}
-          WORKERS_INPUT: ${{ inputs.workers }}
-          PROVINCE_INPUT: ${{ inputs.province }}
         run: |
           if gh api \
             "repos/${GITHUB_REPOSITORY}/contents/STOP?ref=${GITHUB_REF_NAME}" \
@@ -306,10 +245,7 @@ jobs:
           else
             gh workflow run vngis-2024.yml \
               --ref "$GITHUB_REF_NAME" \
-              -f mode="$MODE_INPUT" \
-              -f pilot_n="$PILOT_N_INPUT" \
-              -f workers="$WORKERS_INPUT" \
-              -f province="$PROVINCE_INPUT"
+              -f mode="$MODE_INPUT"
 
             echo "Đã gọi lượt kế tiếp."
           fi

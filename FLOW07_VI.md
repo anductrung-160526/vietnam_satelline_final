@@ -1,35 +1,50 @@
-# Luồng 07 — dữ liệu cấp xã năm 2024
+# Luồng 07 — dữ liệu Việt Nam cấp quốc gia năm 2024
 
-Nhánh `vngis-ee-07` dựa trên pipeline `vngis_2024.py` của main. Đây là luồng cấp xã cho năm 2024, không phải pipeline Task123 cấp tỉnh 2004–2025 của sáu nhánh `vngis-tinh-*`.
+Nhánh `vngis-ee-07` chạy **một vùng Việt Nam**, không lặp theo tỉnh/xã và không lấy trung bình các thống kê cấp tỉnh. `flow07_national.py` gộp hình học trong `projects/vngis-ee-2/assets/communes_l3` thành một feature quốc gia rồi tính chỉ số trực tiếp trên vùng đó. Phạm vi lãnh thổ theo đúng các đa giác có trong asset nguồn; không tự bổ sung vùng biển/đảo ngoài dữ liệu.
 
-- Project thực thi: `vgis-ee-07` (đúng chính tả trong ảnh Code Editor).
-- Asset dùng chung: `projects/vngis-ee-2/assets/communes_l3`. Không cần sao chép asset sang project 07.
-- Mỗi lần khởi động chọn một tỉnh qua NAME_1 hoặc GID_1 của GADM 4.1. Ví dụ `Ha Noi`; tên có dấu/không dấu được hỗ trợ. Đây là địa giới bộ dữ liệu GADM, không tự chuyển theo tỉnh sau sáp nhập.
-- `pilot`: mặc định 2 xã trong tỉnh được chọn. `full`: mọi xã trong tỉnh đó. Không tự phân công tỉnh giữa luồng 07 và sáu nhánh cũ: hãy chọn phạm vi chưa giao cho luồng khác nếu cần tránh tải trùng.
-- Drive: `VNGISDash_2024_FLOW07_PILOT` hoặc `VNGISDash_2024_FLOW07`, gồm Day/, Night/, CSV/ và _control/. Dùng cấu hình Drive của `RCLONE_CONF` hiện có. Không ghi vào thư mục/state các luồng trước.
-- Concurrency riêng cho luồng 07; pilot/full cùng luồng xếp hàng, không ghi đồng thời.
+Project thực thi là `vgis-ee-07`. Mã phương pháp: `NATIONAL_MONTHLY_2024_v1`. Giữ năm **2024** của pipeline gốc; chưa mở rộng 2004–2025.
 
-## Thiết lập quyền và secret
+## Chạy tự động
 
-1. Project `vgis-ee-07` cần được đăng ký sử dụng Earth Engine, bật Earth Engine API và còn quota hợp lệ.
-2. Tại repository Settings → Secrets and variables → Actions → New repository secret, thêm `EE_SERVICE_ACCOUNT_JSON_07`: toàn bộ JSON khóa service account chạy luồng 07. Không đưa khóa vào code, issue hoặc chat. Nếu dùng service account ở ảnh, kiểm tra `client_email` là `vgis-ee-07@vgis-ee-07.iam.gserviceaccount.com`.
-3. Service account cần quyền Earth Engine phù hợp trên project đích (pipeline hiện dùng Earth Engine Resource Writer), cùng Service Usage Consumer, và Reader trên asset nguồn. Share cho service account hoặc quyền public Reader hiện có đều cho phép đọc; không cần Writer trên asset nguồn.
-4. Giữ secret `RCLONE_CONF` hiện có với remote `gdrive` có quyền ghi Drive. Không thay secret `EE_SERVICE_ACCOUNT_JSON` của các luồng khác.
+1. Settings → Secrets and variables → Actions: thêm `EE_SERVICE_ACCOUNT_JSON_07` chứa JSON khóa service account chạy project 7. Giữ secret `RCLONE_CONF` hiện có, remote `gdrive` có quyền ghi Drive. Không đưa JSON khóa vào code/chat.
+2. Project `vgis-ee-07` cần đăng ký Earth Engine, bật API, còn quota và cấp service account quyền Earth Engine phù hợp cùng Service Usage Consumer. Service account cần Reader trên asset nguồn (quyền public Reader hiện có cũng đáp ứng).
+3. Actions → workflow file **vngis-2024.yml** → Run workflow → nhánh **vngis-ee-07**. Tên hiển thị có thể vẫn là tên workflow trên main.
+4. `pilot`: **tháng 1/2024 trên toàn Việt Nam**, cùng độ phân giải full; không phải chỉ vài xã/tỉnh. `full`: **12 tháng 2024 trên toàn Việt Nam**. Không cần nhập tỉnh, số xã hay số worker. Luồng dùng một yêu cầu EE cùng lúc.
+5. Khi hết thời lượng khoảng 5 giờ 15 phút, workflow tự nối cùng nhánh/mode. Các ô đã upload thành công được giữ trên Drive và bỏ qua ở lượt sau. Lỗi quyền, hết Drive hoặc lỗi khác báo thất bại, không đánh dấu hoàn tất giả; sửa nguyên nhân rồi Run workflow lại cùng mode.
 
-## Chạy và tiếp tục tự động
+## Kết quả
 
-Actions → chọn workflow có file **vngis-2024.yml** → Run workflow → chọn nhánh **vngis-ee-07**. Tên workflow hiển thị có thể vẫn là tên trên main.
+Drive root `VNGISDash_2024_FLOW07_NATIONAL` hoặc `VNGISDash_2024_FLOW07_NATIONAL_PILOT`:
 
-Nhập `province`, chọn `mode=pilot`, giữ `pilot_n=2`, `workers=2`. Kiểm tra preflight, ảnh và CSV sau lượt thử. Sau đó chọn cùng tỉnh và `mode=full`.
+```text
+National/DAY/2024/01/tiles/*.tif
+National/DAY/2024/01/VNM_DAY_202401.vrt
+National/DAY/2024/01/complete.json
+National/NIGHT/2024/01/tiles/*.tif
+National/NIGHT/2024/01/VNM_NIGHT_202401.vrt
+CSV/day_indices.csv
+CSV/night_indices.csv
+_control/national_progress.json
+```
 
-Mỗi lượt tối đa khoảng 5 giờ 15 phút; khi hết giờ hoặc sự cố tạm thời theo logic pipeline có sẵn, workflow gọi lượt tiếp cùng nhánh và giữ province/mode/pilot_n/workers. Trạng thái được lưu trên Drive. Không xóa _control để chạy tiếp. Pilot và full có thư mục riêng nên full không tái sử dụng đầu ra pilot.
+Full có thêm tháng 02–12. CSV có `LEVEL=national`, `COUNTRY_CODE=VNM`, `COUNTRY_NAME=Viet Nam`; mỗi tháng có dữ liệu là một quan sát quốc gia. Tên trường diện tích được đổi thành `NATIONAL_AREA_HA`. Các trường hành chính cũ chỉ dùng nội bộ khi gọi hàm dùng chung, không xuất ra CSV quốc gia.
 
-Chọn tỉnh khác sau khi lượt trước hoàn tất; các tỉnh dùng chung root FLOW07 nhưng có thư mục cấp tỉnh và checkpoint cấp xã riêng. Không chạy thủ công một writer khác vào cùng root.
+Ảnh toàn quốc rất lớn nên **không ghép thành một TIFF khổng lồ trên GitHub runner**. Tải ô 512 pixel trên cùng lưới cố định, kiểm tra lưới/số băng, upload ngay từng ô để giữ dung lượng runner thấp. Ô quá lớn được chia nhỏ tiếp; không giảm độ phân giải. Chỉ tạo VRT và complete.json sau khi đủ mọi ô phủ vùng quốc gia. Các ô ngoài vùng đã clip là NoData -9999.
 
-## Dừng
+Tải **cả thư mục tháng gồm VRT và tiles**, giữ nguyên vị trí tương đối, rồi mở VRT trong QGIS để xem như một ảnh quốc gia. VRT không phải ảnh xem trước và không tự chứa pixel; chỉ tải riêng VRT sẽ không xem được. Thư mục đang tải dở có thể có tiles nhưng chưa có VRT/complete.json.
 
-Tạo file `STOP` ở gốc **nhánh vngis-ee-07**, hoặc `_control/STOP` trong root Drive tương ứng. Workflow kiểm tra STOP trên đúng nhánh và không tự nối khi STOP tồn tại. Xóa STOP rồi Run workflow lại cùng tỉnh/mode để tiếp tục.
+Pilot/full có root riêng, không tái sử dụng ô giữa hai mode. Root NATIONAL tách khỏi đầu ra FLOW07 cấp xã/tỉnh trước đó; không xóa hay sửa dữ liệu cũ.
 
-## Kiểm tra đã thực hiện
+## Phương pháp và giới hạn
 
-15 kiểm thử chọn tỉnh/dừng/tiếp tục và kiểm tra cú pháp Python, YAML, shell workflow đã đạt. Chưa thực hiện tải Earth Engine/Drive thực tế: cần người quản lý thêm secret 07 và kiểm tra quyền/quota trước.
+Tái sử dụng các hàm khoa học trong `vngis_2024.py`: Sentinel-2 SR tháng, mask QA60, các chỉ số phổ và reducers mean/stdDev ở nominal 50 m; TIFF ngày 10 băng ở nominal 20 m; VIIRS tháng avg_rad/cf_cvg ở nominal 500 m và reducers ánh sáng như code gốc. TIFF Float64, không lượng tử hóa int16. EPSG:4326 với bước góc quy đổi từ nominal scale, không phải mọi pixel đều có diện tích chính xác 20x20 m.
+
+Cửa sổ fallback ảnh ngày, lựa chọn nguồn VIIRS, ngưỡng sáng, proxy và cách tính tăng trưởng giữ nguyên code gốc. Đặc biệt, giới hạn ngày cuối tháng exclusive và hạn chế QA60 của code gốc vẫn còn; không gọi đây là dữ liệu đã được kiểm định hoặc hiệu chuẩn. CSV không có hàng ở tháng nguồn thực sự rỗng; báo cáo `complete_with_gaps` ghi các ảnh thiếu, không điền zero thay dữ liệu thiếu.
+
+Dữ liệu toàn quốc 20 m × 10 băng × 12 tháng có thể rất lớn và vượt dung lượng Drive/quota. Tải ô giúp tiếp tục và giới hạn RAM/đĩa runner, không làm giảm tổng dữ liệu hay tăng quota. Kiểm tra đủ dung lượng Drive trước khi chạy full; luồng này chưa tự nhận vào ổ E hoặc xóa staging sau khi nhận.
+
+## Dừng và tiếp tục
+
+Tạo `STOP` ở gốc nhánh `vngis-ee-07`, hoặc `_control/STOP` trong root Drive tương ứng. Workflow kiểm tra STOP trên đúng nhánh, downloader kiểm tra STOP giữa các ô. Xóa STOP rồi Run workflow cùng mode để tiếp tục. Không đổi asset/method/root hoặc xóa tiles/complete.json giữa một chuỗi tải.
+
+Đã kiểm tra bằng dữ liệu giả lập: một feature quốc gia, lưới/ô, chia nhỏ, tiếp tục từ Drive, lỗi upload và pixel/NoData của VRT, cùng các kiểm thử dừng/tiếp tục pipeline dùng chung. Chưa xác minh tải thực tế với credentials/quota của bạn.
