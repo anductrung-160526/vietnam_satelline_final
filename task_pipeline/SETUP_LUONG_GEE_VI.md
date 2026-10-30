@@ -86,19 +86,15 @@ Lệnh sẽ **từ chối chạy** nếu `--years` nằm ngoài khoảng cho ph�
 dự án: Landsat chỉ 2004–2014, Sentinel-2 chỉ 2015–2025, VIIRS chỉ 2014–2025, DMSP chỉ
 2004–2013). Không sửa bảng này trừ khi quy tắc dự án trong `CLAUDE.md` thay đổi.
 
-### 2.2. `CLAUDE.md` — bảng 6 tài khoản/project hiện có
-```
-| Nhóm  | Nhánh               | Tài khoản                              | Project                      |
-| 1-11  | vngis-tinh-001-011  | adt.wqiqc@gmail.com                    | vngis-ee-2                   |
-| 12-22 | vngis-tinh-012-022  | k62.2313560049@ftu.edu.vn              | vngis-ee-ha-tinh-lai-chau    |
-| 23-33 | vngis-tinh-023-033  | trunganduclionel9equynhmai@gmail.com   | vngis-ee-soc-trang-yen-bai   |
-| 34-43 | vngis-tinh-034-043  | antrungatwork0711@gmail.com            | vngis-ee-cao-bang-hanoi      |
-| 44-53 | vngis-tinh-044-053  | trungad.qec@gmail.com                  | vngis-ee-lam-dong-quang-tri  |
-| 54-63 | vngis-tinh-054-063  | 4usdperchatgpt@gmail.com                | vgis-ee-6                    |
-```
-Khi thêm tài khoản/project thứ 7, 8…: **thêm một dòng vào bảng này** trong `CLAUDE.md`, và đặt
-cho nó một thư mục profile riêng (mục 4.2 bên dưới). Không cần sửa `national.py` để thêm luồng —
-chỉ cần truyền đúng `--project` và `$env:USERPROFILE` khi chạy.
+### 2.2. `CLAUDE.md` — bảng tài khoản/project hiện có
+`CLAUDE.md` ở gốc repo giữ bảng **10 luồng** (tài khoản Google ↔ project Earth Engine ↔ thư mục
+profile trên Windows). Khi thêm tài khoản/project mới: **thêm một dòng vào bảng đó**, và nếu chạy
+trên máy ảo thì thêm một mục vào mảng `ACCOUNTS` trong `scripts/cloud_vm/run.sh`.
+
+**Không cần tạo nhánh git riêng cho mỗi luồng.** Mọi luồng chạy từ cùng checkout nhánh
+`vngis-tinh-001-011`; việc chia công việc do `--shard i/n` quyết định (10 tài khoản →
+`--shard 1/10` … `10/10`). Các nhánh `vngis-tinh-XXX-XXX` là di sản của luồng tải ảnh theo
+tỉnh/tháng trước đây, không dùng cho ảnh năm toàn quốc.
 
 ---
 
@@ -180,6 +176,21 @@ Cách đơn giản và đáng tin cậy hơn: dùng lệnh `authenticate` có s�
 Trình duyệt mở ra → đăng nhập **đúng tài khoản Google** của project đó → cấp quyền. Cửa sổ
 PowerShell phải in ra `... PASS`. Token được lưu vào `$env:USERPROFILE\.config\earthengine\`,
 nên lần sau mở cửa sổ mới chỉ cần đặt lại `$env:USERPROFILE` (mục 4.2), **không cần đăng nhập lại**.
+
+### 4.4. Cách khác: dùng service-account key thay cho đăng nhập trình duyệt
+Nếu project đã có **service account** và file **key JSON**, không cần đăng nhập trình duyệt —
+tiện hơn nhiều khi có 10 luồng, và bắt buộc khi chạy trên máy ảo không có màn hình.
+1. Trên Google Cloud Console → **IAM & Admin → Service Accounts** → tạo service account cho project.
+2. Cấp quyền: **Earth Engine Resource Writer** (hoặc Viewer nếu chỉ đọc) và **Service Usage Consumer**.
+3. **Đăng ký service account đó với Earth Engine** (bắt buộc, nếu không sẽ bị từ chối khi gọi API):
+   `signup.earthengine.google.com/#!/service_accounts`, hoặc thêm email service account vào project
+   Earth Engine đã đăng ký.
+4. Tạo **key JSON**, lưu **ngoài repo** (ví dụ `C:\keys\vgis-ee-07.json`). Không commit lên Git.
+5. Chạy với `--ee-key`:
+```powershell
+& $python -m task_pipeline.national --product SENTINEL2 --years 2024 --project vgis-ee-07 --ee-key "C:\keys\vgis-ee-07.json" --shard 7/10
+```
+Khi dùng `--ee-key`, **không cần** đặt `$env:USERPROFILE` cho luồng đó.
 
 ---
 
@@ -271,6 +282,86 @@ Get-ChildItem "E:\SatelliteData\VN_LandCover_Panel_2004_2025\raw_data\DAY\SENTIN
 - Gập máy / tắt màn hình: cần tắt chế độ Sleep trước (`powercfg /change standby-timeout-ac 0`,
   đổi "khi gập máy" thành "Do nothing" trong Power Options), nếu không mọi luồng sẽ bị treo.
 - Tắt hẳn máy: luồng dừng hẳn, không có cách tiếp tục khi máy tắt trừ khi chạy trên máy ảo cloud.
+
+---
+
+## 6b. Chạy 10 luồng trên máy ảo Google Cloud (tắt/gập laptop vẫn chạy)
+
+Laptop tắt thì mọi luồng trên laptop dừng. Muốn chạy liên tục, đặt chúng trên một **máy ảo Linux**
+(Compute Engine), trả bằng tín dụng dùng thử 300 USD. Ba script có sẵn trong `scripts/cloud_vm/`.
+
+### Tạo máy ảo
+Console → **Compute Engine → VM instances → Create instance**:
+- Name `vngis-vm`, Region **asia-southeast1 (Singapore)**, Machine type **e2-standard-4**
+  (4 CPU — 10 luồng chủ yếu là chờ Earth Engine, nhưng 4 CPU an toàn hơn 2).
+- Boot disk: **Ubuntu 24.04 LTS**, 30 GB.
+- Advanced → Disks → **Add new disk**: tên `data`, **Standard persistent disk**, **500 GB**.
+
+### Cài đặt (bấm nút SSH cạnh tên máy ảo, dán vào cửa sổ terminal)
+```bash
+curl -sL https://raw.githubusercontent.com/anductrung-160526/vietnam_satelline_final/vngis-tinh-001-011/scripts/cloud_vm/setup.sh -o setup.sh && bash setup.sh
+```
+
+### Nạp xác thực cho 10 tài khoản
+**Cách A — service-account key (khuyên dùng, không cần trình duyệt):** trong cửa sổ SSH bấm nút
+**⚙ → Upload file** để đưa 10 file key JSON lên máy ảo, rồi đặt đúng tên:
+```bash
+mkdir -p ~/ee-keys
+mv ~/<ten-file-key-1>.json ~/ee-keys/acc-wqiqc.json      # luồng 1  → vngis-ee-2
+mv ~/<ten-file-key-2>.json ~/ee-keys/acc-ftu.json        # luồng 2
+# ... acc-quynhmai, acc-work, acc-qec, acc-4usd,
+#     acc-miendao (vgis-ee-07), acc-ducanchu (vgis-ee-08),
+#     acc-linhbe (vgis-ee-09), acc-mpnguyen (vgis-ee-10)
+chmod 600 ~/ee-keys/*.json
+```
+Tên file **phải khớp** cột "Profile" trong `CLAUDE.md` (phần sau `acc-`), vì `run.sh` tìm theo tên đó.
+
+**Cách B — đăng nhập OAuth từng tài khoản** (nếu không có key):
+```bash
+cd ~/vietnam_satelline_final
+bash scripts/cloud_vm/login.sh acc-miendao  vgis-ee-07
+bash scripts/cloud_vm/login.sh acc-ducanchu vgis-ee-08
+bash scripts/cloud_vm/login.sh acc-linhbe   vgis-ee-09
+bash scripts/cloud_vm/login.sh acc-mpnguyen vgis-ee-10
+# ... và 6 tài khoản cũ
+```
+Mỗi lệnh in ra một link → mở trên trình duyệt laptop → đăng nhập **đúng tài khoản** → dán mã về.
+
+### Chạy 10 luồng nền
+```bash
+cd ~/vietnam_satelline_final
+bash scripts/cloud_vm/run.sh SENTINEL2 2024          # một năm
+bash scripts/cloud_vm/run.sh SENTINEL2 2015-2025     # hoặc cả giai đoạn, lần lượt từng năm
+```
+`run.sh` tự chia `--shard 1/10` … `10/10` theo bảng tài khoản, mỗi luồng một phiên `tmux` riêng.
+**Sau bước này đóng cửa sổ SSH và tắt laptop được** — các luồng vẫn chạy trên máy ảo.
+
+### Theo dõi (mở SSH lại bất cứ lúc nào)
+```bash
+tail -n 3 /data/SatelliteData/_control/national/log_SENTINEL2_p*.txt   # tiến độ 10 luồng
+tmux ls                                                                # phiên nào đang chạy
+tmux attach -t p7                                                      # xem luồng 7; thoát: Ctrl+B rồi D
+df -h /data                                                            # dung lượng còn lại
+```
+Máy ảo khởi động lại hoặc luồng nào dừng: chạy lại đúng lệnh `run.sh`, nó bỏ qua phiên đang chạy
+và chỉ khởi động lại phiên đã tắt.
+
+### Ghép và đưa về ổ E
+```bash
+cd ~/vietnam_satelline_final && .venv/bin/python -m task_pipeline.national \
+  --merge --product SENTINEL2 --years 2024 --root /data/SatelliteData
+```
+Trên laptop (cài Google Cloud CLI, `gcloud init` một lần):
+```powershell
+gcloud compute scp --zone <zone-cua-vm> vngis-vm:/data/SatelliteData/VN_LandCover_Panel_2004_2025/raw_data/DAY/SENTINEL2/VN_SENTINEL2_2024/VN_SENTINEL2_2024.tif "E:\SatelliteData\VN_LandCover_Panel_2004_2025\raw_data\DAY\SENTINEL2\"
+```
+
+### Chi phí và an toàn tín dụng
+- Ước tính: máy ảo e2-standard-4 + ổ 500 GB + tải ~300 GB về ≈ **100–180 USD** cho khoảng 1 tháng.
+- Đặt **Budget alert** trong **Billing → Budgets & alerts**.
+- **Không bấm "Activate"/"Upgrade"** → tài khoản vẫn là Free Trial, không bao giờ bị trừ thẻ.
+- Xong việc: **tải hết dữ liệu về ổ E trước**, rồi xoá máy ảo và ổ `data` để ngừng tiêu tín dụng.
+- Quota Earth Engine **không đổi** khi chạy trên máy ảo; máy ảo chỉ giúp chạy 24/24.
 
 ---
 

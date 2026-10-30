@@ -16,15 +16,29 @@
 - Cột lớp phủ (`dt_nong_nghiep`, `dt_do_thi`, `dt_rung`, `dt_mat_nuoc`, `dt_dat_khac`,
   `ty_le_nong_nghiep`, `dt_nn_chuyen_doi`) để trống cho đến khi có bộ điểm mẫu.
 
-## Sáu nhóm tỉnh, tài khoản và project Earth Engine
-| Nhóm | Nhánh | Tài khoản | Project |
-|---|---|---|---|
-| 1-11 | vngis-tinh-001-011 | adt.wqiqc@gmail.com | vngis-ee-2 |
-| 12-22 | vngis-tinh-012-022 | k62.2313560049@ftu.edu.vn | vngis-ee-ha-tinh-lai-chau |
-| 23-33 | vngis-tinh-023-033 | trunganduclionel9equynhmai@gmail.com | vngis-ee-soc-trang-yen-bai |
-| 34-43 | vngis-tinh-034-043 | antrungatwork0711@gmail.com | vngis-ee-cao-bang-hanoi |
-| 44-53 | vngis-tinh-044-053 | trungad.qec@gmail.com | vngis-ee-lam-dong-quang-tri |
-| 54-63 | vngis-tinh-054-063 | 4usdperchatgpt@gmail.com | vgis-ee-6 |
+## Mười tài khoản và project Earth Engine
 
-Cả sáu nhóm chạy từ checkout của nhánh `vngis-tinh-001-011` trên laptop Windows
-(`--range` + `--project`, mỗi tài khoản một `$env:USERPROFILE`), dữ liệu ghi thẳng vào `E:\SatelliteData`.
+| Luồng | Tài khoản | Project | Profile trên Windows |
+|---|---|---|---|
+| 1 | adt.wqiqc@gmail.com | vngis-ee-2 | (mặc định) |
+| 2 | k62.2313560049@ftu.edu.vn | vngis-ee-ha-tinh-lai-chau | `C:\ee-profiles\acc-ftu` |
+| 3 | trunganduclionel9equynhmai@gmail.com | vngis-ee-soc-trang-yen-bai | `C:\ee-profiles\acc-quynhmai` |
+| 4 | antrungatwork0711@gmail.com | vngis-ee-cao-bang-hanoi | `C:\ee-profiles\acc-work` |
+| 5 | trungad.qec@gmail.com | vngis-ee-lam-dong-quang-tri | `C:\ee-profiles\acc-qec` |
+| 6 | 4usdperchatgpt@gmail.com | vgis-ee-6 | `C:\ee-profiles\acc-4usd` |
+| 7 | miendao752@gmail.com | vgis-ee-07 | `C:\ee-profiles\acc-miendao` |
+| 8 | ducanchu0808@gmail.com | vgis-ee-08 | `C:\ee-profiles\acc-ducanchu` |
+| 9 | linhbe200562@gmail.com | vgis-ee-09 | `C:\ee-profiles\acc-linhbe` |
+| 10 | mpnguyenjib1030@gmail.com | vgis-ee-10 | `C:\ee-profiles\acc-mpnguyen` |
+
+Mỗi luồng = một project Earth Engine (quota riêng) + một tài khoản Google đã đăng nhập.
+
+**Không cần nhánh git riêng cho mỗi luồng.** Mọi luồng chạy từ cùng một checkout của nhánh
+`vngis-tinh-001-011`; việc chia công việc do tham số quyết định:
+- `national.py --shard i/n`: chia **mỗi năm** thành `n` phần, luồng này lấy phần `i`
+  (10 tài khoản → `--shard 1/10` … `--shard 10/10`, mọi luồng của cùng một năm phải cùng `n`).
+- `stats.py --range`: chia theo nhóm tỉnh (các nhánh `vngis-tinh-XXX-XXX` là di sản của luồng
+  tải ảnh theo tỉnh/tháng trước đây, không dùng cho ảnh năm toàn quốc).
+
+Dữ liệu ghi vào `E:\SatelliteData` (Windows) hoặc `/data/SatelliteData` (máy ảo Linux).
+Xem `task_pipeline/SETUP_LUONG_GEE_VI.md` để biết các bước thiết lập và chạy chi tiết.
