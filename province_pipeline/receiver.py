@@ -100,21 +100,31 @@ def validate(path, file, job):
     md5, sha = hashes(path)
     if not file.get('md5Checksum') or md5 != file['md5Checksum']:
         raise ValueError('Downloaded MD5 mismatch')
+    if file.get('role')=='preview':
+        import rasterio
+        with rasterio.open(path) as ds:
+            if ds.driver!='PNG' or ds.count!=3 or ds.width>1024 or ds.height>1024 or any(t!='uint8' for t in ds.dtypes):
+                raise ValueError('Preview PNG schema mismatch')
+            ds.read()
+        return sha
     if job['kind'] == 'image':
         import rasterio
         from affine import Affine
         with rasterio.open(path) as ds:
             if not same_crs(ds.crs,job['crs']) or ds.count != len(job['bands']) or ds.nodata != -9999:
                 raise ValueError('TIFF CRS/bands/nodata mismatch')
-            if ds.width != ds.height or ds.width * job['scale'] != job['tile']['bounds'][2]-job['tile']['bounds'][0]:
+            import math
+            tile=job['tile']
+            expected_width=tile.get('width',ds.height);expected_height=tile.get('height',expected_width)
+            if ds.width!=expected_width or ds.height!=expected_height or not math.isclose(ds.width * job.get('grid_resolution',job['scale']),
+                    job['tile']['bounds'][2]-job['tile']['bounds'][0],rel_tol=1e-9,abs_tol=1e-10):
                 raise ValueError('TIFF dimensions do not match bounded tile')
             if not ds.transform.almost_equals(Affine(*job['tile']['transform'])):
                 raise ValueError('TIFF grid mismatch')
-            if any(t != 'float32' for t in ds.dtypes):
+            if any(t != job.get('dtype','float32') for t in ds.dtypes):
                 raise ValueError('TIFF dtype mismatch')
-            for band in range(1, ds.count+1):
-                for _, window in ds.block_windows(band):
-                    ds.read(band, window=window)  # Decode every block, not just the header.
+            for _, window in ds.block_windows(1):
+                ds.read(window=window)  # Decode every block, not just the header.
     else:
         import pandas as pd
         frame = pd.read_csv(path, dtype={'ma_tinh': str, 'period': str, 'job_id': str})

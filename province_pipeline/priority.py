@@ -5,7 +5,7 @@ import uuid
 from .common import audit, digest
 TERMINAL = {'REMOTE_READY', 'DELETED_REMOTE', 'ACKED', 'FAILED', 'BLOCKED_OUTPUT',
             'MISSING_SOURCE', 'INSUFFICIENT_QUALITY'}
-STAGES = {0: 'night_images', 1: 'indices_csv', 2: 'day_images'}
+STAGES = {0: 'night_images', 2: 'day_images', 1: 'indices_csv'}  # night -> day -> tables
 
 def fair_jobs(config, boundaries, metadata, priority, cursor):
     from .jobs import generate_v2
@@ -25,7 +25,7 @@ def fair_jobs(config, boundaries, metadata, priority, cursor):
             pass
 
 def inventory_key(job):
-    return digest([job['province']['ma_tinh'], job['product'], job['period'], job['recipe_hash']])
+    return digest([job['province']['ma_tinh'], job['product'], job['period'], job['recipe_hash'],job['kind'] if job.get('quality',{}).get('processing_mode')=='notebook_tasks' else ''])
 
 def prepare_priority(config, drive, boundaries, metadata, inventory_callback):
     from .controller import control_folders, reconcile, admit
@@ -36,11 +36,14 @@ def prepare_priority(config, drive, boundaries, metadata, inventory_callback):
                             {'schema_version': 1, 'jobs': {}, 'inventory': {}, 'cursor': 0})
     if any(j['status'] == 'MIGRATING' for j in state['jobs'].values()):
         raise RuntimeError('Finish organize_only before exports')
+    if config['quality'].get('processing_mode')=='notebook_tasks':state['receipt_listing_cache']=True
     reconcile(drive, folders, state, [])
     if state.get('layout_version', 1) < LAYOUT_VERSION:
         ensure_drive_packages(drive, config['drive_root_id'])
         state['layout_version'] = LAYOUT_VERSION
     for j in state['jobs'].values():
+        if j.get('image_layout')=='province' and j['status']=='RESERVED':
+            j['preview_required']=False
         if j['status'] == 'RESERVED' and not in_scope(config, j):
             j['status'] = 'DEFERRED'  # only never-submitted reservations
     plan, checks = [], 0

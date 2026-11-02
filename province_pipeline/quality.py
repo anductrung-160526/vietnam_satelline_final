@@ -12,6 +12,8 @@ def out_of_range(info,job):
 
 
 def reprocess_statistics(info,job,geometry,config):
+    if job['quality'].get('processing_mode')=='notebook_tasks':
+        return dict(info,qc_attempts=1,qc_status='NOTEBOOK_TASKS')
     if job['quality'].get('processing_mode')=='raw_source':
         return dict(info,qc_attempts=1,qc_status='RAW_UNFILTERED')
     info=dict(info,qc_attempts=1,qc_status='PASS')
@@ -41,6 +43,9 @@ def inspect_raster(path,job):
     with rasterio.open(path) as ds:
         for _,window in ds.block_windows(1):
             data=ds.read(window=window,masked=True)
+            if any(sc not in (None,1) for sc in ds.scales):
+                # Packed int16 day TIFFs: inspect the real values, not the stored integers.
+                data=data.astype('float64')*np.array(ds.scales)[:,None,None]+np.array(ds.offsets)[:,None,None]
             primary=data[:6] if job.get('quality',{}).get('processing_mode')=='raw_source' and job['product'] in ('LANDSAT','SENTINEL2') else data
             common=~np.ma.getmaskarray(primary).any(axis=0)
             total+=common.size;valid+=int(common.sum())

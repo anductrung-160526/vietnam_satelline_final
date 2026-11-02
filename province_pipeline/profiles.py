@@ -20,6 +20,8 @@ def apply_profile(config, profile, processing=None):
                    anomaly_robust_z=6, max_transfer_attempts=4)
     quality.update(c.get('quality', {}))
     quality['processing_mode']=processing or quality.get('processing_mode','quality_filtered')
+    if quality['processing_mode']=='notebook_tasks':
+        c['algorithm_version']='v004tasks'
     if quality['processing_mode']=='raw_source':
         c['algorithm_version']='v003raw'
     validate_quality(quality)
@@ -27,7 +29,7 @@ def apply_profile(config, profile, processing=None):
     return c
 
 def source_for(year, night):
-    return ('DMSP' if year <= 2013 else 'VIIRS_MONTHLY') if night else ('LANDSAT' if year <= 2017 else 'SENTINEL2')
+    return ('DMSP' if year <= 2013 else 'VIIRS_MONTHLY') if night else ('LANDSAT' if year <= 2014 else 'SENTINEL2')
 
 def table_specs(config):
     selected = set(config['province_codes'])
@@ -42,13 +44,20 @@ def table_specs(config):
                     yield dict(province=p, product=product, period=period, night=night)
 
 def in_scope(config, job):
+    if (config['quality'].get('processing_mode')=='notebook_tasks' and job.get('kind')=='image'
+            and job.get('image_layout')!='province'):
+        return False
     if job.get('pipeline_version') != 2:
         return False
     if job['province']['ma_tinh'] not in config['province_codes'] or int(job['period'][:4]) not in config['years']:
         return False
     from .common import digest
     from .sources import SOURCES
-    expected=digest(dict(source=SOURCES[job['product']],quality=config['quality'],
+    spec=SOURCES[job['product']]
+    if config['quality'].get('processing_mode')=='notebook_tasks':
+        from task_pipeline.methods import source_spec
+        spec=source_spec(job['product'],job['period'])
+    expected=digest(dict(source=spec,quality=config['quality'],
         algorithm_version=config['algorithm_version'],crs=config['crs'],
         season_months=config.get('season_months'),season_months_by_province=config.get('season_months_by_province',{})))
     return (job.get('recipe_hash')==expected and
@@ -56,7 +65,7 @@ def in_scope(config, job):
 
 
 def validate_quality(q):
-    if q.get('processing_mode','quality_filtered') not in ('raw_source','quality_filtered'):
+    if q.get('processing_mode','quality_filtered') not in ('raw_source','quality_filtered','notebook_tasks'):
         raise ValueError('Invalid processing mode')
     import math
     limits={'min_valid_area_pct':(0,100),'min_observations_day':(1,1000),
