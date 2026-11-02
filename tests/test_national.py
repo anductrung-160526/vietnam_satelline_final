@@ -39,6 +39,14 @@ class NationalTests(unittest.TestCase):
         with self.assertRaises(SystemExit):national.run_year('LANDSAT',2015,'.',{},1,image=object())
         with self.assertRaises(SystemExit):national.run_year('SENTINEL2',2014,'.',{},1,image=object())
 
+    def test_nomask_variant_shares_the_grid_but_not_the_folder_or_method(self):
+        """The unmasked composite must land beside the masked one, never on top of it."""
+        s,n=national.PRODUCTS['SENTINEL2'],national.PRODUCTS['SENTINEL2_NOMASK']
+        self.assertEqual((s['scale'],s['kind'],s['dtype'],s['bands']),(n['scale'],n['kind'],n['dtype'],n['bands']))
+        self.assertEqual(list(s['years']),list(n['years']))
+        self.assertNotEqual(national.METHODS.get('SENTINEL2_NOMASK'),
+                            national.METHODS.get('SENTINEL2',national.METHOD))
+
     def test_tiles_stay_under_the_download_limit(self):
         for product,p in national.PRODUCTS.items():
             n=national.tile_pixels(product);per=len(p['bands'])*(2 if p['dtype']=='int16' else 4)

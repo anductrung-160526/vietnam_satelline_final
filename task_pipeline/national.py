@@ -35,10 +35,13 @@ from .province_image import DAY_TIFF_BANDS,size_error
 PRODUCTS={
     'LANDSAT':dict(years=range(2004,2015),scale=30,kind='DAY',dtype='int16',bands=DAY_TIFF_BANDS),
     'SENTINEL2':dict(years=range(2015,2026),scale=10,kind='DAY',dtype='int16',bands=DAY_TIFF_BANDS),
+    # Same composite without the Cloud Score+ mask, for checking what the masking removes.
+    'SENTINEL2_NOMASK':dict(years=range(2015,2026),scale=10,kind='DAY',dtype='int16',bands=DAY_TIFF_BANDS),
     'VIIRS':dict(years=range(2014,2026),scale=500,kind='NTL',dtype='float32',bands=['avg_rad']),
     'DMSP':dict(years=range(2004,2014),scale=1000,kind='NTL',dtype='float32',bands=['stable_lights']),
 }
 METHOD='ANNUAL_FULLYEAR_v1'
+METHODS={'SENTINEL2_NOMASK':'ANNUAL_FULLYEAR_NOMASK_v1'}   # per-product override of METHOD
 TILE_BYTES=24_000_000      # below Earth Engine's 32 MB per direct download
 MIN_TILE=128
 DEG=111319.49079327358     # metres per degree (EPSG:4326 grid, as in the province pipeline)
@@ -78,7 +81,7 @@ def year_image(product,year,region):
     """Server-side annual composite (only its graph; nothing is computed until a download)."""
     import ee
     p=PRODUCTS[product];start,end=f'{year}-01-01',f'{year+1}-01-01'
-    if product in ('LANDSAT','SENTINEL2'):
+    if product in ('LANDSAT','SENTINEL2','SENTINEL2_NOMASK'):
         from province_pipeline.sources import BANDS
         if product=='LANDSAT':
             from province_pipeline.earth_engine import _landsat
@@ -91,7 +94,11 @@ def year_image(product,year,region):
             from .stats import sentinel,CS_PLUS
             cid='COPERNICUS/S2_SR_HARMONIZED' if year>=2019 else 'COPERNICUS/S2_HARMONIZED'
             col=ee.ImageCollection(cid).filterBounds(region).filterDate(start,end)
-            clean=col.linkCollection(ee.ImageCollection(CS_PLUS),['cs_cdf']).map(sentinel)
+            if product=='SENTINEL2_NOMASK':
+                # Clouds and their shadows are kept: the only difference from SENTINEL2.
+                clean=col.map(lambda i:i.select(['B2','B3','B4','B8','B11','B12'],BANDS).divide(10000))
+            else:
+                clean=col.linkCollection(ee.ImageCollection(CS_PLUS),['cs_cdf']).map(sentinel)
         empty=ee.Image.constant([0]*len(BANDS)).rename(BANDS).toFloat().updateMask(0)
         image=clean.map(lambda i:i.toFloat()).merge(ee.ImageCollection([empty])).median().select(p['bands'])
         image=province_image.to_int16(image)
@@ -238,7 +245,7 @@ def write_vrt(product,year,folder,g,resolution,tiles):
     bands=''.join(f'  <VRTRasterBand dataType="{gdal_type}" band="{b+1}">\n'
                   f'    <Description>{p["bands"][b]}</Description>\n    <NoDataValue>-9999</NoDataValue>\n'
                   +'\n'.join(sources[b])+'\n  </VRTRasterBand>\n' for b in range(len(p['bands'])))
-    meta=dict(SOURCE=product,YEAR=str(year),METHOD=METHOD,SCALE_M=str(p['scale']),
+    meta=dict(SOURCE=product,YEAR=str(year),METHOD=METHODS.get(product,METHOD),SCALE_M=str(p['scale']),
               VALUE='int16 = reflectance x 10000' if p['dtype']=='int16' else ('nW/cm2/sr' if product=='VIIRS' else 'DN 0-63'))
     items=''.join(f'    <MDI key="{k}">{escape(v)}</MDI>\n' for k,v in meta.items())
     xml=(f'<VRTDataset rasterXSize="{g["width"]}" rasterYSize="{g["height"]}">\n'
@@ -281,7 +288,7 @@ def run_year(product,year,root,boundaries,workers,fetch=None,image=None,pause_se
     lock=threading.Lock()
     def save():
         tmp=state.with_suffix('.tmp')
-        tmp.write_text(json.dumps(dict(product=product,year=year,method=METHOD,files=sorted(done),complete=sorted(complete))))
+        tmp.write_text(json.dumps(dict(product=product,year=year,method=METHODS.get(product,METHOD),files=sorted(done),complete=sorted(complete))))
         tmp.replace(state)
     # Restricted mode answers slowly and often refuses (429): keep retrying the missing tiles
     # in rounds, pausing longer after a round with no progress, instead of giving up.
