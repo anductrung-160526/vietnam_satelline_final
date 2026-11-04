@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 780" width="1340" height="780"
+     font-family="Arial, Helvetica, sans-serif" font-size="12">
+<style>
+  .vung{fill:#f7f9fc;stroke:#c3cde0;stroke-width:1.2;rx:8}
+  .vung-ten{font-size:11px;fill:#5a6b88;letter-spacing:.08em;font-weight:bold}
+  .hop{fill:#fff;stroke:#44597f;stroke-width:1.4;rx:5}
+  .hop-nong{fill:#fff6e5;stroke:#d79a21}
+  .hop-lanh{fill:#eaf4fb;stroke:#3d7ca6}
+  .hop-gee{fill:#eef7ee;stroke:#4a8a4a}
+  .ten{font-weight:bold;fill:#1c2535}
+  .mo{font-size:10.5px;fill:#5a6b88}
+  .mui{stroke:#44597f;stroke-width:1.5;fill:none;marker-end:url(#m)}
+  .mui-dut{stroke:#3d7ca6;stroke-width:1.5;fill:none;stroke-dasharray:5 4;marker-end:url(#mb)}
+  .nhan{font-size:10px;fill:#44597f}
+  .nhan-b{font-size:10px;fill:#3d7ca6}
+</style>
+<defs>
+  <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0 0 L10 5 L0 10 z" fill="#44597f"/></marker>
+  <marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0 0 L10 5 L0 10 z" fill="#3d7ca6"/></marker>
+</defs>
+
+<text x="20" y="26" font-size="15" font-weight="bold" fill="#1c2535">Hình 1. Sơ đồ cấu hình hệ thống VNGISDash</text>
+<text x="20" y="44" class="mo">Nguyên mẫu cấp tỉnh (63 tỉnh, 2004–2025) · kiến trúc lưu trữ lai: đám mây xử lý và phục vụ dữ liệu nóng, hạ tầng nội bộ lưu kho ảnh lạnh</text>
+
+<!-- Vùng 1: nguồn dữ liệu -->
+<rect class="vung" x="20" y="64" width="190" height="250"/>
+<text class="vung-ten" x="32" y="84">1 · NGUỒN DỮ LIỆU</text>
+<rect class="hop hop-gee" x="34" y="96" width="162" height="46"/>
+<text class="ten" x="44" y="114">Sentinel-2</text><text class="mo" x="44" y="130">2015–2025 · 10 m · L1C/L2A</text>
+<rect class="hop hop-gee" x="34" y="150" width="162" height="46"/>
+<text class="ten" x="44" y="168">Landsat 5/7/8/9</text><text class="mo" x="44" y="184">2004–2014 · 30 m</text>
+<rect class="hop hop-gee" x="34" y="204" width="162" height="46"/>
+<text class="ten" x="44" y="222">VIIRS DNB · DMSP-OLS</text><text class="mo" x="44" y="238">2004–2025 · 500 m / 1 km</text>
+<rect class="hop hop-gee" x="34" y="258" width="162" height="42"/>
+<text class="ten" x="44" y="276">GADM 4.1</text><text class="mo" x="44" y="291">63 tỉnh trước 01/7/2025</text>
+
+<!-- Vùng 2: GEE -->
+<rect class="vung" x="232" y="64" width="180" height="250"/>
+<text class="vung-ten" x="244" y="84">2 · GOOGLE EARTH ENGINE</text>
+<rect class="hop hop-gee" x="246" y="96" width="152" height="90"/>
+<text class="ten" x="256" y="114">Tổng hợp ảnh năm</text>
+<text class="mo" x="256" y="131">lọc mây Cloud Score+</text>
+<text class="mo" x="256" y="146">ghép trung vị cả năm</text>
+<text class="mo" x="256" y="161">xuất theo ô (tile)</text>
+<text class="mo" x="256" y="176">10 luồng × 10 project</text>
+<rect class="hop" x="246" y="196" width="152" height="56"/>
+<text class="ten" x="256" y="214">task_pipeline</text>
+<text class="mo" x="256" y="230">national.py · derive.py</text>
+<text class="mo" x="256" y="245">stats.py</text>
+<text class="mo" x="246" y="272">Hạn mức EECU phi</text>
+<text class="mo" x="246" y="286">thương mại, chia theo</text>
+<text class="mo" x="246" y="300">--shard i/n</text>
+
+<!-- Vùng 3: Google Cloud -->
+<rect class="vung" x="434" y="64" width="400" height="430"/>
+<text class="vung-ten" x="446" y="84">3 · GOOGLE CLOUD (asia-southeast1)</text>
+
+<rect class="hop" x="448" y="96" width="372" height="54"/>
+<text class="ten" x="458" y="114">Cloud Run Jobs — xử lý theo lô tỉnh</text>
+<text class="mo" x="458" y="131">thu thập → cắt theo ranh giới tỉnh → tính chỉ số → ghi bảng</text>
+<text class="mo" x="458" y="145">(giai đoạn nguyên mẫu: chạy trên máy ảo Compute Engine 4 vCPU)</text>
+
+<text class="vung-ten" x="458" y="176">TẦNG NÓNG</text>
+<rect class="hop hop-nong" x="448" y="186" width="178" height="74"/>
+<text class="ten" x="458" y="204">Cloud Storage</text>
+<text class="mo" x="458" y="220">COG ảnh đêm (1 ảnh/năm)</text>
+<text class="mo" x="458" y="234">COG ảnh ngày minh họa</text>
+<text class="mo" x="458" y="248">~100 MB/năm, không 24 GB</text>
+<rect class="hop hop-nong" x="638" y="186" width="182" height="74"/>
+<text class="ten" x="648" y="204">SQLite → Cloud SQL</text>
+<text class="mo" x="648" y="220">chỉ số đêm, chỉ số ngày</text>
+<text class="mo" x="648" y="234">danh mục 63 tỉnh</text>
+<text class="mo" x="648" y="248">dân số, GDP</text>
+
+<rect class="hop" x="448" y="276" width="178" height="68"/>
+<text class="ten" x="458" y="294">TiTiler</text>
+<text class="mo" x="458" y="310">tạo ô bản đồ từ COG</text>
+<text class="mo" x="458" y="324">bộ đệm ô đã tạo</text>
+<text class="mo" x="458" y="338">/tiles/cog/...</text>
+<rect class="hop" x="638" y="276" width="182" height="68"/>
+<text class="ten" x="648" y="294">FastAPI</text>
+<text class="mo" x="648" y="310">/api/provinces /api/indices</text>
+<text class="mo" x="648" y="324">/api/export.zip</text>
+<text class="mo" x="648" y="338">/api/basemap /api/coverage</text>
+
+<rect class="hop" x="448" y="360" width="372" height="48"/>
+<text class="ten" x="458" y="378">Cloud Run — một dịch vụ, min-instances 0</text>
+<text class="mo" x="458" y="394">TiTiler và FastAPI cùng một ảnh container (nguyên mẫu); tách dịch vụ khi mở rộng</text>
+
+<rect class="hop" x="448" y="420" width="372" height="56"/>
+<text class="ten" x="458" y="438">Phục vụ giao diện tĩnh</text>
+<text class="mo" x="458" y="454">Cloud Storage + CDN (hoặc Firebase Hosting) · React/MapLibre GL/ECharts</text>
+<text class="mo" x="458" y="468">nguyên mẫu: trang tĩnh, thư viện đóng gói sẵn trong repo</text>
+
+<!-- Vùng 4: người dùng -->
+<rect class="vung" x="1016" y="64" width="300" height="250"/>
+<text class="vung-ten" x="1028" y="84">4 · INTERNET &amp; NGƯỜI DÙNG</text>
+<rect class="hop" x="1030" y="96" width="272" height="88"/>
+<text class="ten" x="1040" y="114">Web Dashboard VNGISDash</text>
+<text class="mo" x="1040" y="131">bản đồ nền ban đêm theo năm</text>
+<text class="mo" x="1040" y="146">chọn tỉnh → độ sáng, diện tích sáng</text>
+<text class="mo" x="1040" y="161">biểu đồ chuỗi thời gian 2004–2025</text>
+<text class="mo" x="1040" y="176">nút Export</text>
+<rect class="hop" x="1030" y="196" width="272" height="80"/>
+<text class="ten" x="1040" y="214">Gói tải về (.zip)</text>
+<text class="mo" x="1040" y="230">(a) ảnh đêm  (b) chỉ số ảnh ngày</text>
+<text class="mo" x="1040" y="245">(c) chỉ số ảnh đêm  (d) chỉ số kinh tế</text>
+<text class="mo" x="1040" y="262">kèm ghi chú phương pháp bắt buộc đọc</text>
+
+<!-- Vùng 5: nội bộ -->
+<rect class="vung" x="1016" y="330" width="300" height="190"/>
+<text class="vung-ten" x="1028" y="350">5 · HẠ TẦNG NỘI BỘ FTU TECH LAB</text>
+<text class="mo" x="1028" y="366">(mức thiết kế — chưa triển khai vật lý)</text>
+<rect class="hop hop-lanh" x="1030" y="376" width="272" height="68"/>
+<text class="ten" x="1040" y="394">TẦNG LẠNH — máy chủ NAS</text>
+<text class="mo" x="1040" y="410">kho ảnh ngày gốc đầy đủ độ phân giải</text>
+<text class="mo" x="1040" y="424">~24 GB/năm × 22 năm</text>
+<text class="mo" x="1040" y="438">nguyên mẫu: ổ cứng ngoài E:\SatelliteData</text>
+<rect class="hop hop-lanh" x="1030" y="456" width="272" height="52"/>
+<text class="ten" x="1040" y="474">rclone (kéo) + Cloudflare Tunnel</text>
+<text class="mo" x="1040" y="490">kết nối khởi tạo từ phía lab → không mở</text>
+<text class="mo" x="1040" y="503">cổng vào mạng trường</text>
+
+<!-- Mũi tên -->
+<path class="mui" d="M210 190 L240 190"/>
+<path class="mui" d="M412 150 L444 125"/>
+<path class="mui" d="M537 150 L537 182"/>
+<path class="mui" d="M700 150 L700 182"/>
+<path class="mui" d="M537 260 L537 272"/>
+<path class="mui" d="M700 260 L700 272"/>
+<path class="mui" d="M537 344 L537 356"/><path class="mui" d="M700 344 L700 356"/>
+<path class="mui" d="M834 384 L900 384 L900 160 L1026 160"/>
+<text class="nhan" x="846" y="150">HTTPS: ô bản đồ,</text>
+<text class="nhan" x="846" y="163">JSON chỉ số,</text>
+<text class="nhan" x="846" y="176">gói .zip</text>
+<path class="mui-dut" d="M834 220 L962 220 L962 404 L1026 404"/>
+<text class="nhan-b" x="842" y="238">rclone kéo ảnh về</text>
+<text class="nhan-b" x="842" y="251">NAS hằng đêm, rồi</text>
+<text class="nhan-b" x="842" y="264">xóa bản trên đám mây</text>
+<path class="mui-dut" d="M1030 420 L990 420 L990 236 L1026 236"/>
+<text class="nhan-b" x="842" y="300">tải ảnh gốc qua</text>
+<text class="nhan-b" x="842" y="313">Cloudflare Tunnel —</text>
+<text class="nhan-b" x="842" y="326">không qua Google,</text>
+<text class="nhan-b" x="842" y="339">không có egress</text>
+
+<!-- Chú giải -->
+<rect class="vung" x="20" y="556" width="1296" height="200"/>
+<text class="vung-ten" x="32" y="576">NGUYÊN TẮC PHÂN TẦNG VÀ GHI CHÚ</text>
+<rect class="hop hop-nong" x="34" y="590" width="16" height="12"/>
+<text class="mo" x="58" y="601">Tầng nóng — truy cập thường xuyên, đặt trên đám mây: chỉ số (vài MB) và ảnh đã nén để hiển thị (~100 MB/năm).</text>
+<rect class="hop hop-lanh" x="34" y="612" width="16" height="12"/>
+<text class="mo" x="58" y="623">Tầng lạnh — ít truy cập, dung lượng lớn, giữ tại chỗ: ảnh ngày gốc ~24 GB/năm. Đưa lên đám mây sẽ tốn phí lưu trữ và phí egress.</text>
+<text class="mo" x="34" y="646">• Ảnh ngày chỉ hiển thị MỘT ảnh nén mỗi năm để minh họa; toàn bộ ảnh còn lại chỉ dùng để trích xuất chỉ số ngầm, không phục vụ qua web.</text>
+<text class="mo" x="34" y="666">• Chỉ số được tính một lần trong đường ống (task_pipeline/derive.py) rồi ghi ra bảng; API chỉ đọc, không tính lại — đo được và tái lập được.</text>
+<text class="mo" x="34" y="686">• Ánh sáng đêm chưa hiệu chỉnh liên vệ tinh DMSP–VIIRS: chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025).</text>
+<text class="mo" x="34" y="706">• Sentinel-2 2015–2018 là phản xạ đỉnh khí quyển (L1C), 2019–2025 là phản xạ bề mặt (L2A); mọi so sánh xuyên giai đoạn phải nêu rõ.</text>
+<text class="mo" x="34" y="726">• Phạm vi nguyên mẫu: cấp tỉnh (63 tỉnh). Mở rộng xuống cấp xã dùng lại nguyên kiến trúc này, chỉ đổi lớp ranh giới và khoá bảng.</text>
+<text class="mo" x="34" y="744">• Lớp phủ 5 lớp để trống cho tới khi có đủ bộ điểm mẫu huấn luyện và kiểm định.</text>
+</svg>

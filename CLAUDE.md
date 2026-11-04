@@ -42,3 +42,23 @@ Mỗi luồng = một project Earth Engine (quota riêng) + một tài khoản G
 
 Dữ liệu ghi vào `E:\SatelliteData` (Windows) hoặc `/data/SatelliteData` (máy ảo Linux).
 Xem `task_pipeline/SETUP_LUONG_GEE_VI.md` để biết các bước thiết lập và chạy chi tiết.
+
+## Quyết định về ứng dụng VNGISDash (chốt 04/11/2026)
+- **Prototype làm ở cấp tỉnh, 63 tỉnh toàn quốc.** Đề cương viết cấp xã (GADM 4.1,
+  11.163 xã, thí điểm Bắc Ninh); cấp tỉnh được coi là **bước 1**. Nếu cô yêu cầu thêm
+  thì mở rộng xuống cấp xã sau, không làm lại.
+- **Kiến trúc bản gọn, nâng cấp dần**: một Cloud Run chạy FastAPI + TiTiler, chỉ số trong
+  SQLite, ảnh COG trên Cloud Storage, frontend tĩnh. Nâng lên Cloud SQL (PostgreSQL) và
+  Firebase Hosting sau khi demo chạy được. Ảnh gốc 24 GB/năm **không lên đám mây**
+  (tầng lạnh: ổ E / NAS), API chỉ cấp liên kết tải.
+- **Chuỗi Sentinel-2 không đồng nhất là có chủ ý và đã được cô chấp nhận**: 2015–2018 là
+  `COPERNICUS/S2_HARMONIZED` (L1C, phản xạ đỉnh khí quyển TOA); 2019–2025 là
+  `COPERNICUS/S2_SR_HARMONIZED` (L2A, phản xạ bề mặt). Không tự ý đổi nguồn hay thêm
+  hiệu chỉnh. Mọi bảng/báo cáo so sánh giữa hai giai đoạn phải ghi rõ cảnh báo này.
+- **Yêu cầu của cô về app** (kim chỉ nam khi thiết kế giao diện):
+  bản đồ nền ban đêm làm chủ đạo, thiết kế nhẹ và dễ dùng; ảnh ngày **không** hiển thị
+  toàn bộ, mỗi năm chỉ một ảnh nén để minh họa, phần còn lại chỉ dùng trích xuất ngầm;
+  chọn xem theo từng tỉnh (độ sáng, diện tích sáng); một nút Export tải ra gồm ảnh đêm +
+  chỉ số ngày + chỉ số đêm + chỉ số kinh tế; chỉ số kinh tế (dân số, GDP) do cô cung cấp.
+- Lớp web nằm trong `app/`, **chỉ đọc** `data_processed/*.csv` và các COG. Không tính chỉ
+  số trong API: mọi phép tính thuộc `task_pipeline/derive.py`.

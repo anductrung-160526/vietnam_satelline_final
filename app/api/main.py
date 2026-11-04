@@ -1,0 +1,133 @@
+"""VNGISDash API — lớp đọc trên data_processed và các COG.
+
+Chạy thử:
+    python3 -m app.data.build_indices --root /data/SatelliteData
+    uvicorn app.api.main:app --reload       # rồi mở http://localhost:8000
+
+TiTiler được nạp nếu có cài; không có thì API vẫn chạy, chỉ thiếu ô bản đồ.
+"""
+import io
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import export, store
+
+WEB = Path(__file__).resolve().parent.parent / 'web'
+YEAR_MIN, YEAR_MAX = 2004, 2025
+
+app = FastAPI(title='VNGISDash API',
+              description='Chỉ số kinh tế – xã hội cấp tỉnh từ ảnh vệ tinh, Việt Nam 2004–2025',
+              version='0.1.0')
+
+
+def _code(ma_tinh: str) -> str:
+    code = ma_tinh.strip().zfill(2)
+    if not code.isdigit():
+        raise HTTPException(400, 'ma_tinh phải là mã số, ví dụ 01 hoặc 27')
+    return code
+
+
+@app.get('/api/health')
+def health():
+    try:
+        count = len(store.provinces())
+    except FileNotFoundError as error:
+        return JSONResponse({'ok': False, 'ly_do': str(error)}, status_code=503)
+    return {'ok': True, 'so_tinh': count, 'db': str(store.database_path())}
+
+
+@app.get('/api/provinces')
+def list_provinces():
+    """63 tỉnh trước sáp nhập, kèm số năm đã có dữ liệu để giao diện biết tỉnh nào còn trống."""
+    return {'tinh': store.provinces()}
+
+
+@app.get('/api/indices')
+def get_indices(ma_tinh: str = Query(..., description='Mã tỉnh, ví dụ 01'),
+                nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
+                nam_den: int = Query(YEAR_MAX, ge=1990, le=2100)):
+    if nam_tu > nam_den:
+        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
+    data = store.indices(_code(ma_tinh), nam_tu, nam_den)
+    if data is None:
+        raise HTTPException(404, f'Không có tỉnh với mã {ma_tinh}')
+    return data
+
+
+@app.get('/api/coverage')
+def get_coverage():
+    """Năm nào đã có dữ liệu gì — dùng cho trang trạng thái và báo cáo tiến độ."""
+    return store.coverage()
+
+
+@app.get('/api/basemap')
+def basemap():
+    """Danh sách năm có ảnh nền đêm, cho thanh trượt năm trên bản đồ."""
+    years = store.cog_years('NTL')
+    return {'nam': [entry['nam'] for entry in years], 'chi_tiet': years,
+            'tiles': '/tiles/cog/tiles/{z}/{x}/{y}.png?url=' if _titiler_ready() else None}
+
+
+@app.get('/api/originals')
+def list_originals():
+    """Ảnh gốc ở tầng lạnh (ổ E / NAS) — chỉ liệt kê, không phục vụ qua đám mây."""
+    return {'anh_goc': store.originals(),
+            'ghi_chu': 'Ảnh gốc không lưu trên đám mây để tránh chi phí egress. '
+                       'Liên hệ nhóm dữ liệu để lấy liên kết tải từ tầng lạnh.'}
+
+
+@app.get('/api/export.zip')
+def export_zip(ma_tinh: str = Query(...),
+               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
+               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
+               kem_anh: bool = Query(True, description='Kèm ảnh đêm GeoTIFF')):
+    if nam_tu > nam_den:
+        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
+    built = export.build(_code(ma_tinh), nam_tu, nam_den, kem_anh,
+                         datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))
+    if built is None:
+        raise HTTPException(404, f'Không có tỉnh với mã {ma_tinh}')
+    name, payload = built
+    return StreamingResponse(
+        io.BytesIO(payload), media_type='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{name}"',
+                 'Content-Length': str(len(payload))})
+
+
+@app.get('/api/boundaries.geojson')
+def boundaries():
+    path = Path(os.environ.get('VNGIS_BOUNDARIES',
+                               Path(__file__).resolve().parent.parent / 'data' / 'provinces.geojson'))
+    if not path.exists():
+        raise HTTPException(404, 'Chưa có ranh giới. Chạy: python3 -m app.data.build_boundaries '
+                                 '--config <config.json> (cần GADM 4.1 đã kiểm tra SHA-256)')
+    return FileResponse(path, media_type='application/geo+json')
+
+
+def _titiler_ready():
+    try:
+        import titiler.core  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _mount_tiles():
+    """Ô bản đồ đọc trực tiếp COG; TiTiler tự giữ bộ đệm ở lớp HTTP phía trước."""
+    if not _titiler_ready():
+        return False
+    from titiler.core.factory import TilerFactory
+    tiler = TilerFactory()
+    app.include_router(tiler.router, prefix='/tiles/cog', tags=['tiles'])
+    return True
+
+
+TILES_MOUNTED = _mount_tiles()
+
+if WEB.is_dir():
+    app.mount('/', StaticFiles(directory=WEB, html=True), name='web')

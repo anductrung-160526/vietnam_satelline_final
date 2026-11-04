@@ -5,3 +5,7 @@ __pycache__/
 province_pipeline/config/local.json
 province_pipeline/config/boundaries.geojson
 province_pipeline/config/boundaries.metadata.json
+
+# Cơ sở dữ liệu sinh ra từ build_indices.py — không commit
+app/data/vngis.db
+app/data/provinces.geojson

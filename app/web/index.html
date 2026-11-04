@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VNGISDash</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>VNGISDash</h1>
+  <p class="sub">Chỉ số kinh tế – xã hội cấp tỉnh từ ảnh vệ tinh · Việt Nam 2004–2025</p>
+  <span id="trang-thai" class="pill">đang tải…</span>
+</header>
+
+<main>
+  <section id="khung-ban-do">
+    <div id="ban-do"></div>
+    <div class="dieu-khien">
+      <label for="nam-nen">Ảnh nền ban đêm</label>
+      <input type="range" id="nam-nen" min="2004" max="2025" value="2025" step="1">
+      <output id="nam-nen-hien">2025</output>
+      <p id="nen-ghi-chu" class="ghi-chu"></p>
+    </div>
+  </section>
+
+  <aside id="bang-dieu-khien">
+    <label for="chon-tinh">Tỉnh / thành phố</label>
+    <select id="chon-tinh"><option value="">— đang tải —</option></select>
+
+    <div class="khoang-nam">
+      <label>Giai đoạn
+        <input type="number" id="nam-tu" min="2004" max="2025" value="2004">
+        –
+        <input type="number" id="nam-den" min="2004" max="2025" value="2025">
+      </label>
+    </div>
+
+    <div id="the-so-lieu" class="the-so-lieu"></div>
+    <div id="canh-bao"></div>
+
+    <button id="nut-export" disabled>Tải dữ liệu về (.zip)</button>
+    <p class="ghi-chu">Gói tải về gồm ảnh đêm, chỉ số ảnh ngày, chỉ số ảnh đêm và chỉ số kinh tế.</p>
+  </aside>
+
+  <section id="khung-bieu-do">
+    <div class="bieu-do"><h2>Độ sáng ban đêm</h2><div id="bd-dem"></div></div>
+    <div class="bieu-do"><h2>Diện tích sáng</h2><div id="bd-dien-tich"></div></div>
+    <div class="bieu-do"><h2>Chỉ số ảnh ngày</h2><div id="bd-ngay"></div></div>
+  </section>
+</main>
+
+<footer>
+  <p>Nguồn ảnh: DMSP-OLS 2004–2013 · VIIRS DNB 2014–2025 · Landsat 2004–2014 · Sentinel-2 2015–2025.
+     Ranh giới GADM 4.1, 63 tỉnh trước sáp nhập 01/7/2025.</p>
+  <p>FTU Tech Lab · Đề tài thực tập VNGISDash · nguyên mẫu</p>
+</footer>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
