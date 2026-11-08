@@ -250,6 +250,72 @@ class DeclaredDependenciesTest(unittest.TestCase):
         self.assertIn('shapely', self._imported())
 
 
+class ColumnNamesMatchThePipelineTest(unittest.TestCase):
+    """Tên cột trong app phải trùng tên mà task_pipeline/derive.py thật sự ghi ra.
+
+    Lệch tên thì build_indices vẫn nạp đủ dòng, API vẫn trả 200, giao diện vẫn vẽ —
+    chỉ là mọi ô của cột đó trống. Không có gì báo lỗi. Đã xảy ra thật: app đi tìm
+    'thay_doi_ntl', 'rad_mean', 'lit_pixels', 'dien_tich_km2', 'status' trong khi derive
+    ghi 'thay_doi_ntl_pct', 'mean_ntl', 'so_pixel_sang', 'dt_tu_nhien_km2', 'trang_thai'.
+    Hậu quả nặng nhất: cảnh báo DMSP–VIIRS bị tắt vì derive ghi hieu_chinh='PENDING'
+    còn app dò 'CHUA_HIEU_CHINH'.
+    """
+
+    def _derive_source(self):
+        return (REPO / 'task_pipeline' / 'derive.py').read_text(encoding='utf-8')
+
+    def test_every_night_field_appears_in_derive(self):
+        from app.api import store
+        nguon = self._derive_source()
+        thieu = [f for f in store.NIGHT_FIELDS
+                 if f not in ('nam',) and f"'{f}'" not in nguon and f'{f}=' not in nguon]
+        self.assertEqual(thieu, [], f'Cột đêm không có trong derive.py: {thieu}')
+
+    def test_every_day_field_appears_in_derive(self):
+        from app.api import store
+        nguon = self._derive_source()
+        # so_thang do build_indices tạo khi gộp tháng lên năm, derive không có.
+        thieu = [f for f in store.DAY_FIELDS
+                 if f not in ('nam', 'so_thang')
+                 and f"'{f}'" not in nguon and f'{f}=' not in nguon
+                 and f"'{f.replace('_mean', '')}'" not in nguon
+                 and f"'{f.replace('_std', '')}'" not in nguon]
+        self.assertEqual(thieu, [], f'Cột ngày không có trong derive.py: {thieu}')
+
+    def test_every_indicator_code_is_a_column_of_its_table(self):
+        import sqlite3
+        from app.api import store
+        db, _, _ = fresh_database(self)
+        with sqlite3.connect(db) as connection:
+            for entry in store.INDICATORS:
+                cot = {r[1] for r in connection.execute(
+                    f"PRAGMA table_info({entry['bang']})")}
+                with self.subTest(chi_so=entry['ma']):
+                    self.assertIn(entry['ma'], cot)
+
+    def test_the_calibration_flag_derive_actually_writes_is_accepted(self):
+        """derive ghi hieu_chinh='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai."""
+        nguon = self._derive_source()
+        self.assertIn("'hieu_chinh']='PENDING'", nguon.replace(' ', ''))
+        store_source = (REPO / 'app' / 'api' / 'store.py').read_text(encoding='utf-8')
+        self.assertIn("'PENDING'", store_source)
+        self.assertIn("'CHUA_HIEU_CHINH'", store_source)
+
+    def test_a_dmsp_to_viirs_series_always_carries_the_warning(self):
+        """Chuỗi có cả hai nguồn thì cảnh báo phải hiện, dù cột hieu_chinh ghi gì."""
+        import sqlite3
+        from app.api import store
+        db, _, _ = fresh_database(self)
+        with sqlite3.connect(db) as connection:
+            connection.executemany(
+                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,hieu_chinh) '
+                'VALUES(?,?,?,?,?)',
+                [('01', y, 'DMSP' if y <= 2013 else 'VIIRS', 1.0, None)
+                 for y in range(2004, 2026)])
+        data = store.indices('01', 2004, 2025)
+        self.assertTrue(any('DMSP' in w and 'VIIRS' in w for w in data['canh_bao']))
+
+
 class BuildBoundariesTest(unittest.TestCase):
     """Chỉ kiểm phần ghép nối. Việc tải GADM thật cần mạng, chạy trên máy người dùng."""
 

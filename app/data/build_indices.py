@@ -4,6 +4,11 @@
 
 Thiếu file CSV nào thì bảng đó để rỗng, không coi là lỗi: app phải chạy được ngay cả khi
 chỉ có ảnh đêm mà chưa có ảnh ngày. Mỗi lần chạy nạp lại từ đầu (idempotent).
+
+Tên cột phải trùng khớp tên mà task_pipeline/derive.py sinh ra. Lệch tên thì dòng vẫn vào
+bảng nhưng cột để rỗng và không có gì báo lỗi — đã xảy ra thật (app đi tìm 'thay_doi_ntl'
+trong khi derive ghi 'thay_doi_ntl_pct'). Vì vậy mỗi lần nạp đều in ra cột nào khớp, cột
+nào của bảng không có trong CSV, và cột nào CSV có mà bảng bỏ qua.
 """
 import argparse
 import csv
@@ -16,15 +21,19 @@ REPO = HERE.parent.parent
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
-# (bảng, các vị trí CSV có thể có, cột khoá bắt buộc)
+# Cột chữ; mọi cột khác được đọc thành số.
+TEXT_COLUMNS = {'ma_tinh', 'ten_tinh', 'nguon_anh', 'ghi_chu', 'hieu_chinh', 'trang_thai',
+                'loai_phan_xa', 'nguon', 'source_collection', 'phuong_phap', 'status'}
+
+# bảng -> các vị trí CSV có thể có, và cách gộp (None = mỗi dòng một năm sẵn rồi)
 SOURCES = {
     'ntl_annual': ([f'{NTL_PACKAGE}/data_processed/ntl_annual.csv',
-                    f'{NTL_PACKAGE}/data_processed/ntl_indices_ee.csv',
-                    f'{NTL_PACKAGE}/data_processed/vietnam_district_ntl_panel_2004_2025.csv'],),
-    'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv',
-                    f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
-                    f'{DAY_PACKAGE}/data_processed/day_indices_monthly_ee.csv'],),
-    'kinh_te': (['data_processed/kinh_te.csv', 'app/data/kinh_te.csv'],),
+                    f'{NTL_PACKAGE}/data_processed/ntl_indices_ee.csv'], None),
+    # derive ghi chỉ số ngày theo THÁNG; app hiển thị theo năm nên gộp trung bình các tháng.
+    'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
+                    f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv',
+                    f'{DAY_PACKAGE}/data_processed/day_indices_monthly_ee.csv'], 'thang'),
+    'kinh_te': (['data_processed/kinh_te.csv', 'app/data/kinh_te.csv'], None),
 }
 
 
@@ -45,31 +54,62 @@ def number(value):
         return None
 
 
-def rows_of(path, table, want):
-    """Đọc CSV, chỉ giữ các cột bảng có, bỏ dòng theo tháng (chỉ lấy tổng hợp năm)."""
+def text(value):
+    if value is None:
+        return None
+    return str(value).strip() or None
+
+
+def read_csv(path):
     with open(path, encoding='utf-8-sig', newline='') as stream:
-        for record in csv.DictReader(stream):
-            code = (record.get('ma_tinh') or '').strip()
-            year = record.get('nam') or record.get('YEAR') or record.get('year')
-            if not code or not str(year or '').strip().isdigit():
+        reader = csv.DictReader(stream)
+        return list(reader.fieldnames or []), list(reader)
+
+
+def cell(name, raw):
+    return text(raw) if name in TEXT_COLUMNS else number(raw)
+
+
+def rows_of(records, want, monthly):
+    """Chuyển bản ghi CSV thành dòng của bảng, gộp lên năm nếu nguồn ghi theo tháng."""
+    gom = {}
+    for record in records:
+        code = (record.get('ma_tinh') or '').strip()
+        year = record.get('nam') or record.get('YEAR') or record.get('year')
+        if not code or not str(year or '').strip().isdigit():
+            continue
+        month = (record.get(monthly) or '').strip() if monthly else ''
+        if not monthly and month not in ('', '0', 'ALL', 'NA'):
+            continue
+        key = (code.zfill(2), int(year))
+        row = {name: cell(name, record[name]) for name in want if name in record}
+        row['ma_tinh'], row['nam'] = key
+        gom.setdefault(key, []).append(row)
+
+    out = []
+    for (code, year), phan in sorted(gom.items()):
+        if len(phan) == 1 and not monthly:
+            out.append(phan[0])
+            continue
+        hop = {'ma_tinh': code, 'nam': year}
+        for name in want:
+            if name in ('ma_tinh', 'nam', 'so_thang'):
                 continue
-            month = (record.get('thang') or record.get('MONTH') or '').strip()
-            if month not in ('', '0', 'ALL', 'NA'):
-                continue            # dòng theo tháng: bảng năm không nhận
-            row = {'ma_tinh': code.zfill(2), 'nam': int(year)}
-            for name in want:
-                if name in ('ma_tinh', 'nam') or name not in record:
-                    continue
-                raw = record[name]
-                row[name] = raw.strip() or None if isinstance(raw, str) and not _numeric(name) else number(raw)
-            yield row
+            values = [p[name] for p in phan if p.get(name) is not None]
+            if not values:
+                continue
+            if name in TEXT_COLUMNS:
+                hop[name] = sorted({str(v) for v in values})[0] if len(set(values)) == 1 \
+                    else '/'.join(sorted({str(v) for v in values}))
+            else:
+                hop[name] = round(sum(values) / len(values), 6)
+        if 'so_thang' in want:
+            hop['so_thang'] = len(phan)
+        out.append(hop)
+    return out
 
 
-def _numeric(name):
-    return name not in ('nguon_anh', 'phuong_phap', 'hieu_chinh', 'status', 'nguon', 'source_collection')
-
-
-def load_table(connection, root, table, candidates):
+def load_table(connection, root, table, candidates, monthly):
     want = columns(connection, table)
     connection.execute(f'DELETE FROM {table}')
     for relative in candidates:
@@ -78,15 +118,21 @@ def load_table(connection, root, table, candidates):
             path = REPO / relative
         if not path.exists():
             continue
-        batch = list(rows_of(path, table, want))
+        header, records = read_csv(path)
+        batch = rows_of(records, want, monthly if monthly and monthly in header else None)
         if not batch:
             continue
         names = sorted({k for row in batch for k in row})
-        statement = (f'INSERT OR REPLACE INTO {table} ({",".join(names)}) '
-                     f'VALUES ({",".join("?" * len(names))})')
-        connection.executemany(statement, [[row.get(n) for n in names] for row in batch])
-        return path, len(batch)
-    return None, 0
+        connection.executemany(
+            f'INSERT OR REPLACE INTO {table} ({",".join(names)}) '
+            f'VALUES ({",".join("?" * len(names))})',
+            [[row.get(n) for n in names] for row in batch])
+        return {'rows': len(batch), 'source': str(path),
+                'cot_khop': sorted(set(header) & set(want)),
+                'cot_bang_thieu_trong_csv': sorted(set(want) - set(header) - {'so_thang'}),
+                'cot_csv_khong_dung': sorted(set(header) - set(want))}
+    return {'rows': 0, 'source': None, 'cot_khop': [],
+            'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': []}
 
 
 def load_provinces(connection):
@@ -103,9 +149,8 @@ def build(root, db):
     connection = sqlite3.connect(db)
     connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
     report = {'tinh': load_provinces(connection)}
-    for table, (candidates,) in SOURCES.items():
-        path, count = load_table(connection, root, table, candidates)
-        report[table] = {'rows': count, 'source': str(path) if path else None}
+    for table, (candidates, monthly) in SOURCES.items():
+        report[table] = load_table(connection, root, table, candidates, monthly)
     connection.commit()
     connection.close()
     return report
@@ -116,12 +161,28 @@ def main():
     parser.add_argument('--root', default='/data/SatelliteData',
                         help='Thư mục gốc dữ liệu (E:\\SatelliteData hoặc /data/SatelliteData)')
     parser.add_argument('--db', default=str(HERE / 'vngis.db'))
+    parser.add_argument('--chi-tiet', action='store_true', dest='chi_tiet',
+                        help='In đầy đủ danh sách cột')
     arguments = parser.parse_args()
     report = build(arguments.root, arguments.db)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+    print(f"tinh: {report['tinh']} dòng")
     for table in ('ntl_annual', 'day_annual', 'kinh_te'):
-        if not report[table]['rows']:
-            print(f'  CHƯA CÓ DỮ LIỆU: {table} — app sẽ báo "chưa có số liệu" cho phần này.')
+        info = report[table]
+        print(f"\n{table}: {info['rows']} dòng")
+        if not info['rows']:
+            print(f'  CHƯA CÓ DỮ LIỆU — app sẽ báo "chưa có số liệu" cho phần này.')
+            continue
+        print(f"  nguồn: {info['source']}")
+        print(f"  {len(info['cot_khop'])} cột khớp"
+              + (f": {', '.join(info['cot_khop'])}" if arguments.chi_tiet else ''))
+        if info['cot_bang_thieu_trong_csv']:
+            print('  CỘT RỖNG (bảng có, CSV không có): '
+                  + ', '.join(info['cot_bang_thieu_trong_csv']))
+        if info['cot_csv_khong_dung']:
+            print('  cột CSV app chưa dùng: ' + ', '.join(info['cot_csv_khong_dung']))
+    print('\nMọi "CỘT RỖNG" là chỉ số sẽ trống trên giao diện. Nếu tên chỉ lệch nhau chút ít '
+          '(ví dụ thay_doi_ntl và thay_doi_ntl_pct) thì đó là lỗi, cần sửa schema cho khớp.')
 
 
 if __name__ == '__main__':

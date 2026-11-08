@@ -5,13 +5,16 @@ from pathlib import Path
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / 'data' / 'vngis.db'
 
-NIGHT_FIELDS = ('nam', 'nguon_anh', 'sol_ntl', 'mat_do_ntl', 'thay_doi_ntl',
-                'rad_mean', 'rad_stdDev', 'rad_min', 'rad_max',
-                'lit_sol', 'lit_pixels', 'lit_threshold', 'dien_tich_km2',
-                'phuong_phap', 'hieu_chinh', 'status')
-DAY_FIELDS = ('nam', 'nguon_anh', 'NDVI_mean', 'NDVI_stdDev', 'NDBI_mean', 'NDBI_stdDev',
-              'MNDWI_mean', 'MNDWI_stdDev', 'BSI_mean', 'BSI_stdDev',
-              'ty_le_pixel_hop_le', 'dien_tich_km2', 'scale_m', 'phuong_phap', 'status')
+# Tên cột lấy đúng theo task_pipeline/derive.py. Đổi tên ở đây mà không đổi ở derive thì
+# bảng vẫn nạp được dòng nhưng cột rỗng, và không có gì báo lỗi — đã xảy ra thật.
+NIGHT_FIELDS = ('nam', 'nguon_anh', 'sol_ntl', 'mean_ntl', 'max_ntl', 'mat_do_ntl',
+                'so_pixel_hop_le', 'so_pixel_sang', 'thay_doi_ntl_pct',
+                'dt_tu_nhien_km2', 'ghi_chu', 'hieu_chinh', 'trang_thai')
+DAY_FIELDS = ('nam', 'nguon_anh', 'loai_phan_xa',
+              'NDVI_mean', 'NDVI_std', 'NDBI_mean', 'NDBI_std',
+              'MNDWI_mean', 'MNDWI_std', 'BSI_mean', 'BSI_std',
+              'ty_le_hop_le_pct', 'dt_hop_le_km2', 'dt_tu_nhien_km2',
+              'so_thang', 'trang_thai')
 ECONOMY_FIELDS = ('nam', 'dan_so', 'gdp', 'grdp_bq_dau_nguoi', 'nguon')
 
 # Sentinel-2 trước 2019 là phản xạ đỉnh khí quyển, từ 2019 là phản xạ bề mặt.
@@ -64,10 +67,14 @@ def indices(code, year_from=2004, year_to=2025):
     warnings = []
     if any(row['nam'] in TOA_YEARS for row in day):
         warnings.append(TOA_WARNING)
-    if night and all(row.get('hieu_chinh') in (None, 'CHUA_HIEU_CHINH') for row in night):
+    # derive.py ghi hieu_chinh='PENDING'; CLAUDE.md lại nói 'CHUA_HIEU_CHINH'. Nhận cả hai,
+    # và chốt bằng nguon_anh: chuỗi có cả DMSP lẫn VIIRS thì chắc chắn bắc qua mốc đổi vệ tinh.
+    nguon = {row.get('nguon_anh') for row in night}
+    chua_hieu_chinh = any(row.get('hieu_chinh') in ('PENDING', 'CHUA_HIEU_CHINH') for row in night)
+    if len(nguon - {None}) > 1 or (night and chua_hieu_chinh):
         warnings.append('Chuỗi ánh sáng đêm chưa hiệu chỉnh liên vệ tinh DMSP–VIIRS: '
                         'chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025).')
-    fake = any(row.get('status') == 'GIA_LAP' for row in night + day) \
+    fake = any(row.get('trang_thai') == 'GIA_LAP' for row in night + day) \
         or any(row.get('nguon') == 'GIA_LAP' for row in economy)
     if fake:
         warnings.insert(0, 'SỐ LIỆU GIẢ LẬP — chỉ để minh họa giao diện, tuyệt đối không dùng '
@@ -125,18 +132,19 @@ INDICATORS = (
     dict(ma='mat_do_ntl', ten='Mật độ sáng ban đêm', don_vi='nW/cm²/sr trên km²',
          bang='ntl_annual', chu_so=4,
          mo_ta='Tổng độ sáng chia cho diện tích tỉnh.'),
-    dict(ma='lit_pixels', ten='Số điểm ảnh sáng', don_vi='điểm ảnh',
+    dict(ma='thay_doi_ntl_pct', ten='Biến động độ sáng so với năm trước', don_vi='%',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Chỉ so trong cùng một nguồn; bỏ trống tại mốc DMSP→VIIRS năm 2013.'),
+    dict(ma='mean_ntl', ten='Độ sáng trung bình mỗi điểm ảnh', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh hợp lệ.'),
+    dict(ma='max_ntl', ten='Điểm sáng nhất tỉnh', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=2, mo_ta='Giá trị lớn nhất trong ranh giới tỉnh.'),
+    dict(ma='so_pixel_hop_le', ten='Số điểm ảnh có dữ liệu', don_vi='điểm ảnh',
          bang='ntl_annual', chu_so=0,
-         mo_ta='Số điểm ảnh vượt ngưỡng sáng (VIIRS: 1,5 nW/cm²/sr).'),
-    dict(ma='lit_sol', ten='Độ sáng của vùng sáng', don_vi='nW/cm²/sr',
-         bang='ntl_annual', chu_so=2,
-         mo_ta='Tổng độ sáng chỉ tính trên các điểm ảnh vượt ngưỡng.'),
-    dict(ma='thay_doi_ntl', ten='Biến động độ sáng so với năm trước', don_vi='%',
-         bang='ntl_annual', chu_so=2,
-         mo_ta='Chỉ so trong cùng một nguồn; không bắc cầu qua mốc DMSP→VIIRS năm 2013.'),
-    dict(ma='rad_mean', ten='Bức xạ trung bình', don_vi='nW/cm²/sr',
-         bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh của tỉnh.'),
-    dict(ma='NDVI_mean', ten='NDVI trung bình', don_vi='chỉ số −1…1',
+         mo_ta='Dùng để kiểm tra độ phủ; DMSP 1 km nên ít điểm hơn VIIRS 500 m rất nhiều.'),
+    dict(ma='dt_tu_nhien_km2', ten='Diện tích tự nhiên', don_vi='km²',
+         bang='ntl_annual', chu_so=1, mo_ta='Diện tích trong ranh giới GADM 4.1.'),
+    dict(ma='NDVI_mean', ten='NDVI trung bình', don_vi='chỉ số -1…1',
          bang='day_annual', chu_so=4, mo_ta='Chỉ số thực vật.'),
     dict(ma='NDBI_mean', ten='NDBI trung bình', don_vi='chỉ số −1…1',
          bang='day_annual', chu_so=4, mo_ta='Chỉ số xây dựng.'),

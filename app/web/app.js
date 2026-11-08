@@ -128,7 +128,7 @@ async function veTinh(tieuDiem = true){
   veBieuDo('bd-dem', namDemArr,
     [{name:'Tổng độ sáng (SOL)', data:d.dem.map(r => so(r.sol_ntl))}], ['#ffc857']);
   veBieuDo('bd-dien-tich', namDemArr,
-    [{name:'Số điểm ảnh sáng', data:d.dem.map(r => so(r.lit_pixels, 0))},
+    [{name:'Số điểm ảnh có dữ liệu', data:d.dem.map(r => so(r.so_pixel_hop_le, 0))},
      {name:'Mật độ sáng',      data:d.dem.map(r => so(r.mat_do_ntl, 3))}],
     ['#5ec8d8','#7ddc8a'], true);
   veBieuDo('bd-ngay', namNgayArr,
@@ -142,7 +142,7 @@ async function veTinh(tieuDiem = true){
   theSoLieu.innerHTML =
     oSo(`Tổng độ sáng${demCuoi ? ' (' + demCuoi.nam + ')' : ''}`, so(demCuoi?.sol_ntl)) +
     oSo('Mật độ sáng',  so(demCuoi?.mat_do_ntl, 3)) +
-    oSo('Diện tích tỉnh', so(demCuoi?.dien_tich_km2 ?? ngayCuoi?.dien_tich_km2, 0), 'km²') +
+    oSo('Diện tích tỉnh', so(demCuoi?.dt_tu_nhien_km2 ?? ngayCuoi?.dt_tu_nhien_km2, 0), 'km²') +
     oSo(`NDVI${ngayCuoi ? ' (' + ngayCuoi.nam + ')' : ''}`, so(ngayCuoi?.NDVI_mean, 3)) +
     oSo('Dân số', so(kinhTeCuoi?.dan_so, 0)) +
     oSo('GDP',    so(kinhTeCuoi?.gdp, 0));

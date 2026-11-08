@@ -2,7 +2,7 @@
 
     python3 -m app.data.demo_seed --db app/data/vngis.db
 
-Mọi dòng ghi ra đều có status='GIA_LAP' và nguon_anh kết thúc bằng '_GIA_LAP'; giao diện
+Mọi dòng ghi ra đều có trang_thai='GIA_LAP' và nguon_anh kết thúc bằng '_GIA_LAP'; giao diện
 dựa vào đó để treo biển báo đỏ. Khi chỉ số thật có rồi, chạy lại build_indices.py là các
 dòng này bị xoá sạch (build_indices DELETE toàn bảng trước khi nạp).
 
@@ -23,6 +23,10 @@ def seed(db, seed_value=20261104):
     random.seed(seed_value)
     connection = sqlite3.connect(db)
     connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    # Chạy demo_seed một mình cũng phải ra app dùng được: nạp luôn danh mục 63 tỉnh,
+    # nếu không thì mọi truy vấn theo tỉnh trả None và giao diện trắng.
+    from .build_indices import load_provinces
+    load_provinces(connection)
     night, day, economy = [], [], []
     for index, code in enumerate(TINH):
         area = 1000 + index * 700
@@ -33,35 +37,36 @@ def seed(db, seed_value=20261104):
             scale = 1.0 if year <= 2013 else 2.3        # bậc nhảy đổi vệ tinh, cố ý để thấy
             sol = base * scale * (1 + 0.045 * (year - 2004)) * random.uniform(0.95, 1.05)
             lit = area * min(0.9, 0.08 + 0.011 * (year - 2004)) * random.uniform(0.96, 1.04)
-            night.append((code, year, source, round(sol, 2), round(sol / area, 4),
-                          None if previous is None else round((sol - previous) / previous * 100, 2),
-                          round(sol / area, 4), round(sol / area * 0.3, 4), 0.0,
-                          round(sol / 50, 3), round(sol * 0.8, 2), round(lit, 0), 1.5,
-                          float(area), 'GIA_LAP', 'CHUA_HIEU_CHINH', 'GIA_LAP'))
+            night.append((code, year, source, round(sol, 2), round(sol / area, 6),
+                          round(sol / 9, 4), round(sol / area, 6), int(area * 4),
+                          int(lit),
+                          None if previous is None or year == 2014
+                          else round((sol - previous) / previous * 100, 2),
+                          float(area), 'GIA_LAP', 'PENDING', 'GIA_LAP'))
             previous = sol
             if year >= 2016:
                 phase = (year - 2016) / 9
-                day.append((code, year, 'SENTINEL2_GIA_LAP',
+                day.append((code, year, 'SENTINEL2_GIA_LAP', 'TOA' if year < 2019 else 'SR',
                             round(0.52 - 0.07 * phase + random.uniform(-.01, .01), 4), 0.11,
                             round(-0.12 + 0.09 * phase + random.uniform(-.01, .01), 4), 0.09,
                             round(-0.31 + random.uniform(-.02, .02), 4), 0.14,
                             round(0.04 + 0.03 * phase, 4), 0.08,
-                            round(random.uniform(0.9, 0.99), 3), float(area), 10.0,
-                            'GIA_LAP', 'GIA_LAP'))
+                            round(random.uniform(90, 99), 2), float(area) * 0.96,
+                            float(area), 12, 'GIA_LAP'))
             economy.append((code, year,
                             round(900_000 * (index + 1) * math.pow(1.013, year - 2004), 0),
                             round(50_000 * (index + 1) * math.pow(1.065, year - 2004), 0),
                             None, 'GIA_LAP'))
 
     connection.executemany(
-        'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mat_do_ntl,thay_doi_ntl,'
-        'rad_mean,rad_stdDev,rad_min,rad_max,lit_sol,lit_pixels,lit_threshold,dien_tich_km2,'
-        'phuong_phap,hieu_chinh,status) VALUES(' + ','.join('?' * 17) + ')', night)
+        'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mean_ntl,max_ntl,'
+        'mat_do_ntl,so_pixel_hop_le,so_pixel_sang,thay_doi_ntl_pct,dt_tu_nhien_km2,'
+        'ghi_chu,hieu_chinh,trang_thai) VALUES(' + ','.join('?' * 14) + ')', night)
     connection.executemany(
-        'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,NDVI_mean,NDVI_stdDev,'
-        'NDBI_mean,NDBI_stdDev,MNDWI_mean,MNDWI_stdDev,BSI_mean,BSI_stdDev,'
-        'ty_le_pixel_hop_le,dien_tich_km2,scale_m,phuong_phap,status) VALUES('
-        + ','.join('?' * 16) + ')', day)
+        'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,loai_phan_xa,'
+        'NDVI_mean,NDVI_std,NDBI_mean,NDBI_std,MNDWI_mean,MNDWI_std,BSI_mean,BSI_std,'
+        'ty_le_hop_le_pct,dt_hop_le_km2,dt_tu_nhien_km2,so_thang,trang_thai) VALUES('
+        + ','.join('?' * 17) + ')', day)
     connection.executemany(
         'INSERT OR REPLACE INTO kinh_te(ma_tinh,nam,dan_so,gdp,grdp_bq_dau_nguoi,nguon) '
         'VALUES(?,?,?,?,?,?)', economy)
