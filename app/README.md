@@ -45,7 +45,29 @@ Số giả lập có `status='GIA_LAP'`; chạy lại `build_indices.py` là b�
 | `GET /api/basemap` | các năm có ảnh nền đêm |
 | `GET /api/originals` | ảnh gốc ở tầng lạnh (chỉ liệt kê) |
 | `GET /api/export.zip?ma_tinh=01` | gói 4 phần: ảnh đêm + chỉ số ngày + chỉ số đêm + chỉ số kinh tế |
+| `GET /api/indicators` | danh mục chỉ số, kèm số tỉnh và khoảng năm thực có |
+| `GET /api/panel?chi_so=sol_ntl&nam_tu=2004&nam_den=2025` | bảng kiểu WDI: 63 tỉnh × các năm |
+| `GET /api/panel.csv?chi_so=sol_ntl&dang=rong\|dai` | tải bảng về, dạng rộng hoặc dạng dài |
+| `GET /api/choropleth?chi_so=sol_ntl&nam=2024` | một chỉ số một năm cho mọi tỉnh, để tô màu bản đồ |
 | `GET /tiles/cog/...` | ô bản đồ (chỉ có khi đã cài `titiler.core`) |
+
+## Giao diện
+
+**Tab Bản đồ**
+- Mở lên là **toàn Việt Nam**, 63 tỉnh tô màu theo chỉ số và năm đang chọn.
+  Thang màu căn theo căn bậc hai vì độ sáng lệch rất mạnh — tuyến tính thì 60 tỉnh cùng một màu.
+  Tỉnh chưa có số liệu để màu xám xanh, phân biệt rõ với bậc thấp nhất.
+- **Chọn một tỉnh** (bằng danh sách hoặc bấm thẳng lên bản đồ) thì bản đồ phóng vào tỉnh đó
+  và **che toàn bộ phần ngoài ranh giới**: một đa giác phủ cả thế giới, khoét lỗ đúng hình tỉnh.
+  Nút “← Toàn quốc” quay lại.
+- Thanh trượt năm đổi cả màu tô lẫn ảnh nền đêm.
+
+**Tab Dữ liệu** — dựng theo World Development Indicators của World Bank
+- Chọn chỉ số, khoảng năm, lọc tỉnh theo tên.
+- Bảng: mỗi dòng một tỉnh, mỗi cột một năm. Cột tên tỉnh và hàng tiêu đề dính khi cuộn.
+- Ô trống hiện `··`, nghĩa là **chưa có số liệu**, không phải bằng không.
+- Tải về hai dạng: **bảng rộng** (dán vào Excel) và **bảng dài** (Stata, R, pandas).
+  Cả hai đều có phần đầu ghi tên chỉ số, đơn vị, nguồn bảng và cảnh báo phương pháp.
 
 ## Nguyên tắc thiết kế
 

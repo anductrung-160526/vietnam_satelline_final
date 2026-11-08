@@ -83,3 +83,32 @@ def build(code, year_from, year_to, include_images=True, timestamp=''):
     # slug không dấu: tên file đi vào HTTP header, mà header chỉ nhận latin-1.
     name = f"vngisdash_{data['slug']}_{year_from}_{year_to}.zip"
     return name, buffer.getvalue()
+
+
+# Hai dạng bảng, đúng như World Development Indicators cho tải về:
+#   'rong' — mỗi dòng một tỉnh, mỗi cột một năm. Dễ đọc, dễ dán vào Excel.
+#   'dai'  — mỗi dòng một cặp tỉnh-năm. Dạng Stata/R/pandas hay dùng để hồi quy.
+def panel_csv(data, shape='rong'):
+    entry, years = data['chi_so'], data['nam']
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([f"# {entry['ten']} ({entry['don_vi']})"])
+    writer.writerow([f"# Mã chỉ số: {entry['ma']} · nguồn bảng: {entry['bang']}"])
+    writer.writerow([f"# {entry['mo_ta']}"])
+    for warning in data.get('canh_bao', []):
+        writer.writerow([f'# LƯU Ý: {warning}'])
+    writer.writerow([])
+    if shape == 'rong':
+        writer.writerow(['ma_tinh', 'ten_tinh', 'chi_so', 'don_vi', 'nguon_anh', *years])
+        for row in data['dong']:
+            writer.writerow([row['ma_tinh'], row['ten_tinh'], entry['ma'], entry['don_vi'],
+                             row['nguon_anh'] or '', *['' if v is None else v for v in row['gia_tri']]])
+    else:
+        writer.writerow(['ma_tinh', 'ten_tinh', 'nam', 'chi_so', 'don_vi', 'gia_tri', 'nguon_anh'])
+        for row in data['dong']:
+            for year, value in zip(years, row['gia_tri']):
+                if value is None:
+                    continue
+                writer.writerow([row['ma_tinh'], row['ten_tinh'], year, entry['ma'],
+                                 entry['don_vi'], value, row['nguon_anh'] or ''])
+    return buffer.getvalue().encode('utf-8-sig')

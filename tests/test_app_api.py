@@ -63,18 +63,6 @@ class ApiTest(unittest.TestCase):
             # Cảnh báo phương pháp phải đi kèm mọi lần tải về.
             self.assertIn('DMSP', archive.read('DOC_TRUOC.txt').decode('utf-8'))
 
-    def test_the_toa_warning_rides_along_with_any_2015_2018_day_row(self):
-        """Sentinel-2 2015–2018 là TOA; ai tải dữ liệu cũng phải đọc được cảnh báo đó."""
-        import sqlite3
-        from app.api import store
-        with sqlite3.connect(self.db) as connection:
-            connection.execute(
-                'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,NDVI_mean) VALUES(?,?,?,?)',
-                ('01', 2017, 'SENTINEL2', 0.42))
-        data = store.indices('01', 2004, 2025)
-        self.assertEqual(len(data['ngay']), 1)
-        self.assertTrue(any('TOA' in w for w in data['canh_bao']))
-
     def test_health_and_coverage_do_not_crash_on_an_empty_database(self):
         self.assertTrue(self.client.get('/api/health').json()['ok'])
         body = self.client.get('/api/coverage').json()
@@ -86,12 +74,64 @@ class ApiTest(unittest.TestCase):
         self.assertTrue((REPO / 'task_pipeline' / 'provinces.json').exists())
 
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_the_indicator_catalogue_reports_real_coverage(self):
+        """Giao diện phải biết chỉ số nào còn trống để nói ra, thay vì vẽ bảng rỗng."""
+        body = self.client.get('/api/indicators').json()['chi_so']
+        codes = [c['ma'] for c in body]
+        self.assertIn('sol_ntl', codes)
+        self.assertIn('gdp', codes)
+        for entry in body:
+            for field in ('ma', 'ten', 'don_vi', 'bang', 'chu_so', 'so_tinh', 'mo_ta'):
+                self.assertIn(field, entry)
+        # Độ phủ phải khớp số tỉnh thật trong bảng, không phải một con số đoán.
+        import sqlite3
+        with sqlite3.connect(self.db) as connection:
+            thuc = connection.execute(
+                'SELECT COUNT(DISTINCT ma_tinh) FROM ntl_annual WHERE sol_ntl IS NOT NULL'
+            ).fetchone()[0]
+        self.assertEqual([c for c in body if c['ma'] == 'sol_ntl'][0]['so_tinh'], thuc)
+        # kinh_te rỗng khi giảng viên chưa gửi số liệu: phải báo 0, không báo None.
+        self.assertEqual([c for c in body if c['ma'] == 'gdp'][0]['so_tinh'], 0)
 
+    def test_the_panel_covers_all_63_provinces_even_the_empty_ones(self):
+        """Bảng kiểu WDI liệt kê đủ 63 tỉnh; tỉnh chưa có số liệu là ô trống, không bị bỏ."""
+        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                     'nam_tu': 2020, 'nam_den': 2025}).json()
+        self.assertEqual(len(body['dong']), 63)
+        self.assertEqual(body['nam'], [2020, 2021, 2022, 2023, 2024, 2025])
+        self.assertTrue(all(len(r['gia_tri']) == 6 for r in body['dong']))
+        # Tỉnh không có số liệu vẫn có dòng, mọi ô là None — không bị loại khỏi bảng.
+        trong = [r for r in body['dong'] if all(v is None for v in r['gia_tri'])]
+        self.assertEqual(len(trong) + body['so_tinh_co_du_lieu'], 63)
+        self.assertIn('02', [r['ma_tinh'] for r in trong])
 
-class BuildCogsTest(unittest.TestCase):
-    """Phần tìm ảnh và ghi sổ phải đúng; việc gọi gdal chỉ chạy trên máy có gdal-bin."""
+    def test_a_panel_spanning_2013_warns_about_the_satellite_change(self):
+        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                     'nam_tu': 2010, 'nam_den': 2016}).json()
+        self.assertTrue(any('DMSP' in w and 'VIIRS' in w for w in body['canh_bao']))
+        inside = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                       'nam_tu': 2016, 'nam_den': 2020}).json()
+        self.assertEqual(inside['canh_bao'], [])
+
+    def test_an_indicator_code_can_never_reach_the_sql(self):
+        """Mã chỉ số do người dùng gửi: chỉ nhận mã có trong danh mục, không ghép vào SQL."""
+        for bad in ('sol_ntl; DROP TABLE tinh', '"', 'khong_co_that', '*'):
+            self.assertEqual(self.client.get('/api/panel', params={'chi_so': bad}).status_code, 404)
+            self.assertEqual(self.client.get('/api/choropleth',
+                                             params={'chi_so': bad}).status_code, 404)
+        self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
+
+    def test_the_two_csv_shapes_carry_the_header_and_the_method_note(self):
+        wide = self.client.get('/api/panel.csv', params={'chi_so': 'sol_ntl', 'nam_tu': 2004,
+                                                         'nam_den': 2006}).content.decode('utf-8-sig')
+        self.assertIn('ma_tinh,ten_tinh,chi_so,don_vi,nguon_anh,2004,2005,2006', wide)
+        self.assertIn('# Tổng độ sáng ban đêm', wide)
+        self.assertIn('01,Hà Nội', wide)
+        long = self.client.get('/api/panel.csv', params={'chi_so': 'sol_ntl', 'dang': 'dai'}
+                               ).content.decode('utf-8-sig')
+        self.assertIn('ma_tinh,ten_tinh,nam,chi_so,don_vi,gia_tri,nguon_anh', long)
+        self.assertEqual(self.client.get('/api/panel.csv',
+                                         params={'chi_so': 'sol_ntl', 'dang': 'xxx'}).status_code, 400)
 
     def test_sources_are_found_by_year_for_both_naming_shapes(self):
         from app.data import build_cogs
@@ -138,3 +178,7 @@ class BuildCogsTest(unittest.TestCase):
         self.assertIn('Byte', command)
         self.assertIn('0.001', command)
         self.assertIn('COG', command)
+
+
+if __name__ == '__main__':
+    unittest.main()

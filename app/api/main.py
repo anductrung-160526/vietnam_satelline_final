@@ -59,6 +59,59 @@ def get_indices(ma_tinh: str = Query(..., description='Mã tỉnh, ví dụ 01')
     return data
 
 
+@app.get('/api/indicators')
+def list_indicators():
+    """Danh mục chỉ số cho tab dữ liệu, kèm độ phủ thực tế của từng chỉ số."""
+    return {'chi_so': store.indicators()}
+
+
+@app.get('/api/panel')
+def get_panel(chi_so: str = Query('sol_ntl', description='Mã chỉ số, xem /api/indicators'),
+              nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
+              nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
+              ma_tinh: str = Query('', description='Danh sách mã tỉnh ngăn bằng dấu phẩy; '
+                                                   'để trống là tất cả')):
+    """Bảng rộng: mỗi dòng một tỉnh, mỗi cột một năm — như World Development Indicators."""
+    if nam_tu > nam_den:
+        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
+    data = store.panel(chi_so, nam_tu, nam_den, ma_tinh.split(',') if ma_tinh else None)
+    if data is None:
+        raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}. Xem /api/indicators')
+    return data
+
+
+@app.get('/api/panel.csv')
+def panel_csv(chi_so: str = Query('sol_ntl'),
+              nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
+              nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
+              ma_tinh: str = Query(''),
+              dang: str = Query('rong', description="'rong' một dòng một tỉnh, "
+                                                    "'dai' một dòng một tỉnh-năm")):
+    if nam_tu > nam_den:
+        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
+    if dang not in ('rong', 'dai'):
+        raise HTTPException(400, "dang phải là 'rong' hoặc 'dai'")
+    data = store.panel(chi_so, nam_tu, nam_den, ma_tinh.split(',') if ma_tinh else None)
+    if data is None:
+        raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}')
+    payload = export.panel_csv(data, dang)
+    name = f"vngisdash_{chi_so}_{nam_tu}_{nam_den}_{dang}.csv"
+    return StreamingResponse(
+        io.BytesIO(payload), media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="{name}"',
+                 'Content-Length': str(len(payload))})
+
+
+@app.get('/api/choropleth')
+def get_choropleth(chi_so: str = Query('sol_ntl'),
+                   nam: int = Query(YEAR_MAX, ge=1990, le=2100)):
+    """Một chỉ số, một năm, mọi tỉnh — để tô màu bản đồ toàn quốc."""
+    data = store.choropleth(chi_so, nam)
+    if data is None:
+        raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}')
+    return data
+
+
 @app.get('/api/coverage')
 def get_coverage():
     """Năm nào đã có dữ liệu gì — dùng cho trang trạng thái và báo cáo tiến độ."""

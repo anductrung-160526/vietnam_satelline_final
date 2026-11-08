@@ -113,3 +113,119 @@ def coverage():
         out['anh_cog'] = [dict(row) for row in connection.execute(
             'SELECT loai,nam,dung_luong_byte FROM anh_cog ORDER BY loai,nam').fetchall()]
     return out
+
+
+# --- Bảng chỉ số kiểu World Development Indicators -------------------------------------
+# Mỗi chỉ số: mã, tên hiển thị, đơn vị, bảng nguồn, số chữ số thập phân khi hiển thị.
+# Thêm chỉ số mới ở đây là nó tự xuất hiện trong giao diện và trong file tải về.
+INDICATORS = (
+    dict(ma='sol_ntl', ten='Tổng độ sáng ban đêm (SOL)', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Tổng bức xạ ban đêm trong ranh giới tỉnh.'),
+    dict(ma='mat_do_ntl', ten='Mật độ sáng ban đêm', don_vi='nW/cm²/sr trên km²',
+         bang='ntl_annual', chu_so=4,
+         mo_ta='Tổng độ sáng chia cho diện tích tỉnh.'),
+    dict(ma='lit_pixels', ten='Số điểm ảnh sáng', don_vi='điểm ảnh',
+         bang='ntl_annual', chu_so=0,
+         mo_ta='Số điểm ảnh vượt ngưỡng sáng (VIIRS: 1,5 nW/cm²/sr).'),
+    dict(ma='lit_sol', ten='Độ sáng của vùng sáng', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Tổng độ sáng chỉ tính trên các điểm ảnh vượt ngưỡng.'),
+    dict(ma='thay_doi_ntl', ten='Biến động độ sáng so với năm trước', don_vi='%',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Chỉ so trong cùng một nguồn; không bắc cầu qua mốc DMSP→VIIRS năm 2013.'),
+    dict(ma='rad_mean', ten='Bức xạ trung bình', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh của tỉnh.'),
+    dict(ma='NDVI_mean', ten='NDVI trung bình', don_vi='chỉ số −1…1',
+         bang='day_annual', chu_so=4, mo_ta='Chỉ số thực vật.'),
+    dict(ma='NDBI_mean', ten='NDBI trung bình', don_vi='chỉ số −1…1',
+         bang='day_annual', chu_so=4, mo_ta='Chỉ số xây dựng.'),
+    dict(ma='MNDWI_mean', ten='MNDWI trung bình', don_vi='chỉ số −1…1',
+         bang='day_annual', chu_so=4, mo_ta='Chỉ số mặt nước.'),
+    dict(ma='BSI_mean', ten='BSI trung bình', don_vi='chỉ số −1…1',
+         bang='day_annual', chu_so=4, mo_ta='Chỉ số đất trống.'),
+    dict(ma='dan_so', ten='Dân số', don_vi='người', bang='kinh_te', chu_so=0,
+         mo_ta='Do giảng viên cung cấp.'),
+    dict(ma='gdp', ten='GDP', don_vi='tỷ đồng', bang='kinh_te', chu_so=0,
+         mo_ta='Do giảng viên cung cấp.'),
+)
+BY_CODE = {entry['ma']: entry for entry in INDICATORS}
+
+
+def indicators():
+    """Danh mục chỉ số, kèm số tỉnh và khoảng năm thực sự có dữ liệu của từng chỉ số."""
+    out = []
+    with connect() as connection:
+        for entry in INDICATORS:
+            row = connection.execute(
+                f'SELECT COUNT(DISTINCT ma_tinh),MIN(nam),MAX(nam) '
+                f'FROM {entry["bang"]} WHERE "{entry["ma"]}" IS NOT NULL').fetchone()
+            out.append(dict(entry, so_tinh=row[0] or 0, nam_tu=row[1], nam_den=row[2]))
+    return out
+
+
+def panel(code, year_from=2004, year_to=2025, codes=None):
+    """Bảng rộng kiểu WDI: mỗi dòng một tỉnh, mỗi cột một năm.
+
+    Trả về None nếu mã chỉ số không có trong danh mục — không bao giờ ghép chuỗi mã
+    người dùng gửi vào câu SQL.
+    """
+    entry = BY_CODE.get(code)
+    if entry is None:
+        return None
+    wanted = [c.strip().zfill(2) for c in codes if c.strip()] if codes else None
+    years = list(range(year_from, year_to + 1))
+    with connect() as connection:
+        provinces_rows = connection.execute(
+            'SELECT ma_tinh,ten_tinh,number FROM tinh ORDER BY number').fetchall()
+        values = connection.execute(
+            f'SELECT ma_tinh,nam,"{entry["ma"]}" FROM {entry["bang"]} '
+            f'WHERE nam BETWEEN ? AND ? AND "{entry["ma"]}" IS NOT NULL',
+            (year_from, year_to)).fetchall()
+        sources = {row[0]: row[1] for row in connection.execute(
+            f'SELECT ma_tinh,GROUP_CONCAT(DISTINCT nguon_anh) FROM {entry["bang"]} '
+            f'WHERE nam BETWEEN ? AND ? GROUP BY ma_tinh', (year_from, year_to))
+        } if entry['bang'] != 'kinh_te' else {}
+    grid = {}
+    for code_, year, value in values:
+        grid.setdefault(code_, {})[year] = value
+    rows = []
+    for province in provinces_rows:
+        if wanted is not None and province['ma_tinh'] not in wanted:
+            continue
+        series = grid.get(province['ma_tinh'], {})
+        rows.append({'ma_tinh': province['ma_tinh'], 'ten_tinh': province['ten_tinh'],
+                     'nguon_anh': sources.get(province['ma_tinh']),
+                     'gia_tri': [series.get(year) for year in years]})
+    return {'chi_so': dict(entry), 'nam': years, 'dong': rows,
+            'so_tinh_co_du_lieu': sum(1 for r in rows if any(v is not None for v in r['gia_tri'])),
+            'canh_bao': _panel_warnings(entry, years)}
+
+
+def _panel_warnings(entry, years):
+    warnings = []
+    if entry['bang'] == 'ntl_annual' and min(years) <= 2013 <= max(years):
+        warnings.append('Chuỗi bắc qua mốc đổi vệ tinh: DMSP-OLS đến 2013, VIIRS từ 2014. '
+                        'Chưa hiệu chỉnh liên vệ tinh — không so sánh trực tiếp hai giai đoạn.')
+    if entry['bang'] == 'day_annual' and any(y in TOA_YEARS for y in years):
+        warnings.append(TOA_WARNING)
+    if entry['bang'] == 'kinh_te':
+        warnings.append('Số liệu kinh tế do giảng viên cung cấp, không trích xuất từ ảnh vệ tinh.')
+    return warnings
+
+
+def choropleth(code, year):
+    """Một chỉ số, một năm, mọi tỉnh — để tô màu bản đồ toàn quốc."""
+    entry = BY_CODE.get(code)
+    if entry is None:
+        return None
+    with connect() as connection:
+        rows = connection.execute(
+            f'SELECT ma_tinh,"{entry["ma"]}" FROM {entry["bang"]} '
+            f'WHERE nam=? AND "{entry["ma"]}" IS NOT NULL', (year,)).fetchall()
+    values = {row[0]: row[1] for row in rows}
+    numbers = sorted(v for v in values.values() if v is not None)
+    return {'chi_so': dict(entry), 'nam': year, 'gia_tri': values,
+            'nho_nhat': numbers[0] if numbers else None,
+            'lon_nhat': numbers[-1] if numbers else None,
+            'trung_vi': numbers[len(numbers) // 2] if numbers else None}

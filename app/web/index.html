@@ -9,18 +9,38 @@
 </head>
 <body>
 <header>
-  <h1>VNGISDash</h1>
-  <p class="sub">Chỉ số kinh tế – xã hội cấp tỉnh từ ảnh vệ tinh · Việt Nam 2004–2025</p>
+  <div>
+    <h1>VNGISDash</h1>
+    <p class="sub">Chỉ số kinh tế – xã hội cấp tỉnh từ ảnh vệ tinh · Việt Nam 2004–2025</p>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab dang-chon" data-tab="ban-do" role="tab">Bản đồ</button>
+    <button class="tab" data-tab="du-lieu" role="tab">Dữ liệu</button>
+  </nav>
   <span id="trang-thai" class="pill">đang tải…</span>
 </header>
 
-<main>
+<!-- ======================= TAB BẢN ĐỒ ======================= -->
+<main id="tab-ban-do" class="trang">
   <section id="khung-ban-do">
     <div id="ban-do"></div>
+
+    <div class="hop-noi" id="hop-pham-vi">
+      <button id="nut-toan-quoc" class="nho">← Toàn quốc</button>
+      <span id="ten-tinh-dang-xem"></span>
+    </div>
+
     <div class="dieu-khien">
-      <label for="nam-nen">Ảnh nền ban đêm</label>
-      <input type="range" id="nam-nen" min="2004" max="2025" value="2025" step="1">
-      <output id="nam-nen-hien">2025</output>
+      <div class="hang">
+        <label for="chi-so-ban-do">Tô màu theo</label>
+        <select id="chi-so-ban-do"></select>
+      </div>
+      <div class="hang">
+        <label for="nam-nen">Năm</label>
+        <input type="range" id="nam-nen" min="2004" max="2025" value="2025" step="1">
+        <output id="nam-nen-hien">2025</output>
+      </div>
+      <div id="thang-mau" class="thang-mau"></div>
       <p id="nen-ghi-chu" class="ghi-chu"></p>
     </div>
   </section>
@@ -40,8 +60,8 @@
     <div id="the-so-lieu" class="the-so-lieu"></div>
     <div id="canh-bao"></div>
 
-    <button id="nut-export" disabled>Tải dữ liệu về (.zip)</button>
-    <p class="ghi-chu">Gói tải về gồm ảnh đêm, chỉ số ảnh ngày, chỉ số ảnh đêm và chỉ số kinh tế.</p>
+    <button id="nut-export">Tải gói dữ liệu tỉnh (.zip)</button>
+    <p class="ghi-chu">Gồm ảnh đêm, chỉ số ảnh ngày, chỉ số ảnh đêm và chỉ số kinh tế.</p>
   </aside>
 
   <section id="khung-bieu-do">
@@ -49,6 +69,49 @@
     <div class="bieu-do"><h2>Diện tích sáng</h2><div id="bd-dien-tich"></div></div>
     <div class="bieu-do"><h2>Chỉ số ảnh ngày</h2><div id="bd-ngay"></div></div>
   </section>
+</main>
+
+<!-- ======================= TAB DỮ LIỆU ======================= -->
+<main id="tab-du-lieu" class="trang an">
+  <section class="bo-loc">
+    <div class="o-loc rong">
+      <label for="dl-chi-so">Chỉ số</label>
+      <select id="dl-chi-so"></select>
+      <p id="dl-mo-ta" class="ghi-chu"></p>
+    </div>
+    <div class="o-loc">
+      <label for="dl-nam-tu">Từ năm</label>
+      <input type="number" id="dl-nam-tu" min="2004" max="2025" value="2004">
+    </div>
+    <div class="o-loc">
+      <label for="dl-nam-den">Đến năm</label>
+      <input type="number" id="dl-nam-den" min="2004" max="2025" value="2025">
+    </div>
+    <div class="o-loc">
+      <label for="dl-loc-tinh">Lọc tỉnh</label>
+      <input type="search" id="dl-loc-tinh" placeholder="gõ tên tỉnh…">
+    </div>
+    <div class="o-loc nut">
+      <label>Tải về</label>
+      <div class="nhom-nut">
+        <button id="dl-tai-rong">Bảng rộng</button>
+        <button id="dl-tai-dai">Bảng dài</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="dl-canh-bao"></div>
+  <p id="dl-tom-tat" class="ghi-chu"></p>
+
+  <div class="khung-bang">
+    <table id="dl-bang"><thead></thead><tbody></tbody></table>
+  </div>
+
+  <p class="ghi-chu">
+    <strong>Bảng rộng</strong>: mỗi dòng một tỉnh, mỗi cột một năm — dán thẳng vào Excel.
+    <strong>Bảng dài</strong>: mỗi dòng một cặp tỉnh–năm — dạng Stata, R, pandas dùng để hồi quy.
+    Ô trống nghĩa là chưa có số liệu, không phải bằng không.
+  </p>
 </main>
 
 <footer>
