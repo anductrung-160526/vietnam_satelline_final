@@ -1,13 +1,16 @@
 """API chỉ là lớp đọc: thiếu dữ liệu phải trả rỗng một cách lịch sự, không bao giờ 500."""
 import ast
 import io
+import json
 import os
 import re
 import sys
 import tempfile
 import unittest
+import types
 import zipfile
 from pathlib import Path
+from unittest import mock
 from unittest.mock import Mock
 
 REPO = Path(__file__).resolve().parent.parent
@@ -245,6 +248,57 @@ class DeclaredDependenciesTest(unittest.TestCase):
     def test_shapely_is_declared_for_the_boundary_script(self):
         self.assertIn('shapely', self._declared())
         self.assertIn('shapely', self._imported())
+
+
+class BuildBoundariesTest(unittest.TestCase):
+    """Chỉ kiểm phần ghép nối. Việc tải GADM thật cần mạng, chạy trên máy người dùng."""
+
+    def test_missing_boundaries_explain_the_one_command_that_fixes_it(self):
+        from app.data import build_boundaries
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'c.json'
+            config.write_text(json.dumps({
+                'boundaries': str(Path(directory) / 'khong_co.geojson'),
+                'boundary_metadata': str(Path(directory) / 'khong_co.json'),
+                'boundary_policy': 'gadm41_research'}), encoding='utf-8')
+            with self.assertRaises(SystemExit) as thoat:
+                build_boundaries.build(config)
+        self.assertIn('--tai-gadm', str(thoat.exception))
+
+    def test_the_download_flag_reaches_prepare_gadm(self):
+        """--tai-gadm phải gọi đúng prepare() của pipeline, không tự tải theo cách khác."""
+        from app.data import build_boundaries
+        goi = []
+        module = types.ModuleType('province_pipeline.prepare_gadm')
+        module.prepare = lambda config: goi.append(config) or 63
+        with tempfile.TemporaryDirectory() as directory:
+            config = {'boundaries': str(Path(directory) / 'x.geojson'),
+                      'boundary_metadata': str(Path(directory) / 'x.json'),
+                      'boundary_policy': 'gadm41_research'}
+            path = Path(directory) / 'c.json'
+            path.write_text(json.dumps(config), encoding='utf-8')
+            with mock.patch.dict(sys.modules, {'province_pipeline.prepare_gadm': module}), \
+                 mock.patch('province_pipeline.boundaries.load_boundaries',
+                            return_value=({}, {'source': 'GADM', 'version': 'GADM 4.1',
+                                               'sha256': 'x'})):
+                out, count, size = build_boundaries.build(path, Path(directory) / 'o.geojson',
+                                                          download=True)
+            # Kiểm tra trong lòng with: ra khỏi khối là thư mục tạm bị xoá.
+            self.assertEqual(len(goi), 1)
+            self.assertEqual(count, 0)
+            self.assertTrue(out.exists())
+            self.assertEqual(json.loads(out.read_text(encoding='utf-8'))['type'],
+                             'FeatureCollection')
+
+    def test_the_default_config_matches_what_the_pipeline_writes(self):
+        """Chạy không --config phải trỏ đúng chỗ task_pipeline.local.prepare() đặt file."""
+        from app.data.build_boundaries import DEFAULT_CONFIG
+        self.assertEqual(DEFAULT_CONFIG['boundaries'],
+                         'province_pipeline/config/boundaries.geojson')
+        self.assertEqual(DEFAULT_CONFIG['boundary_policy'], 'gadm41_research')
+        local = (REPO / 'task_pipeline' / 'local.py').read_text(encoding='utf-8')
+        for value in DEFAULT_CONFIG.values():
+            self.assertIn(value, local)
 
 
 class BuildCogsTest(unittest.TestCase):

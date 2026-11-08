@@ -15,8 +15,11 @@ pip install -r app/requirements.txt
 # 1. Nạp chỉ số thật vào SQLite (bảng nào chưa có dữ liệu thì để rỗng, không lỗi)
 python3 -m app.data.build_indices --root /data/SatelliteData
 
-# 2. (tuỳ chọn) Ranh giới tỉnh cho bản đồ — cần GADM 4.1 đã kiểm SHA-256
-python3 -m app.data.build_boundaries --config .province-local/config.json
+# 2. Ranh giới tỉnh cho bản đồ. Lần đầu thêm --tai-gadm để tải GADM 4.1 (~50 MB).
+#    prepare_gadm đối chiếu SHA-256 của cả file nén lẫn nội dung trước khi dùng.
+python3 -m app.data.build_boundaries --tai-gadm
+python3 -m app.data.build_boundaries                      # các lần sau
+python3 -m app.data.build_boundaries --config <đường dẫn> # nếu máy khác đã có sẵn
 
 # 3. (tuỳ chọn) Ảnh COG nhẹ cho bản đồ — cần gdal-bin
 python3 -m app.data.build_cogs --root /data/SatelliteData
