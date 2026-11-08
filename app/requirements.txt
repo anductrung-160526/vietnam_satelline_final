@@ -4,3 +4,8 @@ uvicorn[standard]==0.34.0
 # Phục vụ ô bản đồ đọc trực tiếp COG. Bỏ dòng này thì API vẫn chạy, chỉ thiếu bản đồ.
 titiler.core==0.19.2
 rio-tiler==7.2.0
+
+# Chỉ các script chuẩn bị dữ liệu trong app/data/ cần, API không dùng:
+# build_boundaries.py đọc ranh giới GADM qua province_pipeline.boundaries.
+# Giữ chung một file để chỉ phải chạy một lệnh pip; gói này nhẹ (~2 MB).
+shapely>=2.0,<3
