@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 from collections import Counter
 from province_pipeline.common import atomic_json,audit
-from province_pipeline.receiver import verify_volume,enroll,single_receiver,hashes,validate
+from province_pipeline.receiver import BranchBusy,verify_volume,enroll,single_receiver,hashes,validate
 from province_pipeline.quality import NoValidPixels
 from province_pipeline.sources import NTL_PACKAGE,DAY_PACKAGE
 from .scope import PROJECT,scope,configure
@@ -373,9 +373,13 @@ def main():
         # Stages 3-4 only, for raw files already on E. No Earth Engine request.
         state_path=control/'.local_state'/'state.json'
         state=json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else dict(jobs={})
-        with single_receiver(control):
-            code=local_stages(c,root,control,state,boundaries,metadata,raw_jobs.jobs,args.only)
-            atomic_json(state_path,state)
+        try:
+            # BranchBusy bật ra ở __enter__ của with, không phải lúc gọi hàm.
+            with single_receiver(control):
+                code=local_stages(c,root,control,state,boundaries,metadata,raw_jobs.jobs,args.only)
+                atomic_json(state_path,state)
+        except BranchBusy as busy:
+            raise SystemExit(str(busy))
         raise SystemExit(code)
     from province_pipeline.earth_engine import initialize
     initialize(c,credentials(args.ee_key))

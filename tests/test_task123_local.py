@@ -324,3 +324,48 @@ class DeriveWithoutEarthEngineTest(unittest.TestCase):
              patch.object(sys, 'argv', ['local', 'authenticate']):
             with self.assertRaises(ImportError):
                 main()
+
+
+class BranchLockTest(unittest.TestCase):
+    """Hai tiến trình cùng ghi một nhánh đã từng làm hỏng dữ liệu; khoá phải chặn rõ ràng."""
+
+    def test_a_second_holder_is_refused_with_an_explanation_not_a_traceback(self):
+        from province_pipeline.receiver import single_receiver, BranchBusy
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with single_receiver(root):
+                with self.assertRaises(BranchBusy) as giu:
+                    with single_receiver(root):
+                        pass
+        loi = str(giu.exception)
+        self.assertIn('.receiver.lock', loi)
+        self.assertIn('một tiến trình', loi)
+        self.assertIn('Win32_Process', loi)     # chỉ đúng lệnh để tự kiểm tra
+
+    def test_the_lock_is_free_again_once_the_holder_leaves(self):
+        from province_pipeline.receiver import single_receiver
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with single_receiver(root):
+                pass
+            with single_receiver(root):         # không được coi là khoá cũ còn kẹt
+                pass
+
+    def test_derive_turns_the_busy_lock_into_a_plain_exit_message(self):
+        import sys
+        from unittest.mock import patch
+        from province_pipeline.receiver import BranchBusy
+        from task_pipeline import local
+        def ban(_):
+            raise BranchBusy('Nhánh này đang có tiến trình khác chạy: X')
+        with patch.object(local, 'single_receiver', ban), \
+             patch.object(local, 'prepare', return_value=(
+                 {'boundaries': __file__, 'boundary_metadata': __file__,
+                  'task_scope': {'provinces': []}}, Path('.'), Path('.'))), \
+             patch.object(sys, 'argv', ['local', 'derive', '--range', '1-11']), \
+             patch.object(local.os, 'name', 'nt'), \
+             patch('province_pipeline.boundaries.load_boundaries', return_value=({}, {})), \
+             patch('province_pipeline.prepare_gadm.prepare', return_value=63):
+            with self.assertRaises(SystemExit) as thoat:
+                local.main()
+        self.assertIn('tiến trình khác', str(thoat.exception.code))

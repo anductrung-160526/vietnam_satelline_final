@@ -68,22 +68,38 @@ def verify_volume(config):
     return root
 
 
+BUSY = ('Nhánh này đang có tiến trình khác chạy: {lock}\n'
+        'Mỗi nhánh chỉ được một tiến trình — hai tiến trình cùng ghi sẽ làm hỏng dữ liệu.\n'
+        'Kiểm tra bằng:  Get-CimInstance Win32_Process -Filter "name=\'python.exe\'" '
+        '| Select-Object ProcessId, CommandLine\n'
+        'Nếu đang chạy thì để yên và chờ. Nếu không có tiến trình nào, khoá bị một chương '
+        'trình khác giữ (OneDrive, phần mềm diệt virus) — đóng nó rồi chạy lại.')
+
+
+class BranchBusy(RuntimeError):
+    """Nhánh đang bị một tiến trình khác khoá. Chờ, đừng ép."""
+
+
 @contextlib.contextmanager
 def single_receiver(root):
     """OS lock is released on process exit; no stale PID lock removal needed."""
     lock = root / '.receiver.lock'
     with lock.open('a+b') as stream:
         stream.seek(0)
-        if os.name == 'nt':
-            import msvcrt
-            if lock.stat().st_size == 0:
-                stream.write(b'0')
-                stream.flush()
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                if lock.stat().st_size == 0:
+                    stream.write(b'0')
+                    stream.flush()
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            # Errno 13 / EACCES / EAGAIN: khoá đang bị giữ. Traceback thô không nói được gì.
+            raise BranchBusy(BUSY.format(lock=lock)) from error
         try:
             yield
         finally:
