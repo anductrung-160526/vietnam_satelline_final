@@ -290,3 +290,37 @@ class NightOnlyTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class DeriveWithoutEarthEngineTest(unittest.TestCase):
+    """'derive' chỉ đọc ảnh đã có trên đĩa: nó phải chạy được khi chưa cài earthengine-api.
+
+    main() từng 'import ee' vô điều kiện trước khi rẽ nhánh, nên lệnh derive chết ngay
+    với ModuleNotFoundError dù không hề gọi Earth Engine. Đã xảy ra thật trên máy người dùng.
+    """
+
+    def _run(self, argv):
+        import sys
+        from unittest.mock import patch
+        from task_pipeline.local import main
+        chan = {name: None for name in list(sys.modules) if name == 'ee' or name.startswith('ee.')}
+        chan['ee'] = None                      # import ee -> ImportError
+        with patch.dict(sys.modules, chan), patch.object(sys, 'argv', argv):
+            with self.assertRaises(SystemExit) as thoat:
+                main()
+        return thoat.exception
+
+    def test_derive_gets_past_the_import_without_earthengine_installed(self):
+        """Trên Linux nó dừng ở kiểm tra Windows — tức là đã đi qua chỗ import ee."""
+        loi = self._run(['local', 'derive', '--mode', 'full', '--range', '1-11',
+                         '--root', 'E:\\SatelliteData', '--only', 'night'])
+        self.assertIn('Windows', str(loi.code))
+
+    def test_authenticate_still_reports_the_missing_package_plainly(self):
+        import sys
+        from unittest.mock import patch
+        from task_pipeline.local import main
+        with patch.dict(sys.modules, {'ee': None}), \
+             patch.object(sys, 'argv', ['local', 'authenticate']):
+            with self.assertRaises(ImportError):
+                main()

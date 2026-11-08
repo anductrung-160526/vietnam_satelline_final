@@ -352,8 +352,10 @@ def main():
     if args.command=='migrate':
         from .migrate import main as migrate
         raise SystemExit(migrate(args.root))
-    import ee
     if args.command=='authenticate':
+        # Chỉ lệnh này cần Earth Engine ngay. 'derive' chỉ đọc ảnh đã có trên đĩa nên
+        # phải chạy được trên máy không cài earthengine-api; các chỗ khác import cục bộ.
+        import ee
         project=args.project or PROJECT
         ee.Authenticate(auth_mode='localhost',scopes=['https://www.googleapis.com/auth/earthengine','https://www.googleapis.com/auth/cloud-platform'])
         ee.Initialize(project=project)

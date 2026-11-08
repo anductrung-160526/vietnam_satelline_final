@@ -9,8 +9,12 @@ nút trích xuất dữ liệu.
 
 ## Chạy thử tại chỗ
 
+Bước tính chỉ số (`task_pipeline`) cần thư viện của đường ống; lớp web cần thư viện riêng.
+Chạy cả hai cho chắc:
+
 ```bash
-pip install -r app/requirements.txt
+pip install -r requirements.txt        # đường ống: pandas, rasterio, earthengine-api…
+pip install -r app/requirements.txt    # lớp web: fastapi, uvicorn, titiler, shapely
 
 # 1. Nạp chỉ số thật vào SQLite (bảng nào chưa có dữ liệu thì để rỗng, không lỗi)
 python3 -m app.data.build_indices --root /data/SatelliteData

@@ -13,7 +13,8 @@
 param(
   [string]$Root = 'E:\SatelliteData',
   [ValidateSet('night','day','all')][string]$Only = 'night',
-  [string[]]$Ranges = @('1-11','12-22','23-33','34-43','44-53','54-63')
+  [string[]]$Ranges = @('1-11','12-22','23-33','34-43','44-53','54-63'),
+  [switch]$KhongDung
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +28,7 @@ $batDau = Get-Date
 Write-Host "=== Tinh chi so ($Only) cho 63 tinh, doc tu $Root ===" -ForegroundColor Cyan
 
 $hong = @()
+$dau = $true
 foreach ($r in $Ranges) {
   Write-Host ""
   Write-Host "--- Nhom tinh $r ---" -ForegroundColor Yellow
@@ -35,9 +37,21 @@ foreach ($r in $Ranges) {
   if ($LASTEXITCODE -ne 0) {
     Write-Host "    HONG (ma loi $LASTEXITCODE)" -ForegroundColor Red
     $hong += $r
+    if ($dau) {
+      # Nhom dau tien hong thuong la loi moi truong (thieu thu vien, sai duong dan),
+      # khong phai loi cua rieng nhom do. Dung lai thay vi lap cung mot loi sau lan.
+      Write-Host ""
+      Write-Host "Nhom dau tien da hong -> nhieu kha nang la loi moi truong, khong phai du lieu." -ForegroundColor Red
+      Write-Host "Doc thong bao loi o tren. Hay thu:" -ForegroundColor Yellow
+      Write-Host "  pip install -r requirements.txt     (day du thu vien cua duong ong)"
+      Write-Host "  dir $Root                           (o cung da cam chua)"
+      Write-Host "Sua xong chay lai script nay. Muon chay het du co loi thi them: -KhongDung"
+      if (-not $KhongDung) { exit 1 }
+    }
   } else {
     Write-Host ("    xong sau {0:n0} giay" -f ((Get-Date) - $t).TotalSeconds) -ForegroundColor Green
   }
+  $dau = $false
 }
 
 Write-Host ""
