@@ -1,4 +1,6 @@
 # Xem anh dem dang nam o dau va theo layout nao.
+# File nay chi dung ky tu ASCII: PowerShell 5.1 doc file UTF-8 khong BOM
+# theo bang ma ANSI, nen dau tieng Viet se thanh ky tu rac va vo cu phap.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\windows\kiem_tra_anh_dem.ps1
 #
@@ -30,13 +32,13 @@ foreach ($nguon in @('VIIRS','DMSP')) {
   Write-Host "    $thuMuc"
 
   if (-not (Test-Path $thuMuc)) {
-    Write-Host "    CHUA CO thu muc nay — chua tai anh $nguon ve o nay." -ForegroundColor Red
+    Write-Host "    CHUA CO thu muc nay - chua tai anh $nguon ve o nay." -ForegroundColor Red
     continue
   }
 
   $con = Get-ChildItem $thuMuc -Directory -ErrorAction SilentlyContinue
   if (-not $con) {
-    Write-Host "    Thu muc rong — chua co anh nao." -ForegroundColor Red
+    Write-Host "    Thu muc rong - chua co anh nao." -ForegroundColor Red
     continue
   }
 
@@ -59,7 +61,7 @@ foreach ($nguon in @('VIIRS','DMSP')) {
     Write-Host "    SAI LAYOUT cho buoc tinh chi so: $($quocGia.Count) thu muc kieu quoc gia" -ForegroundColor Red
     Write-Host "    Cac nam: $nam"
     Write-Host "    Day la anh do 10 luong national.py tai (chia theo o, toan quoc)." -ForegroundColor Red
-    Write-Host "    derive.py KHONG doc duoc layout nay — can cat theo tinh truoc." -ForegroundColor Red
+    Write-Host "    derive.py KHONG doc duoc layout nay - can cat theo tinh truoc." -ForegroundColor Red
   }
 
   if (-not $theoTinh.Count -and -not $quocGia.Count) {

@@ -1,12 +1,14 @@
-# Tính chỉ số ảnh đêm cho cả 63 tỉnh, rồi nạp vào ứng dụng VNGISDash.
+# Tinh chi so anh dem cho ca 63 tinh, roi nap vao ung dung VNGISDash.
+# File nay chi dung ky tu ASCII: PowerShell 5.1 doc file UTF-8 khong BOM
+# theo bang ma ANSI, nen dau tieng Viet se thanh ky tu rac va vo cu phap.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\windows\chi_so_dem.ps1
 #
-# Chỉ chạy nửa ảnh đêm (--only night). Ảnh đêm nhẹ (500 m - 1 km) nên nhanh;
-# nửa ảnh ngày chậm hơn nhiều và chạy riêng sau bằng:  -Only day
+# Chi chay nua anh dem (--only night). Anh dem nhe (500 m - 1 km) nen nhanh;
+# nua anh ngay cham hon nhieu va chay rieng sau bang:  -Only day
 #
-# Không gọi Earth Engine: chỉ đọc ảnh đã tải trên ổ E và tính ra bảng chỉ số.
-# Chạy lại được bao nhiêu lần cũng được — phần nào đã tính xong thì bỏ qua.
+# Khong goi Earth Engine: chi doc anh da tai tren o E va tinh ra bang chi so.
+# Chay lai duoc bao nhieu lan cung duoc - phan nao da tinh xong thi bo qua.
 
 param(
   [string]$Root = 'E:\SatelliteData',
@@ -61,4 +63,4 @@ Write-Host ""
 Write-Host "Nap vao ung dung:" -ForegroundColor Cyan
 Write-Host "  python -m app.data.build_indices --root $Root"
 Write-Host "  uvicorn app.api.main:app --reload"
-Write-Host "  rồi mở http://localhost:8000"
+Write-Host "  roi mo http://localhost:8000"
