@@ -251,8 +251,17 @@ def raw_index(root,control,state,province,kind,job_source,config,boundaries,meta
     return files,status
 
 
-def local_stages(config,root,control,state,boundaries,metadata,job_source):
-    """Stages 3 and 4 on the laptop only. Rebuilds only outputs whose inputs changed."""
+def local_stages(config,root,control,state,boundaries,metadata,job_source,only='all'):
+    """Stages 3 and 4 on the laptop only. Rebuilds only outputs whose inputs changed.
+
+    only='night' does the NTL half alone. Night images are small (500 m-1 km) while the
+    day composites are the slow part, so this gets usable night indices out in minutes
+    instead of waiting on a full pass. The day half is untouched, not invalidated:
+    a later only='day' or 'all' run fills it in.
+    """
+    if only not in ('all','night','day'):
+        raise ValueError("only must be 'all', 'night' or 'day'")
+    do_night,do_day=only in ('all','night'),only in ('all','day')
     cache=derive.Cache(Path(control)/'derive_cache.json')
     tables={name:[] for name in derive.TABLES}
     override=config.get('dry_season_months_by_province')
@@ -260,19 +269,23 @@ def local_stages(config,root,control,state,boundaries,metadata,job_source):
         if STOP:return 130
         p=dict(province)
         area=derive.province_area_km2(boundaries[p['ma_tinh']])
-        night,_=raw_index(root,control,state,p,raw_jobs.NIGHT,job_source,config,boundaries,metadata)
-        day,day_status=raw_index(root,control,state,p,raw_jobs.DAY,job_source,config,boundaries,metadata)
         state['current_province']=p['number'];state['current_stage']='intermediate'
-        filtered=derive.viirs_filtered(night,p,root)
-        annual=derive.viirs_annual(night,filtered,p,root)
-        dmsp=derive.dmsp_annual(night,p,root)
-        derive.day_annual(day,p,root,override)
+        if do_night:
+            night,_=raw_index(root,control,state,p,raw_jobs.NIGHT,job_source,config,boundaries,metadata)
+            filtered=derive.viirs_filtered(night,p,root)
+            annual=derive.viirs_annual(night,filtered,p,root)
+            dmsp=derive.dmsp_annual(night,p,root)
+        if do_day:
+            day,day_status=raw_index(root,control,state,p,raw_jobs.DAY,job_source,config,boundaries,metadata)
+            derive.day_annual(day,p,root,override)
         state['current_stage']='processed'
-        tables['day_indices_monthly']+=derive.day_rows(p,day_status,day,area,cache)
-        tables['ntl_monthly']+=derive.ntl_monthly_rows(p,filtered,area,cache)
-        rows,overlap=derive.ntl_annual_rows(p,{y:v for y,v in dmsp.items()},annual,area,cache)
-        tables['ntl_annual']+=rows
-        if overlap:tables['ntl_overlap_2013'].append(overlap)
+        if do_day:
+            tables['day_indices_monthly']+=derive.day_rows(p,day_status,day,area,cache)
+        if do_night:
+            tables['ntl_monthly']+=derive.ntl_monthly_rows(p,filtered,area,cache)
+            rows,overlap=derive.ntl_annual_rows(p,{y:v for y,v in dmsp.items()},annual,area,cache)
+            tables['ntl_annual']+=rows
+            if overlap:tables['ntl_overlap_2013'].append(overlap)
         cache.save()
     for name,rows in tables.items():
         if rows:derive.write_part(control,name,rows)
@@ -333,6 +346,8 @@ def main():
         p.add_argument('--config');p.add_argument('--root');p.add_argument('--ee-key');p.add_argument('--project')
         p.add_argument('--range',help='Province range, e.g. 54-63 (default: branch_range.json)')
         p.add_argument('--start',choices=['night','day'],default='night',help='day: skip the night raw stage')
+        p.add_argument('--only',choices=['all','night','day'],default='all',
+                       help='derive: which half of stages 3-4 to run (night is much faster)')
     args=parser.parse_args();logging.basicConfig(level=logging.INFO,format='%(asctime)s %(message)s')
     if args.command=='migrate':
         from .migrate import main as migrate
@@ -357,7 +372,7 @@ def main():
         state_path=control/'.local_state'/'state.json'
         state=json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else dict(jobs={})
         with single_receiver(control):
-            code=local_stages(c,root,control,state,boundaries,metadata,raw_jobs.jobs)
+            code=local_stages(c,root,control,state,boundaries,metadata,raw_jobs.jobs,args.only)
             atomic_json(state_path,state)
         raise SystemExit(code)
     from province_pipeline.earth_engine import initialize

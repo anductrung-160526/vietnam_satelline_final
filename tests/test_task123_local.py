@@ -235,5 +235,58 @@ class EndToEndTests(unittest.TestCase):
             self.assertEqual(sorted(p.stat().st_mtime_ns for p in (ntl/'data_intermediate').rglob('*.tif')),before)
 
 
+class NightOnlyTests(unittest.TestCase):
+    """--only night exists so the night half can land in minutes, without the slow day pass."""
+
+    def _calls(self,only):
+        from task_pipeline import local
+        c=config();boundaries={'01':square(c)}
+        seen=[]
+        def note(name,result=None):
+            def inner(*a,**k):
+                seen.append(name);return {} if result is None else result
+            return inner
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with patch.object(local,'raw_index',note('raw_index',({},{}))),\
+                 patch.object(local.derive,'province_area_km2',return_value=1.0),\
+                 patch.object(local.derive,'viirs_filtered',note('viirs_filtered')),\
+                 patch.object(local.derive,'viirs_annual',note('viirs_annual')),\
+                 patch.object(local.derive,'dmsp_annual',note('dmsp_annual')),\
+                 patch.object(local.derive,'day_annual',note('day_annual')),\
+                 patch.object(local.derive,'day_rows',note('day_rows',[])),\
+                 patch.object(local.derive,'ntl_monthly_rows',note('ntl_monthly_rows',[])),\
+                 patch.object(local.derive,'ntl_annual_rows',note('ntl_annual_rows',([],None))),\
+                 patch.object(local.derive,'merge',Mock()),patch.object(local.derive,'write_docs',Mock()),\
+                 patch.object(local.derive,'landcover_status',return_value='PENDING_SAMPLES'):
+                code=local.local_stages(c,root,root/'_control/001_011',{},boundaries,META,
+                                        Mock(),only)
+        self.assertEqual(code,0)
+        return seen
+
+    def test_night_only_skips_every_day_step(self):
+        seen=self._calls('night')
+        for name in ('viirs_filtered','viirs_annual','dmsp_annual','ntl_annual_rows'):
+            self.assertIn(name,seen)
+        for name in ('day_annual','day_rows'):
+            self.assertNotIn(name,seen)
+
+    def test_day_only_skips_every_night_step(self):
+        seen=self._calls('day')
+        self.assertIn('day_annual',seen)
+        for name in ('viirs_filtered','dmsp_annual','ntl_annual_rows'):
+            self.assertNotIn(name,seen)
+
+    def test_all_is_the_default_and_still_does_both_halves(self):
+        seen=self._calls('all')
+        for name in ('viirs_filtered','dmsp_annual','day_annual','day_rows','ntl_annual_rows'):
+            self.assertIn(name,seen)
+
+    def test_an_unknown_half_is_refused_rather_than_silently_doing_nothing(self):
+        from task_pipeline.local import local_stages
+        with self.assertRaises(ValueError):
+            local_stages(config(),Path('.'),Path('.'),{},{},META,Mock(),'ntl')
+
+
 if __name__=='__main__':
     unittest.main()
