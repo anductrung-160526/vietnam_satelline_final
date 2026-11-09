@@ -34,13 +34,28 @@ def _code(ma_tinh: str) -> str:
     return code
 
 
+def dau_van_giao_dien():
+    """Vân tay của bộ tệp giao diện đang nằm trên đĩa.
+
+    Khi màn hình trông không giống bản vừa sửa, câu hỏi đầu tiên là máy chủ đang phục vụ
+    tệp nào. So vân tay này với vân tay của repo là biết ngay, khỏi đoán bộ nhớ đệm.
+    """
+    import hashlib
+    bam = hashlib.sha256()
+    for ten in ('index.html', 'style.css', 'app.js'):
+        duong_dan = WEB / ten
+        bam.update(duong_dan.read_bytes() if duong_dan.is_file() else b'')
+    return bam.hexdigest()[:12]
+
+
 @app.get('/api/health')
 def health():
     try:
         count = len(store.provinces())
     except FileNotFoundError as error:
         return JSONResponse({'ok': False, 'ly_do': str(error)}, status_code=503)
-    return {'ok': True, 'so_tinh': count, 'db': str(store.database_path())}
+    return {'ok': True, 'so_tinh': count, 'db': str(store.database_path()),
+            'thu_muc_giao_dien': str(WEB), 'dau_van_giao_dien': dau_van_giao_dien()}
 
 
 @app.get('/api/provinces')

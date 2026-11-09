@@ -256,6 +256,24 @@ class StaticAndSchemaTest(unittest.TestCase):
     def setUp(self):
         self.db, self.client, _ = fresh_database(self)
 
+    def test_health_reports_which_interface_files_are_being_served(self):
+        """Khi màn hình không giống bản vừa sửa, phải biết ngay máy chủ dùng tệp nào."""
+        from app.api.main import dau_van_giao_dien
+        body = self.client.get('/api/health').json()
+        self.assertEqual(body['dau_van_giao_dien'], dau_van_giao_dien())
+        self.assertTrue(body['thu_muc_giao_dien'].endswith('web'))
+        self.assertEqual(len(body['dau_van_giao_dien']), 12)
+
+    def test_the_sidebar_comes_before_the_map_in_the_markup_and_the_grid(self):
+        """Cột lọc phải nằm BÊN TRÁI: ô lưới đầu tiên, và cũng là thẻ đầu tiên."""
+        web = REPO / 'app' / 'web'
+        html = (web / 'index.html').read_text(encoding='utf-8')
+        self.assertLess(html.index('id="cot-loc"'), html.index('id="khung-ban-do"'))
+        css = (web / 'style.css').read_text(encoding='utf-8')
+        self.assertIn('grid-template-columns:var(--rong-cot) 6px 1fr', css)
+        # Không còn quy tắc nào đặt bản đồ vào cột đầu.
+        self.assertNotIn('grid-template-areas', css)
+
     def test_static_files_are_served_with_no_cache(self):
         """Trình duyệt từng giữ style.css cũ rồi ghép với index.html mới -> giao diện lai."""
         for duong_dan in ('/', '/style.css', '/app.js'):
