@@ -2,7 +2,6 @@
 /* VNGISDash — tab "Ảnh đêm" là trình xem ảnh, tab "Dữ liệu" là bảng tra cứu.
    Nguyên tắc: thiếu dữ liệu thì nói rõ là thiếu, không bao giờ vẽ số giả. */
 
-const KHONG_CO = 'chưa có số liệu';
 const $ = id => document.getElementById(id);
 
 let danhSachTinh = [];
@@ -18,17 +17,6 @@ async function layJSON(duongDan){
 }
 const dinhDang = (v, c = 2) => (v === null || v === undefined)
   ? null : Number(v).toLocaleString('vi-VN', {minimumFractionDigits:c, maximumFractionDigits:c});
-
-/* ===================== tab ===================== */
-document.querySelectorAll('.tab').forEach(nut => {
-  nut.onclick = () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('dang-chon', t === nut));
-    document.querySelectorAll('.trang').forEach(t =>
-      t.classList.toggle('an', t.id !== 'tab-' + nut.dataset.tab));
-    if(nut.dataset.tab === 'du-lieu') veBang();
-    if(nut.dataset.tab === 'ban-do' && banDo) setTimeout(() => banDo.resize(), 0);
-  };
-});
 
 /* ===================== thanh kéo đổi độ rộng cột lọc ===================== */
 (function keoCot(){
@@ -205,58 +193,6 @@ $('nut-tai-anh').onclick = () => {
   window.location = `/api/anh-dem.tif?nam=${$('chon-nam').value}`;
 };
 
-/* ===================== tab dữ liệu ===================== */
-let bangHienTai = null;
-
-async function veBang(){
-  const chiSo = $('dl-chi-so').value;
-  const tu = Number($('dl-nam-tu').value), den = Number($('dl-nam-den').value);
-  if(tu > den){
-    $('dl-canh-bao').innerHTML = '<div class="canh thieu">Năm bắt đầu phải nhỏ hơn hoặc bằng năm kết thúc.</div>';
-    return;
-  }
-  let d;
-  try{ d = await layJSON(`/api/panel?chi_so=${chiSo}&nam_tu=${tu}&nam_den=${den}`); }
-  catch(loi){
-    $('dl-canh-bao').innerHTML = `<div class="canh thieu">Không lấy được bảng: ${loi.message}</div>`;
-    return;
-  }
-  bangHienTai = d;
-  const e = d.chi_so;
-  $('dl-mo-ta').textContent = `${e.mo_ta} Đơn vị: ${e.don_vi}.`;
-  $('dl-tom-tat').textContent =
-    `${d.so_tinh_co_du_lieu}/${d.dong.length} tỉnh có số liệu · ${d.nam.length} năm (${tu}–${den})`;
-  $('dl-canh-bao').innerHTML = (d.canh_bao || []).map(v => `<div class="canh">${v}</div>`).join('');
-  document.querySelector('#dl-bang thead').innerHTML =
-    '<tr><th>Mã</th><th>Tỉnh / thành phố</th>' + d.nam.map(n => `<th>${n}</th>`).join('') + '</tr>';
-  loc();
-}
-
-function loc(){
-  if(!bangHienTai) return;
-  const tim = ($('dl-loc-tinh').value || '').trim().toLowerCase();
-  const e = bangHienTai.chi_so;
-  const dong = bangHienTai.dong.filter(r =>
-    !tim || r.ten_tinh.toLowerCase().includes(tim) || r.ma_tinh.includes(tim));
-  document.querySelector('#dl-bang tbody').innerHTML = dong.map(r =>
-    `<tr><td class="ma">${r.ma_tinh}</td><td>${r.ten_tinh}</td>`
-    + r.gia_tri.map(v => v === null ? '<td class="trong">··</td>'
-                                    : `<td>${dinhDang(v, e.chu_so)}</td>`).join('')
-    + '</tr>').join('')
-    || `<tr><td colspan="${bangHienTai.nam.length + 2}" class="trong">Không có tỉnh nào khớp.</td></tr>`;
-}
-
-$('dl-loc-tinh').oninput = loc;
-$('dl-chi-so').onchange = veBang;
-$('dl-nam-tu').onchange = veBang;
-$('dl-nam-den').onchange = veBang;
-const taiBang = dang => {
-  window.location = `/api/panel.csv?chi_so=${$('dl-chi-so').value}`
-    + `&nam_tu=${$('dl-nam-tu').value}&nam_den=${$('dl-nam-den').value}&dang=${dang}`;
-};
-$('dl-tai-rong').onclick = () => taiBang('rong');
-$('dl-tai-dai').onclick  = () => taiBang('dai');
-
 /* ===================== khởi động ===================== */
 (async function khoiDong(){
   try{
@@ -273,10 +209,6 @@ $('dl-tai-dai').onclick  = () => taiBang('dai');
   $('chon-tinh').innerHTML = '<option value="">Toàn quốc</option>'
     + danhSachTinh.map(t => `<option value="${t.ma_tinh}">${t.ten_tinh}</option>`).join('');
   $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
-
-  $('dl-chi-so').innerHTML = (await layJSON('/api/indicators')).chi_so
-    .map(c => `<option value="${c.ma}">${c.ten}${c.so_tinh ? '' : ' — chưa có số liệu'}</option>`)
-    .join('');
 
   try{ thongTinNen = await layJSON('/api/basemap'); }catch{ thongTinNen = null; }
   const nam = thongTinNen?.nam || [];

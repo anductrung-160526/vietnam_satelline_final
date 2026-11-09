@@ -13,19 +13,14 @@
     <h1>VNGISDash</h1>
     <p class="sub">Ảnh vệ tinh ban đêm cấp tỉnh · Việt Nam 2004–2025</p>
   </div>
-  <nav class="tabs" role="tablist">
-    <button class="tab dang-chon" data-tab="ban-do" role="tab">Ảnh đêm</button>
-    <button class="tab" data-tab="du-lieu" role="tab">Dữ liệu</button>
-  </nav>
   <span id="trang-thai" class="pill">đang tải…</span>
 </header>
 
-<!-- ======================= TAB ẢNH ĐÊM ======================= -->
-<main id="tab-ban-do" class="trang">
+<main id="khung-chinh">
   <aside id="cot-loc">
-    <label for="chon-tinh">Phạm vi</label>
+    <label for="chon-tinh">Phạm vi — tỉnh / thành phố</label>
     <select id="chon-tinh"></select>
-    <button id="nut-toan-quoc" class="nho">Xem toàn quốc</button>
+    <button id="nut-toan-quoc" class="nho">↩ Xem toàn quốc</button>
 
     <label for="chon-nam">Thời điểm</label>
     <select id="chon-nam"></select>
@@ -39,7 +34,7 @@
     <div id="canh-bao"></div>
   </aside>
 
-  <div id="thanh-keo" title="Kéo để đổi độ rộng cột"></div>
+  <div id="thanh-keo" title="Kéo để đổi độ rộng cột · nháy đúp để về mặc định"></div>
 
   <section id="khung-ban-do">
     <div id="ban-do"></div>
@@ -48,50 +43,7 @@
   </section>
 </main>
 
-<!-- ======================= TAB DỮ LIỆU ======================= -->
-<main id="tab-du-lieu" class="trang an">
-  <section class="bo-loc">
-    <div class="o-loc rong">
-      <label for="dl-chi-so">Chỉ số</label>
-      <select id="dl-chi-so"></select>
-      <p id="dl-mo-ta" class="ghi-chu"></p>
-    </div>
-    <div class="o-loc">
-      <label for="dl-nam-tu">Từ năm</label>
-      <input type="number" id="dl-nam-tu" min="2004" max="2025" value="2004">
-    </div>
-    <div class="o-loc">
-      <label for="dl-nam-den">Đến năm</label>
-      <input type="number" id="dl-nam-den" min="2004" max="2025" value="2025">
-    </div>
-    <div class="o-loc">
-      <label for="dl-loc-tinh">Lọc tỉnh</label>
-      <input type="search" id="dl-loc-tinh" placeholder="gõ tên tỉnh…">
-    </div>
-    <div class="o-loc nut">
-      <label>Tải về</label>
-      <div class="nhom-nut">
-        <button id="dl-tai-rong">Bảng rộng</button>
-        <button id="dl-tai-dai">Bảng dài</button>
-      </div>
-    </div>
-  </section>
-
-  <div id="dl-canh-bao"></div>
-  <p id="dl-tom-tat" class="ghi-chu"></p>
-
-  <div class="khung-bang">
-    <table id="dl-bang"><thead></thead><tbody></tbody></table>
-  </div>
-</main>
-
-<footer>
-  <p>DMSP-OLS 2004–2013 · VIIRS DNB 2014–2025 · Ranh giới GADM 4.1, 63 tỉnh trước sáp nhập 01/7/2025.</p>
-  <p>FTU Tech Lab · Đề tài thực tập VNGISDash · nguyên mẫu</p>
-</footer>
-
 <script src="vendor/maplibre-gl.js"></script>
-<script src="vendor/echarts.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

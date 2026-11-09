@@ -61,21 +61,19 @@ Số giả lập có `status='GIA_LAP'`; chạy lại `build_indices.py` là b�
 
 ## Giao diện
 
-**Tab Ảnh đêm** — trình xem ảnh, không phải bảng điều khiển chỉ số
-- Cột lọc hẹp bên trái, **kéo giãn được** (kéo thanh dọc; nháy đúp về 280 px).
-  Ảnh chiếm toàn bộ phần còn lại.
-- Chọn phạm vi (toàn quốc hoặc một tỉnh) và thời điểm (danh sách năm + thanh trượt).
-- Ảnh đêm thật hiển thị **cắt theo ranh giới**: một đa giác phủ cả thế giới, khoét lỗ
-  đúng hình cần giữ, đặt TRÊN lớp ảnh. Chọn tỉnh thì chỉ còn ảnh trong tỉnh đó.
-- Nút tải GeoTIFF của năm đang chọn.
-- Không có biểu đồ, không có ô chỉ số: tab này chỉ để xem ảnh và tải ảnh.
+Một màn hình duy nhất: **bộ lọc hẹp bên trái, ảnh chiếm toàn bộ phần còn lại.**
 
-**Tab Dữ liệu** — dựng theo World Development Indicators của World Bank
-- Chọn chỉ số, khoảng năm, lọc tỉnh theo tên.
-- Bảng: mỗi dòng một tỉnh, mỗi cột một năm. Cột tên tỉnh và hàng tiêu đề dính khi cuộn.
-- Ô trống hiện `··`, nghĩa là chưa có số liệu, không phải bằng không.
-- Tải về dạng rộng (Excel) hoặc dạng dài (Stata, R, pandas), kèm phần đầu ghi tên chỉ số,
-  đơn vị, nguồn bảng và cảnh báo phương pháp.
+- Cột lọc **kéo giãn được** (kéo thanh dọc, 180–560 px; nháy đúp về 280 px).
+- **Phạm vi**: chọn một trong 63 tỉnh, hoặc "Xem toàn quốc". Bấm thẳng lên bản đồ cũng được.
+- **Thời điểm**: danh sách năm và thanh trượt, đổi cả hai cùng lúc.
+- Ảnh đêm thật hiển thị **cắt theo ranh giới**: một đa giác phủ cả thế giới, khoét lỗ đúng
+  hình cần giữ, đặt TRÊN lớp ảnh. Chọn tỉnh thì chỉ còn ảnh trong tỉnh đó.
+- Nút tải GeoTIFF của năm đang chọn.
+- Không biểu đồ, không ô chỉ số, không bảng: màn hình này chỉ để xem ảnh và tải ảnh.
+
+**Bảng tra cứu kiểu World Development Indicators đã gỡ khỏi giao diện** theo yêu cầu, nhưng
+`/api/indicators`, `/api/panel` và `/api/panel.csv` vẫn còn và vẫn có test. Muốn đưa lại chỉ
+cần dựng lại phần giao diện, không phải làm lại phía máy chủ.
 
 ## Nguyên tắc thiết kế
 
