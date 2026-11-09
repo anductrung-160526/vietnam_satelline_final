@@ -200,5 +200,20 @@ def _mount_tiles():
 
 TILES_MOUNTED = _mount_tiles()
 
+class KhongDemFile(StaticFiles):
+    """Phục vụ tệp tĩnh kèm Cache-Control: no-cache.
+
+    Đây là nguyên mẫu đang sửa liên tục. Trình duyệt giữ style.css cũ trong bộ nhớ đệm
+    rồi ghép với index.html mới, ra một giao diện lai không giống bản nào — đã làm mất
+    thời gian hai lần. no-cache không có nghĩa là không lưu: trình duyệt vẫn lưu nhưng
+    phải hỏi lại máy chủ trước khi dùng, nên tệp không đổi vẫn trả 304, rất nhẹ.
+    """
+
+    def file_response(self, *args, **kwargs):
+        phan_hoi = super().file_response(*args, **kwargs)
+        phan_hoi.headers['Cache-Control'] = 'no-cache, must-revalidate'
+        return phan_hoi
+
+
 if WEB.is_dir():
-    app.mount('/', StaticFiles(directory=WEB, html=True), name='web')
+    app.mount('/', KhongDemFile(directory=WEB, html=True), name='web')

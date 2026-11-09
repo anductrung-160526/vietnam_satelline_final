@@ -250,6 +250,46 @@ class DeclaredDependenciesTest(unittest.TestCase):
         self.assertIn('shapely', self._imported())
 
 
+class StaticAndSchemaTest(unittest.TestCase):
+    """Hai lỗi đã làm người dùng mất thời gian, giữ lại test để không lặp."""
+
+    def setUp(self):
+        self.db, self.client, _ = fresh_database(self)
+
+    def test_static_files_are_served_with_no_cache(self):
+        """Trình duyệt từng giữ style.css cũ rồi ghép với index.html mới -> giao diện lai."""
+        for duong_dan in ('/', '/style.css', '/app.js'):
+            with self.subTest(duong_dan=duong_dan):
+                phan_hoi = self.client.get(duong_dan)
+                self.assertEqual(phan_hoi.status_code, 200)
+                self.assertIn('no-cache', phan_hoi.headers.get('cache-control', ''))
+
+    def test_rebuilding_the_database_never_leaves_it_without_provinces(self):
+        """build_cogs dựng lại DB khi schema đổi; thiếu bước nạp tỉnh là giao diện '0 tỉnh'."""
+        import sqlite3
+        from app.data import build_indices
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('PRAGMA user_version = 1')       # giả lập schema cũ
+        connection = build_indices.mo(self.db)
+        try:
+            self.assertEqual(
+                connection.execute('SELECT COUNT(*) FROM tinh').fetchone()[0], 63)
+            self.assertEqual(
+                connection.execute('PRAGMA user_version').fetchone()[0],
+                build_indices.SCHEMA_VERSION)
+        finally:
+            connection.close()
+
+    def test_build_cogs_alone_still_leaves_a_usable_database(self):
+        import sqlite3
+        from app.data import build_cogs
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('PRAGMA user_version = 1')
+        build_cogs.record(self.db, 'anh_cog',
+                          [('NTL', 2024, '/cog/v.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)])
+        self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
+
+
 class ColumnNamesMatchThePipelineTest(unittest.TestCase):
     """Tên cột trong app phải trùng tên mà task_pipeline/derive.py thật sự ghi ra.
 

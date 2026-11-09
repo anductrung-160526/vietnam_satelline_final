@@ -42,20 +42,43 @@ SOURCES = {
 }
 
 
+def load_provinces(connection):
+    records = json.loads((REPO / 'task_pipeline' / 'provinces.json').read_text(encoding='utf-8'))
+    connection.execute('DELETE FROM tinh')
+    connection.executemany(
+        'INSERT INTO tinh(ma_tinh,number,ten_tinh,slug,gid_1) VALUES(?,?,?,?,?)',
+        [(p['ma_tinh'], p['number'], p['ten_tinh'], p['slug'], p.get('gid_1')) for p in records])
+    return len(records)
+
+
 def mo(db):
-    """Mở cơ sở dữ liệu, dựng lại từ đầu nếu schema đã đổi."""
+    """Mở cơ sở dữ liệu, dựng lại từ đầu nếu schema đã đổi.
+
+    Dựng lại là xoá sạch, nên mọi lối vào đều phải để lại một cơ sở dữ liệu dùng được:
+    danh mục 63 tỉnh luôn được nạp. Thiếu bước này thì chạy build_cogs sau khi đổi schema
+    sẽ xoá hết tỉnh và giao diện báo "0 tỉnh" — đã xảy ra thật.
+    """
     path = Path(db)
     path.parent.mkdir(parents=True, exist_ok=True)
+    da_dung_lai = False
     if path.exists():
         thu = sqlite3.connect(path)
         cu = thu.execute('PRAGMA user_version').fetchone()[0]
         thu.close()
         if cu != SCHEMA_VERSION:
-            print(f'  Schema đổi ({cu} -> {SCHEMA_VERSION}): dựng lại {path.name}.')
+            print(f'  Cấu trúc bảng đổi ({cu} -> {SCHEMA_VERSION}): dựng lại {path.name}.')
+            print('  >>> Chỉ số đã nạp trước đó MẤT. Chạy lại:'
+                  ' python -m app.data.build_indices --root <gốc dữ liệu>')
             path.unlink()
+            da_dung_lai = True
     connection = sqlite3.connect(path)
     connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
     connection.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+    if connection.execute('SELECT COUNT(*) FROM tinh').fetchone()[0] == 0:
+        load_provinces(connection)
+        connection.commit()
+        if not da_dung_lai:
+            print('  Đã nạp danh mục 63 tỉnh.')
     return connection
 
 
@@ -155,15 +178,6 @@ def load_table(connection, root, table, candidates, monthly):
                 'cot_csv_khong_dung': sorted(set(header) - set(want))}
     return {'rows': 0, 'source': None, 'cot_khop': [],
             'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': []}
-
-
-def load_provinces(connection):
-    records = json.loads((REPO / 'task_pipeline' / 'provinces.json').read_text(encoding='utf-8'))
-    connection.execute('DELETE FROM tinh')
-    connection.executemany(
-        'INSERT INTO tinh(ma_tinh,number,ten_tinh,slug,gid_1) VALUES(?,?,?,?,?)',
-        [(p['ma_tinh'], p['number'], p['ten_tinh'], p['slug'], p.get('gid_1')) for p in records])
-    return len(records)
 
 
 def build(root, db):
