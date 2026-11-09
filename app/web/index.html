@@ -11,63 +11,40 @@
 <header>
   <div>
     <h1>VNGISDash</h1>
-    <p class="sub">Chỉ số kinh tế – xã hội cấp tỉnh từ ảnh vệ tinh · Việt Nam 2004–2025</p>
+    <p class="sub">Ảnh vệ tinh ban đêm cấp tỉnh · Việt Nam 2004–2025</p>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab dang-chon" data-tab="ban-do" role="tab">Bản đồ</button>
+    <button class="tab dang-chon" data-tab="ban-do" role="tab">Ảnh đêm</button>
     <button class="tab" data-tab="du-lieu" role="tab">Dữ liệu</button>
   </nav>
   <span id="trang-thai" class="pill">đang tải…</span>
 </header>
 
-<!-- ======================= TAB BẢN ĐỒ ======================= -->
+<!-- ======================= TAB ẢNH ĐÊM ======================= -->
 <main id="tab-ban-do" class="trang">
-  <section id="khung-ban-do">
-    <div id="ban-do"></div>
+  <aside id="cot-loc">
+    <label for="chon-tinh">Phạm vi</label>
+    <select id="chon-tinh"></select>
+    <button id="nut-toan-quoc" class="nho">Xem toàn quốc</button>
 
-    <div class="hop-noi" id="hop-pham-vi">
-      <button id="nut-toan-quoc" class="nho">← Toàn quốc</button>
-      <span id="ten-tinh-dang-xem"></span>
-    </div>
+    <label for="chon-nam">Thời điểm</label>
+    <select id="chon-nam"></select>
+    <input type="range" id="nam-truot" min="2004" max="2025" step="1">
 
-    <div class="dieu-khien">
-      <div class="hang">
-        <label for="chi-so-ban-do">Tô màu theo</label>
-        <select id="chi-so-ban-do"></select>
-      </div>
-      <div class="hang">
-        <label for="nam-nen">Năm</label>
-        <input type="range" id="nam-nen" min="2004" max="2025" value="2025" step="1">
-        <output id="nam-nen-hien">2025</output>
-      </div>
-      <div id="thang-mau" class="thang-mau"></div>
-      <p id="nen-ghi-chu" class="ghi-chu"></p>
-    </div>
-  </section>
+    <div id="thong-tin-anh" class="thong-tin"></div>
 
-  <aside id="bang-dieu-khien">
-    <label for="chon-tinh">Tỉnh / thành phố</label>
-    <select id="chon-tinh"><option value="">— đang tải —</option></select>
+    <button id="nut-tai-anh">Tải ảnh đêm (.tif)</button>
+    <p class="ghi-chu" id="ghi-chu-tai"></p>
 
-    <div class="khoang-nam">
-      <label>Giai đoạn
-        <input type="number" id="nam-tu" min="2004" max="2025" value="2004">
-        –
-        <input type="number" id="nam-den" min="2004" max="2025" value="2025">
-      </label>
-    </div>
-
-    <div id="the-so-lieu" class="the-so-lieu"></div>
     <div id="canh-bao"></div>
-
-    <button id="nut-export">Tải gói dữ liệu tỉnh (.zip)</button>
-    <p class="ghi-chu">Gồm ảnh đêm, chỉ số ảnh ngày, chỉ số ảnh đêm và chỉ số kinh tế.</p>
   </aside>
 
-  <section id="khung-bieu-do">
-    <div class="bieu-do"><h2>Độ sáng ban đêm</h2><div id="bd-dem"></div></div>
-    <div class="bieu-do"><h2>Độ phủ và mật độ</h2><div id="bd-dien-tich"></div></div>
-    <div class="bieu-do"><h2>Chỉ số ảnh ngày</h2><div id="bd-ngay"></div></div>
+  <div id="thanh-keo" title="Kéo để đổi độ rộng cột"></div>
+
+  <section id="khung-ban-do">
+    <div id="ban-do"></div>
+    <div class="lop-noi" id="nhan-pham-vi"></div>
+    <div class="lop-noi thang-mau" id="thang-mau"></div>
   </section>
 </main>
 
@@ -106,17 +83,10 @@
   <div class="khung-bang">
     <table id="dl-bang"><thead></thead><tbody></tbody></table>
   </div>
-
-  <p class="ghi-chu">
-    <strong>Bảng rộng</strong>: mỗi dòng một tỉnh, mỗi cột một năm — dán thẳng vào Excel.
-    <strong>Bảng dài</strong>: mỗi dòng một cặp tỉnh–năm — dạng Stata, R, pandas dùng để hồi quy.
-    Ô trống nghĩa là chưa có số liệu, không phải bằng không.
-  </p>
 </main>
 
 <footer>
-  <p>Nguồn ảnh: DMSP-OLS 2004–2013 · VIIRS DNB 2014–2025 · Landsat 2004–2014 · Sentinel-2 2015–2025.
-     Ranh giới GADM 4.1, 63 tỉnh trước sáp nhập 01/7/2025.</p>
+  <p>DMSP-OLS 2004–2013 · VIIRS DNB 2014–2025 · Ranh giới GADM 4.1, 63 tỉnh trước sáp nhập 01/7/2025.</p>
   <p>FTU Tech Lab · Đề tài thực tập VNGISDash · nguyên mẫu</p>
 </footer>
 

@@ -1,41 +1,23 @@
-'use strict';
-/* VNGISDash — giao diện nguyên mẫu.
+"use strict";
+/* VNGISDash — tab "Ảnh đêm" là trình xem ảnh, tab "Dữ liệu" là bảng tra cứu.
    Nguyên tắc: thiếu dữ liệu thì nói rõ là thiếu, không bao giờ vẽ số giả. */
 
 const KHONG_CO = 'chưa có số liệu';
 const $ = id => document.getElementById(id);
 
-const trangThai = $('trang-thai');
-const chonTinh  = $('chon-tinh');
-const namTu     = $('nam-tu');
-const namDen    = $('nam-den');
-const theSoLieu = $('the-so-lieu');
-const khungCanh = $('canh-bao');
-const nutExport = $('nut-export');
-const namNen    = $('nam-nen');
-const namNenHien= $('nam-nen-hien');
-const nenGhiChu = $('nen-ghi-chu');
-const chiSoBanDo= $('chi-so-ban-do');
-
-let danhMucChiSo = [];
 let danhSachTinh = [];
+let ranhGioi = null;
+let thongTinNen = null;      // /api/basemap
+let maDangXem = null;        // null = toàn quốc
+let banDo = null;
 
 async function layJSON(duongDan){
-  const phanHoi = await fetch(duongDan);
-  if(!phanHoi.ok) throw new Error(`${duongDan} → ${phanHoi.status}`);
-  return phanHoi.json();
+  const r = await fetch(duongDan);
+  if(!r.ok) throw new Error(`${duongDan} → ${r.status}`);
+  return r.json();
 }
-
-function so(v, chuSo = 2){
-  if(v === null || v === undefined || Number.isNaN(v)) return null;
-  return Number(Number(v).toFixed(chuSo));
-}
-
-function dinhDang(v, chuSo){
-  if(v === null || v === undefined) return null;
-  return Number(v).toLocaleString('vi-VN',
-    {minimumFractionDigits:chuSo, maximumFractionDigits:chuSo});
-}
+const dinhDang = (v, c = 2) => (v === null || v === undefined)
+  ? null : Number(v).toLocaleString('vi-VN', {minimumFractionDigits:c, maximumFractionDigits:c});
 
 /* ===================== tab ===================== */
 document.querySelectorAll('.tab').forEach(nut => {
@@ -44,227 +26,48 @@ document.querySelectorAll('.tab').forEach(nut => {
     document.querySelectorAll('.trang').forEach(t =>
       t.classList.toggle('an', t.id !== 'tab-' + nut.dataset.tab));
     if(nut.dataset.tab === 'du-lieu') veBang();
-    if(nut.dataset.tab === 'ban-do' && banDo) banDo.resize();
-    Object.values(bieuDo).forEach(b => b.resize());
+    if(nut.dataset.tab === 'ban-do' && banDo) setTimeout(() => banDo.resize(), 0);
   };
 });
 
-/* ===================== biểu đồ ===================== */
-const THEME = {
-  textStyle:{color:'#8b97b0',fontFamily:'system-ui,sans-serif',fontSize:11},
-  grid:{left:52,right:16,top:16,bottom:28},
-  tooltip:{trigger:'axis',backgroundColor:'#0d1322',borderColor:'#1f2940',
-           textStyle:{color:'#e8ecf5',fontSize:12}},
-  xAxis:{type:'category',axisLine:{lineStyle:{color:'#1f2940'}},axisTick:{show:false}},
-  yAxis:{type:'value',splitLine:{lineStyle:{color:'#161d2e'}},axisLine:{show:false}},
-};
-const bieuDo = {};
-
-function veBieuDo(id, nhan, loatSo, mau, haiTruc){
-  const o = $(id);
-  if(typeof echarts === 'undefined'){
-    o.innerHTML = '<p class="ghi-chu">Không tải được thư viện biểu đồ (ECharts). '
-      + 'Số liệu vẫn xem được ở bảng bên phải và trong tab Dữ liệu.</p>';
-    return;
-  }
-  if(!bieuDo[id]) bieuDo[id] = echarts.init(o, null, {renderer:'canvas'});
-  if(!loatSo.some(s => s.data.some(v => v !== null && v !== undefined))){
-    bieuDo[id].clear();
-    bieuDo[id].setOption({...THEME, xAxis:{show:false}, yAxis:{show:false},
-      graphic:{type:'text', left:'center', top:'middle',
-               style:{text:KHONG_CO, fill:'#8b97b0', font:'italic 13px system-ui'}}});
-    return;
-  }
-  bieuDo[id].setOption({...THEME,
-    xAxis:{...THEME.xAxis, data:nhan},
-    yAxis: haiTruc ? [{...THEME.yAxis}, {...THEME.yAxis, splitLine:{show:false}}] : THEME.yAxis,
-    grid: haiTruc ? {...THEME.grid, top:28, right:52}
-                  : (loatSo.length > 1 ? {...THEME.grid, top:28} : THEME.grid),
-    legend: loatSo.length > 1 ? {top:0, right:haiTruc ? 52 : 0,
-                                 textStyle:{color:'#8b97b0',fontSize:10}} : undefined,
-    series: loatSo.map((s,i) => ({
-      name:s.name, type:'line', data:s.data, smooth:true, showSymbol:false,
-      yAxisIndex: haiTruc ? i : 0,
-      connectNulls:false,
-      lineStyle:{width: s.mo ? 1.4 : 2, type: s.mo ? 'dashed' : 'solid'},
-      itemStyle:{color: s.color || mau[i % mau.length]},
-    }))}, true);
-}
-
-/* ===================== bảng bên phải của một tỉnh ===================== */
-function oSo(ten, giaTri, donVi){
-  const co = giaTri !== null && giaTri !== undefined;
-  return `<div class="o-so"><div class="ten">${ten}</div>
-    <div class="gia-tri${co ? '' : ' trong'}">${
-      co ? giaTri.toLocaleString('vi-VN') + (donVi ? ' ' + donVi : '') : KHONG_CO
-    }</div></div>`;
-}
-
-function cuoi(mang, khoa){
-  for(let i = mang.length - 1; i >= 0; i--){
-    if(mang[i][khoa] !== null && mang[i][khoa] !== undefined) return mang[i];
-  }
-  return null;
-}
-
-async function veTinh(tieuDiem = true){
-  const ma = chonTinh.value;
-  if(!ma) return;
-  nutExport.disabled = true;
-  const tu = Number(namTu.value), den = Number(namDen.value);
-  if(tu > den){
-    khungCanh.innerHTML = '<div class="canh thieu">Năm bắt đầu phải nhỏ hơn hoặc bằng năm kết thúc.</div>';
-    return;
-  }
-  let d;
-  try{
-    d = await layJSON(`/api/indices?ma_tinh=${ma}&nam_tu=${tu}&nam_den=${den}`);
-  }catch(loi){
-    khungCanh.innerHTML = `<div class="canh thieu">Không lấy được dữ liệu: ${loi.message}</div>`;
-    return;
-  }
-
-  const namDemArr  = d.dem.map(r => r.nam);
-  const namNgayArr = d.ngay.map(r => r.nam);
-
-  /* Khi đã hiệu chỉnh DMSP→VIIRS thì chuỗi hiệu chỉnh là đường chính: chuỗi thô có một
-     bước nhảy giả ở mốc 2013–2014 do đổi vệ tinh, rất dễ bị đọc thành biến động kinh tế.
-     Vẫn vẽ chuỗi thô bằng nét mờ để thấy được bước hiệu chỉnh đã làm gì. */
-  const coHieuChinh = d.dem.some(r => r.sol_ntl_hc !== null && r.sol_ntl_hc !== undefined);
-  veBieuDo('bd-dem', namDemArr, coHieuChinh
-    ? [{name:'SOL đã hiệu chỉnh', data:d.dem.map(r => so(r.sol_ntl_hc)), color:'#ffc857'},
-       {name:'SOL thô (thang từng vệ tinh)', data:d.dem.map(r => so(r.sol_ntl)),
-        color:'#5a6b88', mo:true}]
-    : [{name:'Tổng độ sáng (SOL)', data:d.dem.map(r => so(r.sol_ntl))}], ['#ffc857','#5a6b88']);
-  veBieuDo('bd-dien-tich', namDemArr,
-    [{name:'Số điểm ảnh có dữ liệu', data:d.dem.map(r => so(r.so_pixel_hop_le, 0))},
-     {name:'Mật độ sáng',      data:d.dem.map(r => so(r.mat_do_ntl, 3))}],
-    ['#5ec8d8','#7ddc8a'], true);
-  veBieuDo('bd-ngay', namNgayArr,
-    [{name:'NDVI', data:d.ngay.map(r => so(r.NDVI_mean, 3))},
-     {name:'NDBI', data:d.ngay.map(r => so(r.NDBI_mean, 3))},
-     {name:'MNDWI',data:d.ngay.map(r => so(r.MNDWI_mean, 3))}], ['#7ddc8a','#ff9f68','#5ec8d8']);
-
-  const demCuoi = cuoi(d.dem, 'sol_ntl');
-  const ngayCuoi = cuoi(d.ngay, 'NDVI_mean');
-  const kinhTeCuoi = cuoi(d.kinh_te, 'gdp') || cuoi(d.kinh_te, 'dan_so');
-  theSoLieu.innerHTML =
-    oSo(`Tổng độ sáng${demCuoi ? ' (' + demCuoi.nam + ')' : ''}`, so(demCuoi?.sol_ntl)) +
-    oSo('Mật độ sáng',  so(demCuoi?.mat_do_ntl, 3)) +
-    oSo('Diện tích tỉnh', so(demCuoi?.dt_tu_nhien_km2 ?? ngayCuoi?.dt_tu_nhien_km2, 0), 'km²') +
-    oSo(`NDVI${ngayCuoi ? ' (' + ngayCuoi.nam + ')' : ''}`, so(ngayCuoi?.NDVI_mean, 3)) +
-    oSo('Dân số', so(kinhTeCuoi?.dan_so, 0)) +
-    oSo('GDP',    so(kinhTeCuoi?.gdp, 0));
-
-  const canh = [];
-  if(d.gia_lap) canh.push(['gia-lap','⚠ SỐ LIỆU GIẢ LẬP — chỉ minh họa giao diện. '
-    + 'Không dùng cho báo cáo. Chỉ số thật đang được tính.']);
-  if(d.thieu_du_lieu.dem)
-    canh.push(['thieu','Chưa có chỉ số ảnh đêm cho tỉnh này. Chạy bước tính chỉ số của task_pipeline/derive.py.']);
-  if(d.thieu_du_lieu.ngay) canh.push(['thieu','Chưa có chỉ số ảnh ngày cho tỉnh này.']);
-  if(d.thieu_du_lieu.kinh_te)
-    canh.push(['thieu','Chưa có dữ liệu dân số và GDP — chờ giảng viên cung cấp.']);
-  (d.canh_bao || []).filter(v => !v.startsWith('SỐ LIỆU GIẢ LẬP'))
-    .forEach(v => canh.push(['', v]));
-  khungCanh.innerHTML = canh.map(([l,v]) => `<div class="canh ${l}">${v}</div>`).join('');
-
-  nutExport.disabled = false;
-  nutExport.onclick = () => {
-    window.location = `/api/export.zip?ma_tinh=${ma}&nam_tu=${tu}&nam_den=${den}`;
+/* ===================== thanh kéo đổi độ rộng cột lọc ===================== */
+(function keoCot(){
+  const thanh = $('thanh-keo');
+  let dangKeo = false;
+  const dat = x => {
+    const rong = Math.min(Math.max(x, 180), Math.min(560, window.innerWidth - 240));
+    document.documentElement.style.setProperty('--rong-cot', rong + 'px');
+    if(banDo) banDo.resize();
   };
-  if(tieuDiem) tieuDiemTinh(ma);
-}
+  thanh.addEventListener('pointerdown', e => {
+    dangKeo = true; thanh.classList.add('dang-keo');
+    thanh.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  thanh.addEventListener('pointermove', e => { if(dangKeo) dat(e.clientX); });
+  const thoi = () => { dangKeo = false; thanh.classList.remove('dang-keo'); };
+  thanh.addEventListener('pointerup', thoi);
+  thanh.addEventListener('pointercancel', thoi);
+  thanh.addEventListener('dblclick', () => dat(280));
+})();
 
 /* ===================== bản đồ ===================== */
-let banDo, ranhGioi = null, namCoAnh = [], thongTinNen = null, maDangXem = null;
-
-const THANG = ['#10233a','#1d4a6b','#2d7f8f','#6fbf87','#d9d16a','#f0944a','#e2563d'];
-
 function kieuNen(){
-  /* Không gọi dịch vụ bản đồ ngoài: nền tối + ranh giới và ảnh đêm của chính dự án. */
   return {version:8, sources:{}, layers:[{id:'nen', type:'background',
           paint:{'background-color':'#05070d'}}]};
 }
 
-function bienDo(dacTrung){
-  /* Hộp bao của một Feature (Polygon hoặc MultiPolygon). */
-  const g = dacTrung.geometry;
-  const vong = g.type === 'Polygon' ? g.coordinates : g.coordinates.flat();
+function vongCua(f){
+  const g = f.geometry;
+  return g.type === 'Polygon' ? g.coordinates : g.coordinates.flat();
+}
+
+function bienDo(f){
   let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
-  vong.forEach(r => r.forEach(([x,y]) => {
+  vongCua(f).forEach(r => r.forEach(([x,y]) => {
     if(x < x0) x0 = x; if(x > x1) x1 = x;
     if(y < y0) y0 = y; if(y > y1) y1 = y;
   }));
   return [[x0,y0],[x1,y1]];
-}
-
-function matNa(dacTrung){
-  /* Hình chữ nhật phủ cả thế giới, khoét lỗ đúng hình tỉnh -> phần ngoài bị tối đi.
-     Vành ngoài đi ngược chiều kim đồng hồ, các lỗ giữ nguyên chiều của dữ liệu gốc. */
-  const g = dacTrung.geometry;
-  const lo = g.type === 'Polygon' ? g.coordinates : g.coordinates.flat();
-  return {type:'Feature', properties:{}, geometry:{type:'Polygon',
-    coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]], ...lo]}};
-}
-
-async function dungBanDo(){
-  if(typeof maplibregl === 'undefined'){
-    nenGhiChu.textContent = 'Không tải được thư viện bản đồ (MapLibre GL). '
-      + 'Phần chỉ số và tab Dữ liệu vẫn hoạt động bình thường.';
-    namNen.disabled = true;
-    return;
-  }
-  banDo = new maplibregl.Map({container:'ban-do', style:kieuNen(),
-    center:[106.0, 16.3], zoom:4.6, attributionControl:false});
-  banDo.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
-
-  await new Promise(ok => banDo.on('load', ok));
-
-  try{
-    ranhGioi = await layJSON('/api/boundaries.geojson');
-  }catch{
-    nenGhiChu.textContent = 'Chưa có ranh giới tỉnh (cần GADM 4.1 — chạy build_boundaries.py). '
-      + 'Chọn tỉnh bằng danh sách bên phải.';
-  }
-
-  if(ranhGioi){
-    banDo.addSource('tinh', {type:'geojson', data:ranhGioi, promoteId:'ma_tinh'});
-    banDo.addSource('mat-na', {type:'geojson',
-      data:{type:'FeatureCollection', features:[]}});
-    banDo.addLayer({id:'tinh-to', type:'fill', source:'tinh',
-      paint:{'fill-color':['coalesce',['feature-state','mau'],'#16203a'],
-             'fill-opacity':['case',['boolean',['feature-state','ro'],false],0.95,0.78]}});
-    banDo.addLayer({id:'tinh-vien', type:'line', source:'tinh',
-      paint:{'line-color':'#46597d','line-width':0.7}});
-    /* Mặt nạ nằm TRÊN các tỉnh để che hết phần ngoài tỉnh đang xem. */
-    banDo.addLayer({id:'mat-na-lop', type:'fill', source:'mat-na',
-      paint:{'fill-color':'#05070d','fill-opacity':0.88}});
-    banDo.addLayer({id:'tinh-vien-dam', type:'line', source:'tinh',
-      filter:['==','ma_tinh',''],
-      paint:{'line-color':'#ffc857','line-width':2.2}});
-
-    banDo.on('click','tinh-to', e => {
-      const ma = e.features[0].properties.ma_tinh;
-      if(ma){ chonTinh.value = String(ma).padStart(2,'0'); veTinh(); }
-    });
-    banDo.on('mouseenter','tinh-to',()=>banDo.getCanvas().style.cursor='pointer');
-    banDo.on('mouseleave','tinh-to',()=>banDo.getCanvas().style.cursor='');
-  }
-
-  await napAnhNen();
-  await toMau();
-  if(!ranhGioi && !namCoAnh.length) $('khung-ban-do').classList.add('trong');
-}
-
-function toanQuoc(){
-  maDangXem = null;
-  $('hop-pham-vi').classList.remove('hien');
-  if(!banDo) return;
-  if(banDo.getSource('mat-na'))
-    banDo.getSource('mat-na').setData({type:'FeatureCollection', features:[]});
-  if(banDo.getLayer('tinh-vien-dam')) banDo.setFilter('tinh-vien-dam',['==','ma_tinh','']);
-  if(ranhGioi) banDo.fitBounds(bienDoTatCa(), {padding:36, duration:600});
-  else banDo.easeTo({center:[106.0,16.3], zoom:4.6, duration:600});
 }
 
 function bienDoTatCa(){
@@ -277,95 +80,137 @@ function bienDoTatCa(){
   return [[x0,y0],[x1,y1]];
 }
 
-function tieuDiemTinh(ma){
-  maDangXem = ma;
-  const ten = (danhSachTinh.find(t => t.ma_tinh === ma) || {}).ten_tinh || ma;
-  $('ten-tinh-dang-xem').textContent = ten;
-  $('hop-pham-vi').classList.add('hien');
-  if(!banDo || !ranhGioi) return;
-  const f = ranhGioi.features.find(x => String(x.properties.ma_tinh).padStart(2,'0') === ma);
-  if(!f){
-    nenGhiChu.textContent = `Không tìm thấy ranh giới của ${ten} trong file GeoJSON.`;
+/* Đa giác phủ cả thế giới, khoét lỗ đúng hình cần giữ -> phần ngoài bị che tối.
+   Đây là cách "cắt ảnh theo ranh giới" ngay trên màn hình, không phải cắt lại file. */
+function matNa(dacTrungs){
+  const lo = [];
+  dacTrungs.forEach(f => vongCua(f).forEach(r => lo.push(r)));
+  return {type:'Feature', properties:{}, geometry:{type:'Polygon',
+    coordinates:[[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]], ...lo]}};
+}
+
+function datMatNa(){
+  if(!banDo || !ranhGioi || !banDo.getSource('mat-na')) return;
+  const giu = maDangXem
+    ? ranhGioi.features.filter(f => String(f.properties.ma_tinh).padStart(2,'0') === maDangXem)
+    : ranhGioi.features;
+  banDo.getSource('mat-na').setData({type:'FeatureCollection', features:[matNa(giu)]});
+}
+
+async function dungBanDo(){
+  if(typeof maplibregl === 'undefined'){
+    $('canh-bao').innerHTML = '<div class="canh thieu">Không tải được thư viện bản đồ '
+      + '(MapLibre GL). Tab Dữ liệu vẫn hoạt động.</div>';
     return;
   }
-  banDo.getSource('mat-na').setData({type:'FeatureCollection', features:[matNa(f)]});
-  banDo.setFilter('tinh-vien-dam',['==','ma_tinh', f.properties.ma_tinh]);
-  banDo.fitBounds(bienDo(f), {padding:60, duration:700, maxZoom:10});
-}
+  banDo = new maplibregl.Map({container:'ban-do', style:kieuNen(),
+    center:[106.0, 16.3], zoom:4.8, attributionControl:false});
+  banDo.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
+  banDo.addControl(new maplibregl.ScaleControl({maxWidth:120, unit:'metric'}), 'bottom-right');
+  await new Promise(ok => banDo.on('load', ok));
 
-$('nut-toan-quoc').onclick = toanQuoc;
+  try{ ranhGioi = await layJSON('/api/boundaries.geojson'); }
+  catch{
+    themCanhBao('thieu', 'Chưa có ranh giới tỉnh. Chạy: python -m app.data.build_boundaries --tai-gadm');
+  }
 
-async function toMau(){
-  if(!banDo || !ranhGioi) return;
-  const ma = chiSoBanDo.value, nam = Number(namNen.value);
-  let d;
-  try{ d = await layJSON(`/api/choropleth?chi_so=${ma}&nam=${nam}`); }
-  catch{ return; }
-  const nho = d.nho_nhat, lon = d.lon_nhat;
-  ranhGioi.features.forEach(f => {
-    const code = String(f.properties.ma_tinh).padStart(2,'0');
-    const v = d.gia_tri[code];
-    let mau = '#16203a';            // không có số liệu: xám xanh, phân biệt rõ với bậc thấp nhất
-    if(v !== undefined && v !== null && lon !== null && lon > nho){
-      /* thang căn theo căn bậc hai: độ sáng lệch rất mạnh, tuyến tính thì 60 tỉnh cùng một màu */
-      const t = Math.sqrt((v - nho) / (lon - nho));
-      mau = THANG[Math.min(THANG.length - 1, Math.floor(t * THANG.length))];
-    }
-    banDo.setFeatureState({source:'tinh', id:f.properties.ma_tinh},
-                          {mau, ro:v !== undefined && v !== null});
-  });
-  const e = d.chi_so;
-  $('thang-mau').innerHTML = nho === null
-    ? `<span>${KHONG_CO} cho năm ${nam}</span>`
-    : `<b>${dinhDang(nho, e.chu_so)}</b>
-       <span class="dai" style="background:linear-gradient(90deg,${THANG.join(',')})"></span>
-       <b>${dinhDang(lon, e.chu_so)}</b><span>${e.don_vi}</span>`;
-}
-
-async function napAnhNen(){
-  let b;
-  try{ b = await layJSON('/api/basemap'); }
-  catch{ return; }
-  thongTinNen = b;
-  namCoAnh = b.nam || [];
-  if(!namCoAnh.length || !b.tiles){
-    nenGhiChu.textContent = namCoAnh.length
-      ? 'Có ảnh nền nhưng chưa cài TiTiler nên chưa phục vụ được ô bản đồ.'
-      : 'Chưa có ảnh nền ban đêm dạng COG. Chạy: python3 -m app.data.build_cogs';
+  if(ranhGioi){
+    banDo.addSource('tinh', {type:'geojson', data:ranhGioi, promoteId:'ma_tinh'});
+    banDo.addSource('mat-na', {type:'geojson', data:{type:'FeatureCollection', features:[]}});
+    /* Lớp bắt sự kiện bấm: trong suốt, nằm dưới ảnh và mặt nạ. */
+    banDo.addLayer({id:'tinh-bat', type:'fill', source:'tinh',
+      paint:{'fill-color':'#16203a','fill-opacity':0.001}});
+    banDo.addLayer({id:'mat-na-lop', type:'fill', source:'mat-na',
+      paint:{'fill-color':'#05070d','fill-opacity':0.9}});
+    banDo.addLayer({id:'tinh-vien', type:'line', source:'tinh',
+      paint:{'line-color':'#3b4b6b','line-width':0.6}});
+    banDo.addLayer({id:'tinh-vien-dam', type:'line', source:'tinh',
+      filter:['==','ma_tinh',''], paint:{'line-color':'#ffc857','line-width':2}});
+    banDo.on('click','tinh-bat', e => {
+      const ma = String(e.features[0].properties.ma_tinh).padStart(2,'0');
+      $('chon-tinh').value = ma; chonPhamVi(ma);
+    });
+    banDo.on('mouseenter','tinh-bat',()=>banDo.getCanvas().style.cursor='pointer');
+    banDo.on('mouseleave','tinh-bat',()=>banDo.getCanvas().style.cursor='');
+    banDo.fitBounds(bienDoTatCa(), {padding:30, duration:0});
+    datMatNa();
   }
 }
 
+function themCanhBao(loai, chu){
+  $('canh-bao').insertAdjacentHTML('beforeend', `<div class="canh ${loai}">${chu}</div>`);
+}
+
+/* ===================== ảnh đêm ===================== */
 function doiAnhNen(nam){
-  if(!banDo || !thongTinNen || !thongTinNen.tiles) return;
-  const muc = (thongTinNen.chi_tiet || []).find(c => c.nam === nam);
+  if(!banDo) return;
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
   if(banDo.getSource('anh-dem')) banDo.removeSource('anh-dem');
-  if(!muc) return;
-  banDo.addSource('anh-dem', {type:'raster', tileSize:256,
-    tiles:[`${thongTinNen.tiles}${encodeURIComponent(muc.duong_dan)}&rescale=0,60&colormap_name=inferno`]});
+  const muc = (thongTinNen?.chi_tiet || []).find(c => c.nam === nam);
+  if(!muc || !thongTinNen.tiles){ veThongTin(null); return; }
+  const nguon = {type:'raster', tileSize:256,
+    tiles:[`${thongTinNen.tiles}${encodeURIComponent(muc.duong_dan)}`
+           + `&rescale=0,60&colormap_name=inferno&nodata=-9999`]};
+  /* Giới hạn theo phạm vi ảnh: thiếu nó thì bản đồ xin ô khắp thế giới và TiTiler
+     trả 500 cho mọi ô nằm ngoài ảnh — hàng trăm lượt gọi hỏng mỗi lần mở trang. */
+  if([muc.tay, muc.nam_do, muc.dong, muc.bac].every(v => typeof v === 'number')){
+    nguon.bounds = [muc.tay, muc.nam_do, muc.dong, muc.bac];
+  }
+  banDo.addSource('anh-dem', nguon);
+  /* Ảnh nằm DƯỚI mặt nạ, nên phần ngoài ranh giới bị che — ảnh hiện đúng trong ranh giới. */
   banDo.addLayer({id:'anh-dem', type:'raster', source:'anh-dem',
-    paint:{'raster-opacity':0.9}}, banDo.getLayer('tinh-to') ? 'tinh-to' : undefined);
+    paint:{'raster-opacity':1}}, 'mat-na-lop');
+  veThongTin(muc);
 }
 
-namNen.oninput = () => {
-  namNenHien.textContent = namNen.value;
-  toMau();
-  doiAnhNen(Number(namNen.value));
-};
-chiSoBanDo.onchange = toMau;
+function veThongTin(muc){
+  const o = $('thong-tin-anh');
+  if(!muc){
+    o.innerHTML = '';
+    $('nut-tai-anh').disabled = true;
+    $('ghi-chu-tai').textContent = '';
+    $('thang-mau').style.display = 'none';
+    return;
+  }
+  const mb = muc.dung_luong_byte ? (muc.dung_luong_byte / 1048576).toFixed(1) + ' MB' : '—';
+  const donVi = muc.nguon_anh === 'DMSP' ? 'DN 0–63' : 'nW/cm²/sr';
+  o.innerHTML =
+    `<div><span>Nguồn</span><span>${muc.nguon_anh || '—'}</span></div>` +
+    `<div><span>Năm</span><span>${muc.nam}</span></div>` +
+    `<div><span>Độ phân giải</span><span>${muc.nguon_anh === 'DMSP' ? '1 km' : '500 m'}</span></div>` +
+    `<div><span>Đơn vị</span><span>${donVi}</span></div>` +
+    `<div><span>Dung lượng</span><span>${mb}</span></div>`;
+  $('nut-tai-anh').disabled = false;
+  $('ghi-chu-tai').textContent = 'GeoTIFF toàn quốc của năm đang chọn, mở được bằng QGIS.';
+  $('thang-mau').style.display = '';
+  $('thang-mau').innerHTML =
+    `<b>0</b><span class="dai" style="background:linear-gradient(90deg,`
+    + `#000004,#420a68,#932667,#dd513a,#fca50a,#fcffa4)"></span><b>60</b><span>${donVi}</span>`;
+}
 
-/* ===================== tab dữ liệu (kiểu WDI) ===================== */
+function chonPhamVi(ma){
+  maDangXem = ma || null;
+  const ten = ma ? (danhSachTinh.find(t => t.ma_tinh === ma) || {}).ten_tinh : 'Toàn quốc';
+  $('nhan-pham-vi').textContent = ten || 'Toàn quốc';
+  if(!banDo || !ranhGioi) return;
+  datMatNa();
+  banDo.setFilter('tinh-vien-dam', ['==','ma_tinh', ma || '']);
+  const f = ma && ranhGioi.features.find(x => String(x.properties.ma_tinh).padStart(2,'0') === ma);
+  banDo.fitBounds(f ? bienDo(f) : bienDoTatCa(),
+                  {padding: f ? 60 : 30, duration:600, maxZoom:10});
+}
+
+$('nut-toan-quoc').onclick = () => { $('chon-tinh').value = ''; chonPhamVi(null); };
+$('nut-tai-anh').onclick = () => {
+  window.location = `/api/anh-dem.tif?nam=${$('chon-nam').value}`;
+};
+
+/* ===================== tab dữ liệu ===================== */
 let bangHienTai = null;
 
-function thamSoBang(){
-  const tu = Number($('dl-nam-tu').value), den = Number($('dl-nam-den').value);
-  return {chiSo:$('dl-chi-so').value, tu, den};
-}
-
 async function veBang(){
-  const {chiSo, tu, den} = thamSoBang();
-  const than = document.querySelector('#dl-bang tbody');
-  const dau  = document.querySelector('#dl-bang thead');
+  const chiSo = $('dl-chi-so').value;
+  const tu = Number($('dl-nam-tu').value), den = Number($('dl-nam-den').value);
   if(tu > den){
     $('dl-canh-bao').innerHTML = '<div class="canh thieu">Năm bắt đầu phải nhỏ hơn hoặc bằng năm kết thúc.</div>';
     return;
@@ -380,13 +225,10 @@ async function veBang(){
   const e = d.chi_so;
   $('dl-mo-ta').textContent = `${e.mo_ta} Đơn vị: ${e.don_vi}.`;
   $('dl-tom-tat').textContent =
-    `${d.so_tinh_co_du_lieu}/${d.dong.length} tỉnh có số liệu · ${d.nam.length} năm `
-    + `(${tu}–${den}) · nguồn bảng ${e.bang}`;
-  $('dl-canh-bao').innerHTML = (d.canh_bao || [])
-    .map(v => `<div class="canh">${v}</div>`).join('');
-
-  dau.innerHTML = '<tr><th>Mã</th><th>Tỉnh / thành phố</th>'
-    + d.nam.map(n => `<th>${n}</th>`).join('') + '</tr>';
+    `${d.so_tinh_co_du_lieu}/${d.dong.length} tỉnh có số liệu · ${d.nam.length} năm (${tu}–${den})`;
+  $('dl-canh-bao').innerHTML = (d.canh_bao || []).map(v => `<div class="canh">${v}</div>`).join('');
+  document.querySelector('#dl-bang thead').innerHTML =
+    '<tr><th>Mã</th><th>Tỉnh / thành phố</th>' + d.nam.map(n => `<th>${n}</th>`).join('') + '</tr>';
   loc();
 }
 
@@ -394,13 +236,12 @@ function loc(){
   if(!bangHienTai) return;
   const tim = ($('dl-loc-tinh').value || '').trim().toLowerCase();
   const e = bangHienTai.chi_so;
-  const than = document.querySelector('#dl-bang tbody');
   const dong = bangHienTai.dong.filter(r =>
     !tim || r.ten_tinh.toLowerCase().includes(tim) || r.ma_tinh.includes(tim));
-  than.innerHTML = dong.map(r => '<tr><td class="ma">' + r.ma_tinh + '</td><td>' + r.ten_tinh + '</td>'
-    + r.gia_tri.map(v => v === null
-        ? '<td class="trong">··</td>'
-        : `<td>${dinhDang(v, e.chu_so)}</td>`).join('')
+  document.querySelector('#dl-bang tbody').innerHTML = dong.map(r =>
+    `<tr><td class="ma">${r.ma_tinh}</td><td>${r.ten_tinh}</td>`
+    + r.gia_tri.map(v => v === null ? '<td class="trong">··</td>'
+                                    : `<td>${dinhDang(v, e.chu_so)}</td>`).join('')
     + '</tr>').join('')
     || `<tr><td colspan="${bangHienTai.nam.length + 2}" class="trong">Không có tỉnh nào khớp.</td></tr>`;
 }
@@ -409,52 +250,55 @@ $('dl-loc-tinh').oninput = loc;
 $('dl-chi-so').onchange = veBang;
 $('dl-nam-tu').onchange = veBang;
 $('dl-nam-den').onchange = veBang;
+const taiBang = dang => {
+  window.location = `/api/panel.csv?chi_so=${$('dl-chi-so').value}`
+    + `&nam_tu=${$('dl-nam-tu').value}&nam_den=${$('dl-nam-den').value}&dang=${dang}`;
+};
 $('dl-tai-rong').onclick = () => taiBang('rong');
 $('dl-tai-dai').onclick  = () => taiBang('dai');
-
-function taiBang(dang){
-  const {chiSo, tu, den} = thamSoBang();
-  window.location = `/api/panel.csv?chi_so=${chiSo}&nam_tu=${tu}&nam_den=${den}&dang=${dang}`;
-}
 
 /* ===================== khởi động ===================== */
 (async function khoiDong(){
   try{
     const suc = await layJSON('/api/health');
-    trangThai.textContent = suc.ok ? `${suc.so_tinh} tỉnh` : 'chưa có dữ liệu';
-    trangThai.className = 'pill ' + (suc.ok ? 'ok' : 'loi');
+    $('trang-thai').textContent = suc.ok ? `${suc.so_tinh} tỉnh` : 'chưa có dữ liệu';
+    $('trang-thai').className = 'pill ' + (suc.ok ? 'ok' : 'loi');
   }catch{
-    trangThai.textContent = 'API không phản hồi';
-    trangThai.className = 'pill loi';
+    $('trang-thai').textContent = 'API không phản hồi';
+    $('trang-thai').className = 'pill loi';
     return;
   }
 
-  danhMucChiSo = (await layJSON('/api/indicators')).chi_so;
-  const tuyChon = danhMucChiSo.map(c => {
-    const co = c.so_tinh ? '' : ' — chưa có số liệu';
-    return `<option value="${c.ma}">${c.ten}${co}</option>`;
-  }).join('');
-  chiSoBanDo.innerHTML = tuyChon;
-  $('dl-chi-so').innerHTML = tuyChon;
-
   danhSachTinh = (await layJSON('/api/provinces')).tinh;
-  chonTinh.innerHTML = danhSachTinh.map(t => {
-    const co = t.so_nam_dem || t.so_nam_ngay;
-    return `<option value="${t.ma_tinh}">${t.ten_tinh}${co ? '' : ' — chưa có số liệu'}</option>`;
-  }).join('');
-  const dauTien = danhSachTinh.find(t => t.so_nam_dem || t.so_nam_ngay) || danhSachTinh[0];
-  chonTinh.value = dauTien.ma_tinh;
-  chonTinh.onchange = () => veTinh(true);
-  namTu.onchange = () => veTinh(maDangXem !== null);
-  namDen.onchange = () => veTinh(maDangXem !== null);
+  $('chon-tinh').innerHTML = '<option value="">Toàn quốc</option>'
+    + danhSachTinh.map(t => `<option value="${t.ma_tinh}">${t.ten_tinh}</option>`).join('');
+  $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
 
-  try{
-    await dungBanDo();
-  }catch(loi){
-    nenGhiChu.textContent = 'Bản đồ không khởi tạo được: ' + loi.message
-      + '. Phần chỉ số vẫn hoạt động.';
+  $('dl-chi-so').innerHTML = (await layJSON('/api/indicators')).chi_so
+    .map(c => `<option value="${c.ma}">${c.ten}${c.so_tinh ? '' : ' — chưa có số liệu'}</option>`)
+    .join('');
+
+  try{ thongTinNen = await layJSON('/api/basemap'); }catch{ thongTinNen = null; }
+  const nam = thongTinNen?.nam || [];
+  const chon = $('chon-nam'), truot = $('nam-truot');
+  if(nam.length){
+    chon.innerHTML = nam.slice().reverse().map(n => `<option value="${n}">${n}</option>`).join('');
+    truot.min = Math.min(...nam); truot.max = Math.max(...nam); truot.value = truot.max;
+    chon.value = truot.max;
+    chon.onchange = () => { truot.value = chon.value; doiAnhNen(Number(chon.value)); };
+    truot.oninput  = () => { chon.value = truot.value; doiAnhNen(Number(truot.value)); };
+  }else{
+    chon.innerHTML = '<option>— chưa có ảnh —</option>';
+    chon.disabled = truot.disabled = true;
+    themCanhBao('thieu', 'Chưa có ảnh đêm dạng COG. Trên máy có dữ liệu, chạy:<br>'
+      + '<code>python -m app.data.build_cogs --root E:\\SatelliteData --kinds VIIRS DMSP</code>');
   }
-  await veTinh(false);      // số liệu của tỉnh đầu tiên, nhưng bản đồ vẫn ở toàn quốc
-  toanQuoc();
-  window.addEventListener('resize', () => Object.values(bieuDo).forEach(b => b.resize()));
+  if(!thongTinNen?.tiles && nam.length){
+    themCanhBao('thieu', 'Có ảnh nhưng chưa cài TiTiler nên chưa phục vụ được ô bản đồ: '
+      + '<code>pip install -r app/requirements.txt</code>');
+  }
+
+  await dungBanDo();
+  chonPhamVi(null);
+  if(nam.length) doiAnhNen(Number(chon.value)); else veThongTin(null);
 })();

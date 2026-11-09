@@ -391,13 +391,19 @@ class BuildCogsTest(unittest.TestCase):
         from app.data import build_cogs
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
-            build_cogs.record(db, 'anh_cog', [('NTL', 2024, '/cog/v.tif', 'VIIRS', 10)])
+            build_cogs.record(db, 'anh_cog',
+                              [('NTL', 2024, '/cog/v.tif', 'VIIRS', 10,
+                                102.0, 8.5, 110.0, 23.5)])
             build_cogs.record(db, 'anh_goc', [('SENTINEL2', 2024, '/data/vn.vrt', 2 << 34, 'lạnh')])
             with sqlite3.connect(db) as connection:
                 self.assertEqual(connection.execute('SELECT COUNT(*) FROM anh_cog').fetchone()[0], 1)
                 self.assertEqual(connection.execute('SELECT loai FROM anh_cog').fetchone()[0], 'NTL')
                 self.assertEqual(connection.execute(
                     'SELECT duong_dan FROM anh_goc').fetchone()[0], '/data/vn.vrt')
+                # Phạm vi ảnh phải được ghi: thiếu nó thì bản đồ xin ô khắp thế giới.
+                self.assertEqual(connection.execute(
+                    'SELECT tay,nam_do,dong,bac FROM anh_cog').fetchone(),
+                    (102.0, 8.5, 110.0, 23.5))
 
     def test_the_illustrative_day_image_is_rgb_eight_bit_and_downsampled(self):
         """Lời cô dặn: ảnh ngày phải nén lại, mỗi năm một ảnh. Lệnh phải phản ánh đúng thế."""

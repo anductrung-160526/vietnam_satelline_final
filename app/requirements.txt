@@ -9,3 +9,7 @@ rio-tiler==7.2.0
 # build_boundaries.py đọc ranh giới GADM qua province_pipeline.boundaries.
 # Giữ chung một file để chỉ phải chạy một lệnh pip; gói này nhẹ (~2 MB).
 shapely>=2.0,<3
+# build_cogs.py đổi ảnh đêm sang COG bằng rasterio khi máy không có gdal_translate
+# (thường là Windows). rio-tiler vốn đã kéo theo rasterio, nhưng khai báo thẳng ra
+# để phụ thuộc không phụ thuộc vào chuỗi phụ thuộc của gói khác.
+rasterio>=1.3

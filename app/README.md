@@ -25,8 +25,9 @@ python3 -m app.data.build_boundaries --tai-gadm
 python3 -m app.data.build_boundaries                      # các lần sau
 python3 -m app.data.build_boundaries --config <đường dẫn> # nếu máy khác đã có sẵn
 
-# 3. (tuỳ chọn) Ảnh COG nhẹ cho bản đồ — cần gdal-bin
-python3 -m app.data.build_cogs --root /data/SatelliteData
+# 3. Ảnh COG cho tab Ảnh đêm. Ảnh đêm đổi được bằng rasterio nếu máy không có
+#    gdal_translate; ảnh ngày thì vẫn cần gdal-bin.
+python3 -m app.data.build_cogs --root /data/SatelliteData --kinds VIIRS DMSP
 
 # 4. Chạy
 uvicorn app.api.main:app --reload      # http://localhost:8000
@@ -60,21 +61,21 @@ Số giả lập có `status='GIA_LAP'`; chạy lại `build_indices.py` là b�
 
 ## Giao diện
 
-**Tab Bản đồ**
-- Mở lên là **toàn Việt Nam**, 63 tỉnh tô màu theo chỉ số và năm đang chọn.
-  Thang màu căn theo căn bậc hai vì độ sáng lệch rất mạnh — tuyến tính thì 60 tỉnh cùng một màu.
-  Tỉnh chưa có số liệu để màu xám xanh, phân biệt rõ với bậc thấp nhất.
-- **Chọn một tỉnh** (bằng danh sách hoặc bấm thẳng lên bản đồ) thì bản đồ phóng vào tỉnh đó
-  và **che toàn bộ phần ngoài ranh giới**: một đa giác phủ cả thế giới, khoét lỗ đúng hình tỉnh.
-  Nút “← Toàn quốc” quay lại.
-- Thanh trượt năm đổi cả màu tô lẫn ảnh nền đêm.
+**Tab Ảnh đêm** — trình xem ảnh, không phải bảng điều khiển chỉ số
+- Cột lọc hẹp bên trái, **kéo giãn được** (kéo thanh dọc; nháy đúp về 280 px).
+  Ảnh chiếm toàn bộ phần còn lại.
+- Chọn phạm vi (toàn quốc hoặc một tỉnh) và thời điểm (danh sách năm + thanh trượt).
+- Ảnh đêm thật hiển thị **cắt theo ranh giới**: một đa giác phủ cả thế giới, khoét lỗ
+  đúng hình cần giữ, đặt TRÊN lớp ảnh. Chọn tỉnh thì chỉ còn ảnh trong tỉnh đó.
+- Nút tải GeoTIFF của năm đang chọn.
+- Không có biểu đồ, không có ô chỉ số: tab này chỉ để xem ảnh và tải ảnh.
 
 **Tab Dữ liệu** — dựng theo World Development Indicators của World Bank
 - Chọn chỉ số, khoảng năm, lọc tỉnh theo tên.
 - Bảng: mỗi dòng một tỉnh, mỗi cột một năm. Cột tên tỉnh và hàng tiêu đề dính khi cuộn.
-- Ô trống hiện `··`, nghĩa là **chưa có số liệu**, không phải bằng không.
-- Tải về hai dạng: **bảng rộng** (dán vào Excel) và **bảng dài** (Stata, R, pandas).
-  Cả hai đều có phần đầu ghi tên chỉ số, đơn vị, nguồn bảng và cảnh báo phương pháp.
+- Ô trống hiện `··`, nghĩa là chưa có số liệu, không phải bằng không.
+- Tải về dạng rộng (Excel) hoặc dạng dài (Stata, R, pandas), kèm phần đầu ghi tên chỉ số,
+  đơn vị, nguồn bảng và cảnh báo phương pháp.
 
 ## Nguyên tắc thiết kế
 

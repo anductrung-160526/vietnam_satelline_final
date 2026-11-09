@@ -18,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from . import export, store
 
 WEB = Path(__file__).resolve().parent.parent / 'web'
+# Khuôn đường dẫn ô bản đồ của TiTiler. Giao diện nối thẳng ?url=<đường dẫn COG> vào sau.
+TILE_URL = '/tiles/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url='
 YEAR_MIN, YEAR_MAX = 2004, 2025
 
 app = FastAPI(title='VNGISDash API',
@@ -122,8 +124,24 @@ def get_coverage():
 def basemap():
     """Danh sách năm có ảnh nền đêm, cho thanh trượt năm trên bản đồ."""
     years = store.cog_years('NTL')
+    # TiTiler 0.19 có {tileMatrixSetId} trong đường dẫn; thiếu đoạn này là 404 mọi ô bản đồ.
     return {'nam': [entry['nam'] for entry in years], 'chi_tiet': years,
-            'tiles': '/tiles/cog/tiles/{z}/{x}/{y}.png?url=' if _titiler_ready() else None}
+            'tiles': TILE_URL if _titiler_ready() else None}
+
+
+@app.get('/api/anh-dem.tif')
+def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100)):
+    """Tải ảnh đêm (COG) của một năm. Đây là mục đích chính của tab Ảnh đêm."""
+    duong_dan = store.cog_path('NTL', nam)
+    if not duong_dan:
+        raise HTTPException(404, f'Chưa có ảnh đêm năm {nam}. '
+                                 f'Chạy: python -m app.data.build_cogs --kinds VIIRS DMSP')
+    path = Path(duong_dan)
+    if not path.is_file():
+        raise HTTPException(410, f'Sổ có ghi ảnh năm {nam} nhưng file không còn ở {path}. '
+                                 f'Chạy lại build_cogs.')
+    return FileResponse(path, media_type='image/tiff',
+                        filename=f'VN_NTL_{nam}.tif')
 
 
 @app.get('/api/originals')

@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS anh_cog(
   duong_dan TEXT NOT NULL,     -- đường dẫn cục bộ hoặc gs:// cho TiTiler
   nguon_anh TEXT,
   dung_luong_byte INTEGER,
+  -- Phạm vi ảnh (WGS84). Thiếu nó thì bản đồ xin ô khắp thế giới và TiTiler trả 500
+  -- cho mọi ô nằm ngoài ảnh.
+  tay REAL, nam_do REAL, dong REAL, bac REAL,
   PRIMARY KEY(loai,nam)
 );
 

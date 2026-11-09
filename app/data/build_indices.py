@@ -18,6 +18,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+
+# Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
+# tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
+# An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
+SCHEMA_VERSION = 3
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
@@ -35,6 +40,23 @@ SOURCES = {
                     f'{DAY_PACKAGE}/data_processed/day_indices_monthly_ee.csv'], 'thang'),
     'kinh_te': (['data_processed/kinh_te.csv', 'app/data/kinh_te.csv'], None),
 }
+
+
+def mo(db):
+    """Mở cơ sở dữ liệu, dựng lại từ đầu nếu schema đã đổi."""
+    path = Path(db)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        thu = sqlite3.connect(path)
+        cu = thu.execute('PRAGMA user_version').fetchone()[0]
+        thu.close()
+        if cu != SCHEMA_VERSION:
+            print(f'  Schema đổi ({cu} -> {SCHEMA_VERSION}): dựng lại {path.name}.')
+            path.unlink()
+    connection = sqlite3.connect(path)
+    connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    connection.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+    return connection
 
 
 def columns(connection, table):
@@ -145,9 +167,7 @@ def load_provinces(connection):
 
 
 def build(root, db):
-    Path(db).parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db)
-    connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    connection = mo(db)
     report = {'tinh': load_provinces(connection)}
     for table, (candidates, monthly) in SOURCES.items():
         report[table] = load_table(connection, root, table, candidates, monthly)

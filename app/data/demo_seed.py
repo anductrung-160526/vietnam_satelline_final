@@ -21,11 +21,10 @@ YEARS = range(2004, 2026)
 
 def seed(db, seed_value=20261104):
     random.seed(seed_value)
-    connection = sqlite3.connect(db)
-    connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    from .build_indices import load_provinces, mo
+    connection = mo(db)
     # Chạy demo_seed một mình cũng phải ra app dùng được: nạp luôn danh mục 63 tỉnh,
     # nếu không thì mọi truy vấn theo tỉnh trả None và giao diện trắng.
-    from .build_indices import load_provinces
     load_provinces(connection)
     night, day, economy = [], [], []
     for index, code in enumerate(TINH):

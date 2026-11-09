@@ -2,126 +2,82 @@
 :root{
   --nen:#080b14; --nen-nhat:#111726; --vien:#1f2940;
   --chu:#e8ecf5; --chu-mo:#8b97b0; --nhan:#ffc857; --xanh:#5ec8d8; --luc:#7ddc8a;
+  --rong-cot:280px;          /* đổi bằng thanh kéo */
 }
 *{box-sizing:border-box}
-html,body{margin:0;padding:0}
-body{background:var(--nen);color:var(--chu);
+html,body{margin:0;padding:0;height:100%}
+body{background:var(--nen);color:var(--chu);display:flex;flex-direction:column;min-height:100vh;
      font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
 
-header{padding:18px 20px 14px;border-bottom:1px solid var(--vien);position:relative}
-header h1{margin:0;font-size:1.3rem;letter-spacing:.14em;font-weight:600}
-.sub{margin:4px 0 0;color:var(--chu-mo);font-size:.84rem}
-.pill{position:absolute;top:18px;right:20px;font-size:.74rem;padding:3px 10px;
-      border:1px solid var(--vien);border-radius:999px;color:var(--chu-mo)}
-.pill.ok{color:var(--luc);border-color:var(--luc)}
-.pill.loi{color:#ff8080;border-color:#ff8080}
-
-main{display:grid;gap:16px;padding:16px 20px 28px;
-     grid-template-columns:minmax(0,1fr) 320px;
-     grid-template-areas:"ban-do bang" "bieu-do bieu-do"}
-#khung-ban-do{grid-area:ban-do;position:relative;height:66vh;min-height:430px;align-self:start;
-  border:1px solid var(--vien);border-radius:10px;overflow:hidden;background:#05070d}
-#ban-do{position:absolute;inset:0}
-.dieu-khien{position:absolute;left:12px;bottom:12px;right:12px;z-index:2;
-  background:rgba(8,11,20,.86);backdrop-filter:blur(6px);
-  border:1px solid var(--vien);border-radius:8px;padding:10px 12px}
-.dieu-khien label{display:block;font-size:.76rem;color:var(--chu-mo);
-  text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
-.dieu-khien input[type=range]{width:calc(100% - 64px);accent-color:var(--nhan);vertical-align:middle}
-output{font-variant-numeric:tabular-nums;color:var(--nhan);font-weight:600;margin-left:10px}
-
-#bang-dieu-khien{grid-area:bang;border:1px solid var(--vien);border-radius:10px;
-  padding:16px;background:var(--nen-nhat);align-self:start;max-height:66vh;overflow-y:auto}
-#bang-dieu-khien label{display:block;font-size:.76rem;color:var(--chu-mo);
-  text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
-select,input[type=number],button{font:inherit;color:var(--chu);background:#0d1322;
-  border:1px solid var(--vien);border-radius:6px;padding:8px 10px}
-select{width:100%}
-.khoang-nam{margin-top:14px}
-.khoang-nam label{text-transform:none;letter-spacing:0;color:var(--chu-mo)}
-.khoang-nam input{width:76px;margin:0 4px}
-
-.the-so-lieu{margin-top:16px;display:grid;gap:8px}
-.o-so{border:1px solid var(--vien);border-radius:6px;padding:9px 11px;background:#0d1322}
-.o-so .ten{font-size:.72rem;color:var(--chu-mo);text-transform:uppercase;letter-spacing:.07em}
-.o-so .gia-tri{font-size:1.18rem;font-variant-numeric:tabular-nums;margin-top:2px}
-.o-so .gia-tri.trong{font-size:.88rem;color:var(--chu-mo);font-style:italic}
-
-#canh-bao{margin-top:14px;display:grid;gap:8px}
-.canh{border-left:3px solid var(--nhan);background:rgba(255,200,87,.07);
-  padding:8px 10px;font-size:.8rem;color:#f0dfb8;border-radius:0 5px 5px 0}
-.canh.thieu{border-left-color:#ff8080;background:rgba(255,128,128,.07);color:#ffd6d6}
-
-button#nut-export{margin-top:16px;width:100%;background:var(--nhan);color:#18120a;
-  border:0;font-weight:600;cursor:pointer;padding:11px}
-button#nut-export:disabled{background:#2a3148;color:var(--chu-mo);cursor:not-allowed}
-.ghi-chu{font-size:.76rem;color:var(--chu-mo);margin:8px 0 0}
-
-#khung-bieu-do{grid-area:bieu-do;display:grid;gap:14px;
-  grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-.bieu-do{border:1px solid var(--vien);border-radius:10px;background:var(--nen-nhat);padding:12px}
-.bieu-do h2{margin:0 0 8px;font-size:.82rem;color:var(--chu-mo);
-  text-transform:uppercase;letter-spacing:.08em;font-weight:600}
-.bieu-do>div{height:230px}
-
-footer{border-top:1px solid var(--vien);padding:14px 20px 22px;color:var(--chu-mo);font-size:.76rem}
-footer p{margin:3px 0}
-
-@media (max-width:860px){
-  main{grid-template-columns:minmax(0,1fr);
-        grid-template-areas:"ban-do" "bang" "bieu-do";padding:12px 16px 24px}
-  #khung-ban-do{height:52vh;min-height:340px}
-  #bang-dieu-khien{max-height:none}
-  .pill{position:static;display:inline-block;margin-top:8px}
-}
-
-/* Biển báo số liệu giả lập: phải đập vào mắt, không được lẫn với cảnh báo phương pháp. */
-.canh.gia-lap{border-left-color:#ff5c5c;background:rgba(255,92,92,.14);
-  color:#ffdede;font-weight:600}
-
-/* Bản đồ chưa có lớp nào để vẽ: nói ra, đừng để một ô đen vô nghĩa. */
-#khung-ban-do.trong::after{
-  content:"Bản đồ chưa có lớp nào để hiển thị.\A Cần: ranh giới GADM 4.1 (build_boundaries.py) và ảnh nền đêm (build_cogs.py).";
-  white-space:pre-line;text-align:center;
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  padding:0 28px;color:var(--chu-mo);font-size:.86rem;line-height:1.7;pointer-events:none}
-
-/* ---------- Tab ---------- */
-header{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
+header{display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;flex:none;
+       padding:14px 20px 10px;border-bottom:1px solid var(--vien)}
+header h1{margin:0;font-size:1.25rem;letter-spacing:.14em;font-weight:600}
+.sub{margin:3px 0 0;color:var(--chu-mo);font-size:.82rem}
 .tabs{display:flex;gap:4px;margin-top:2px}
 .tab{background:transparent;border:1px solid var(--vien);border-bottom-color:transparent;
   color:var(--chu-mo);padding:7px 18px;border-radius:6px 6px 0 0;cursor:pointer;font-size:.88rem}
 .tab:hover{color:var(--chu)}
 .tab.dang-chon{background:var(--nen-nhat);color:var(--nhan);border-color:var(--vien);font-weight:600}
+.pill{margin-left:auto;font-size:.74rem;padding:3px 10px;align-self:center;
+      border:1px solid var(--vien);border-radius:999px;color:var(--chu-mo)}
+.pill.ok{color:var(--luc);border-color:var(--luc)}
+.pill.loi{color:#ff8080;border-color:#ff8080}
+
 .trang.an{display:none}
 
-/* ---------- Lớp phủ bản đồ ---------- */
-.hop-noi{position:absolute;top:12px;left:12px;z-index:3;display:none;align-items:center;gap:10px;
-  background:rgba(8,11,20,.9);border:1px solid var(--vien);border-radius:8px;padding:7px 12px}
-.hop-noi.hien{display:flex}
-.hop-noi span{font-weight:600;color:var(--nhan)}
-button.nho{background:#0d1322;border:1px solid var(--vien);color:var(--chu);
-  padding:4px 11px;border-radius:5px;cursor:pointer;font-size:.82rem}
-button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
-.dieu-khien .hang{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.dieu-khien .hang label{margin:0;min-width:92px;flex:none}
-.dieu-khien .hang select{flex:1;min-width:0}
-.dieu-khien .hang input[type=range]{flex:1;min-width:0;width:auto}
+/* ---------- Tab ảnh đêm: cột lọc hẹp bên trái, ảnh chiếm phần còn lại ---------- */
+#tab-ban-do:not(.an){flex:1;display:grid;grid-template-columns:var(--rong-cot) 6px 1fr;min-height:0}
 
-.thang-mau{display:flex;align-items:center;gap:8px;font-size:.73rem;color:var(--chu-mo);margin:6px 0 2px}
-.thang-mau .dai{flex:1;height:9px;border-radius:5px;min-width:60px}
+#cot-loc{overflow-y:auto;padding:14px;border-right:1px solid var(--vien);background:var(--nen-nhat)}
+#cot-loc label{display:block;font-size:.72rem;color:var(--chu-mo);text-transform:uppercase;
+  letter-spacing:.09em;margin:14px 0 6px}
+#cot-loc label:first-child{margin-top:0}
+#cot-loc select,#cot-loc input[type=range],#cot-loc button{width:100%}
+select,input[type=number],input[type=search],button{font:inherit;color:var(--chu);background:#0d1322;
+  border:1px solid var(--vien);border-radius:6px;padding:8px 10px}
+input[type=range]{accent-color:var(--nhan);padding:0;margin-top:8px;background:none;border:0}
+button.nho{margin-top:8px;padding:6px 10px;font-size:.82rem;cursor:pointer}
+button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
+#nut-tai-anh{margin-top:16px;background:var(--nhan);color:#18120a;border:0;font-weight:600;
+  cursor:pointer;padding:11px}
+#nut-tai-anh:disabled{background:#2a3148;color:var(--chu-mo);cursor:not-allowed}
+.ghi-chu{font-size:.76rem;color:var(--chu-mo);margin:8px 0 0}
+
+.thong-tin{margin-top:14px;display:grid;gap:6px;font-size:.8rem}
+.thong-tin div{display:flex;justify-content:space-between;gap:10px;
+  border-bottom:1px dotted var(--vien);padding-bottom:4px}
+.thong-tin span:first-child{color:var(--chu-mo)}
+.thong-tin span:last-child{font-variant-numeric:tabular-nums;text-align:right}
+
+/* Thanh kéo đổi độ rộng cột lọc */
+#thanh-keo{cursor:col-resize;background:var(--vien);transition:background .12s}
+#thanh-keo:hover,#thanh-keo.dang-keo{background:var(--nhan)}
+
+#khung-ban-do{position:relative;min-width:0;background:#05070d}
+#ban-do{position:absolute;inset:0}
+.lop-noi{position:absolute;z-index:2;background:rgba(8,11,20,.88);backdrop-filter:blur(6px);
+  border:1px solid var(--vien);border-radius:8px;padding:8px 12px;font-size:.82rem}
+#nhan-pham-vi{top:12px;left:12px;font-weight:600;color:var(--nhan)}
+.thang-mau{left:12px;bottom:12px;display:flex;align-items:center;gap:9px;color:var(--chu-mo);
+  font-size:.74rem;max-width:min(460px,70%)}
+.thang-mau .dai{flex:1;height:9px;border-radius:5px;min-width:70px}
 .thang-mau b{font-weight:600;color:var(--chu);font-variant-numeric:tabular-nums}
 
+#canh-bao{margin-top:14px;display:grid;gap:8px}
+.canh{border-left:3px solid var(--nhan);background:rgba(255,200,87,.07);
+  padding:8px 10px;font-size:.78rem;color:#f0dfb8;border-radius:0 5px 5px 0}
+.canh.thieu{border-left-color:#ff8080;background:rgba(255,128,128,.07);color:#ffd6d6}
+.canh.gia-lap{border-left-color:#ff5c5c;background:rgba(255,92,92,.14);color:#ffdede;font-weight:600}
+
 /* ---------- Tab dữ liệu ---------- */
-#tab-du-lieu{display:block;padding:16px 20px 28px}
+#tab-du-lieu:not(.an){flex:1;display:block;padding:16px 20px 24px;overflow:auto}
 .bo-loc{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;
   border:1px solid var(--vien);border-radius:10px;background:var(--nen-nhat);padding:14px}
 .o-loc{display:flex;flex-direction:column;gap:5px}
 .o-loc.rong{flex:1;min-width:260px}
 .o-loc label{font-size:.74rem;color:var(--chu-mo);text-transform:uppercase;letter-spacing:.08em}
 .o-loc input[type=number]{width:92px}
-.o-loc input[type=search]{width:170px;font:inherit;color:var(--chu);background:#0d1322;
-  border:1px solid var(--vien);border-radius:6px;padding:8px 10px}
+.o-loc input[type=search]{width:170px}
 .nhom-nut{display:flex;gap:6px}
 .nhom-nut button{background:var(--nhan);color:#18120a;border:0;font-weight:600;cursor:pointer;
   padding:9px 14px;border-radius:6px;white-space:nowrap}
@@ -129,7 +85,7 @@ button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
 #dl-canh-bao{margin-top:12px;display:grid;gap:8px}
 #dl-tom-tat{margin:10px 0 6px}
 
-.khung-bang{border:1px solid var(--vien);border-radius:10px;overflow:auto;max-height:62vh;
+.khung-bang{border:1px solid var(--vien);border-radius:10px;overflow:auto;max-height:64vh;
   background:var(--nen-nhat)}
 #dl-bang{border-collapse:separate;border-spacing:0;width:100%;font-size:.84rem}
 #dl-bang th,#dl-bang td{padding:7px 11px;white-space:nowrap;border-bottom:1px solid #161d2e}
@@ -145,3 +101,13 @@ button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
 #dl-bang tbody tr:hover td:nth-child(2){background:#1a2235}
 #dl-bang td.trong{color:#48526b}
 #dl-bang td.ma{color:var(--chu-mo);font-variant-numeric:tabular-nums}
+
+footer{flex:none;border-top:1px solid var(--vien);padding:10px 20px 16px;
+  color:var(--chu-mo);font-size:.74rem}
+footer p{margin:2px 0}
+
+@media (max-width:860px){
+  #tab-ban-do:not(.an){grid-template-columns:1fr;grid-template-rows:auto 0 minmax(320px,60vh)}
+  #cot-loc{border-right:0;border-bottom:1px solid var(--vien)}
+  #thanh-keo{display:none}
+}

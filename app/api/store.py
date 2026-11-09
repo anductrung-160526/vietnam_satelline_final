@@ -101,7 +101,8 @@ def indices(code, year_from=2004, year_to=2025):
 def cog_years(kind='NTL'):
     with connect() as connection:
         rows = connection.execute(
-            'SELECT nam,duong_dan,nguon_anh,dung_luong_byte FROM anh_cog WHERE loai=? ORDER BY nam',
+            'SELECT nam,duong_dan,nguon_anh,dung_luong_byte,tay,nam_do,dong,bac '
+            'FROM anh_cog WHERE loai=? ORDER BY nam',
             (kind,)).fetchall()
     return [dict(row) for row in rows]
 
