@@ -7,6 +7,7 @@ Chạy thử:
 TiTiler được nạp nếu có cài; không có thì API vẫn chạy, chỉ thiếu ô bản đồ.
 """
 import io
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -158,6 +159,37 @@ def basemap():
     # TiTiler 0.19 có {tileMatrixSetId} trong đường dẫn; thiếu đoạn này là 404 mọi ô bản đồ.
     return {'nam': [entry['nam'] for entry in years], 'chi_tiet': years,
             'tiles': TILE_URL if _titiler_ready() else None}
+
+
+@app.get('/api/boundaries-info')
+def thong_tin_ranh_gioi():
+    """Thống kê file ranh giới đang dùng: bao nhiêu tỉnh, mã nào, hình phức tạp cỡ nào.
+
+    Mặt nạ che vùng ngoài ranh giới được dựng từ chính các vòng của file này. Khi nó không
+    che đúng, hai nguyên nhân có thể: mã tỉnh không khớp với danh mục, hoặc hình quá nhiều
+    đỉnh khiến trình duyệt dựng hỏng. Đầu mối này trả lời cả hai mà không phải đoán.
+    """
+    path = Path(os.environ.get(
+        'VNGIS_BOUNDARIES', Path(__file__).resolve().parent.parent / 'data' / 'provinces.geojson'))
+    if not path.exists():
+        raise HTTPException(404, f'Chưa có {path}')
+    fc = json.loads(path.read_text(encoding='utf-8'))
+    ma_danh_muc = {t['ma_tinh'] for t in store.provinces()}
+    ket_qua, tong_dinh = [], 0
+    for feature in fc.get('features', []):
+        hinh = feature.get('geometry') or {}
+        toa_do = hinh.get('coordinates') or []
+        vong = toa_do if hinh.get('type') == 'Polygon' else [r for p in toa_do for r in p]
+        dinh = sum(len(r) for r in vong)
+        tong_dinh += dinh
+        ket_qua.append({'ma_tinh': feature.get('properties', {}).get('ma_tinh'),
+                        'loai_hinh': hinh.get('type'), 'so_vong': len(vong), 'so_dinh': dinh})
+    ma_file = {str(r['ma_tinh']) for r in ket_qua}
+    nang = sorted(ket_qua, key=lambda r: -r['so_dinh'])[:5]
+    return {'duong_dan': str(path), 'so_tinh': len(ket_qua), 'tong_dinh': tong_dinh,
+            'phuc_tap_nhat': nang,
+            'ma_khong_khop_danh_muc': sorted(ma_file - ma_danh_muc)[:10],
+            'ma_danh_muc_thieu_trong_file': sorted(ma_danh_muc - ma_file)[:10]}
 
 
 @app.get('/api/anh-dem.tif')

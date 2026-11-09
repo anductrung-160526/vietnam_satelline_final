@@ -87,10 +87,30 @@ function matNa(dacTrungs){
 
 function datMatNa(){
   if(!banDo || !ranhGioi || !banDo.getSource('mat-na')) return;
-  const giu = maDangXem
-    ? ranhGioi.features.filter(f => String(f.properties.ma_tinh).padStart(2,'0') === maDangXem)
-    : ranhGioi.features;
+  const rong = {type:'FeatureCollection', features:[]};
+  /* Toàn quốc thì không che: ảnh vốn đã chỉ phủ lãnh thổ Việt Nam, mà mặt nạ gộp vòng của
+     cả 63 tỉnh là hình nặng nhất, dễ dựng hỏng nhất. Chỉ che khi đã chọn một tỉnh. */
+  if(!maDangXem){ banDo.getSource('mat-na').setData(rong); return; }
+  const giu = ranhGioi.features.filter(
+    f => String(f.properties.ma_tinh).padStart(2,'0') === maDangXem);
+  if(!giu.length){
+    /* Không tìm thấy ranh giới của tỉnh này: che hết sẽ ra màn hình đen trơn, tệ hơn là
+       không che. Nói ra thay vì để người dùng nhìn một khung trống. */
+    banDo.getSource('mat-na').setData(rong);
+    nhacMatNa(`Không tìm thấy ranh giới của mã tỉnh ${maDangXem} trong file GeoJSON, `
+      + 'nên không cắt được theo ranh giới. Kiểm tra: /api/boundaries-info');
+    return;
+  }
+  nhacMatNa(null);
   banDo.getSource('mat-na').setData({type:'FeatureCollection', features:[matNa(giu)]});
+}
+
+function nhacMatNa(chu){
+  const cu = document.getElementById('nhac-mat-na');
+  if(cu) cu.remove();
+  if(!chu) return;
+  $('canh-bao').insertAdjacentHTML('beforeend',
+    `<div class="canh thieu" id="nhac-mat-na">${chu}</div>`);
 }
 
 async function dungBanDo(){
