@@ -15,11 +15,23 @@ param(
   [string]$Root = 'E:\SatelliteData',
   [string]$TamThoi = 'C:\Users\AD\vngis_tam',
   [switch]$LietKe,
+  [switch]$TatCa,           # tai lan luot moi nam dang co tren bucket
+  [int]$SoLuong = 16,       # so manh tai song song cho moi goi
   [switch]$GiuGoi,          # giu file .tar sau khi giai nen
   [switch]$XoaTrenBucket    # xoa goi khoi bucket sau khi kiem tra xong
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Tile da nen ZSTD muc 9 san nen khong nen them duoc nua; cach duy nhat de nhanh hon
+# la dung nhieu luong hon tren duong truyen. gcloud chia mot file lon thanh nhieu manh
+# tai song song - mac dinh 4 manh, nang len giup bao hoa duong truyen tot hon.
+function Dat-SongSong($n) {
+  & gcloud config set storage/sliced_object_download_max_components $n 2>$null | Out-Null
+  & gcloud config set storage/sliced_object_download_threshold 64MiB 2>$null | Out-Null
+  & gcloud config set storage/process_count 8 2>$null | Out-Null
+  & gcloud config set storage/thread_count 8 2>$null | Out-Null
+}
 
 function Doc-Manifest($path) {
   $d = @{}
@@ -35,7 +47,31 @@ if ($LietKe) {
   exit 0
 }
 
-if (-not $Nam) { Write-Error "Thieu -Nam. Vi du: -Nam 2016. Hoac dung -LietKe de xem co nhung goi nao." }
+if ($TatCa) {
+  # Lay danh sach nam tu chinh bucket, roi goi lai script nay cho tung nam.
+  $ds = & gcloud storage ls "$Bucket/tiles_*.tar"
+  $nams = $ds | ForEach-Object { if ($_ -match 'tiles_.+_(\d{4})\.tar$') { $matches[1] } } |
+          Sort-Object -Unique
+  if (-not $nams) { Write-Error "Khong thay goi nao tren $Bucket. Chay dong_goi_tiles.sh tren may ao truoc." }
+  Write-Host "=== Se tai $($nams.Count) nam: $($nams -join ', ') ===" -ForegroundColor Cyan
+  $batDau = Get-Date
+  $hong = @()
+  foreach ($y in $nams) {
+    Write-Host ""
+    Write-Host "########## $y ##########" -ForegroundColor Cyan
+    $t = Get-Date
+    & $PSCommandPath -Nam $y -Bucket $Bucket -Root $Root -TamThoi $TamThoi `
+        -SoLuong $SoLuong @{$true=@('-GiuGoi')}[[bool]$GiuGoi] 2>&1 | Write-Host
+    if ($LASTEXITCODE -ne 0) { $hong += $y; Write-Host "    $y HONG" -ForegroundColor Red }
+    else { Write-Host ("    $y xong sau {0:n0} phut" -f ((Get-Date)-$t).TotalMinutes) -ForegroundColor Green }
+  }
+  Write-Host ""
+  Write-Host ("Tong thoi gian: {0:n0} phut" -f ((Get-Date)-$batDau).TotalMinutes) -ForegroundColor Cyan
+  if ($hong.Count) { Write-Host "Nam bi loi: $($hong -join ', ') - chay lai rieng tung nam." -ForegroundColor Red }
+  exit 0
+}
+
+if (-not $Nam) { Write-Error "Thieu -Nam. Vi du: -Nam 2016. Hoac -TatCa de tai het, -LietKe de xem co nhung goi nao." }
 if (-not (Test-Path $Root)) {
   Write-Host "KHONG THAY $Root - o cung chua duoc cam?" -ForegroundColor Red
   Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{n='Trong(GB)';e={[math]::Round($_.Free/1GB,1)}} | Format-Table
@@ -47,11 +83,20 @@ New-Item -ItemType Directory -Force -Path $TamThoi | Out-Null
 # la mat ca goi; tai ve o trong may thi chi phai giai nen lai.
 Write-Host "=== Tai goi nam $Nam ===" -ForegroundColor Cyan
 Write-Host "    Trung chuyen qua: $TamThoi"
+Dat-SongSong $SoLuong
+$dongHo = Get-Date
 & gcloud storage cp "$Bucket/tiles_*_$Nam.tar" "$Bucket/tiles_*_$Nam.tar.sha256" "$Bucket/tiles_*_$Nam.tar.manifest" $TamThoi
 if ($LASTEXITCODE -ne 0) { Write-Error "Tai that bai. Chay lai lenh nay, gcloud se tiep tuc cho dang do." }
 
 $goi = Get-ChildItem "$TamThoi\tiles_*_$Nam.tar"
 if (-not $goi) { Write-Error "Khong thay goi nao cho nam $Nam trong $TamThoi" }
+
+$tongByte = ($goi | Measure-Object Length -Sum).Sum
+$giay = ((Get-Date) - $dongHo).TotalSeconds
+if ($giay -gt 0) {
+  Write-Host ("    Tai xong: {0:n2} GB trong {1:n0} giay = {2:n1} MB/s" -f `
+    ($tongByte/1GB), $giay, ($tongByte/1MB/$giay)) -ForegroundColor Green
+}
 
 foreach ($tar in $goi) {
   Write-Host ""

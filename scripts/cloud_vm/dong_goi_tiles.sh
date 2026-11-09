@@ -17,6 +17,7 @@ NAM=""
 SAN_PHAM=${SAN_PHAM:-}
 KIEM_KE=0
 GIU_LAI=0
+TAT_CA=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -25,6 +26,7 @@ while [ $# -gt 0 ]; do
     --bucket)   BUCKET=$2; shift 2 ;;
     --san-pham) SAN_PHAM=$2; shift 2 ;;
     --kiem-ke)  KIEM_KE=1; shift ;;
+    --tat-ca)   TAT_CA=1; shift ;;
     --giu-lai)  GIU_LAI=1; shift ;;   # giữ file .tar trên máy ảo sau khi đẩy lên
     *) echo "Tham số lạ: $1" >&2; exit 2 ;;
   esac
@@ -36,6 +38,27 @@ thu_muc_nam() {
     dirname "$t"
   done
 }
+
+# Làm lần lượt mọi năm trong một lượt chạy. Dùng trong tmux để không phải ngồi canh:
+# tile đã nén ZSTD sẵn nên bước tar chỉ là gộp file, phần lâu là đẩy lên bucket.
+if [ "$TAT_CA" = 1 ]; then
+  [ -n "$BUCKET" ] || { echo "Thiếu --bucket" >&2; exit 2; }
+  mapfile -t cac_nam < <(thu_muc_nam | grep -oE '[0-9]{4}$' | sort -u)
+  echo "=== Đóng gói ${#cac_nam[@]} năm: ${cac_nam[*]} ==="
+  bat_dau=$(date +%s)
+  for y in "${cac_nam[@]}"; do
+    echo
+    echo "########## $y ##########"
+    if ! bash "$0" --root "$ROOT" --nam "$y" --bucket "$BUCKET" ${SAN_PHAM:+--san-pham "$SAN_PHAM"}; then
+      echo "  $y HỎNG — bỏ qua, làm tiếp năm sau." >&2
+    fi
+  done
+  echo
+  echo "Tổng thời gian: $(( ($(date +%s) - bat_dau) / 60 )) phút"
+  echo "Các gói đang nằm ở $BUCKET. Trên máy Windows chạy:"
+  echo "  powershell -ExecutionPolicy Bypass -File scripts\\windows\\tai_tiles_ve_o_E.ps1 -TatCa -Bucket $BUCKET"
+  exit 0
+fi
 
 if [ "$KIEM_KE" = 1 ] || [ -z "$NAM" ]; then
   echo "=== Kiểm kê tiles trong $ROOT ==="
@@ -57,7 +80,8 @@ if [ "$KIEM_KE" = 1 ] || [ -z "$NAM" ]; then
   echo "Tổng dung lượng tiles: $(numfmt --to=iec "$tong")"
   echo "Còn trống trên $ROOT: $(df -h "$ROOT" | awk 'NR==2{print $4}')"
   echo
-  echo "Đóng gói một năm:  bash $0 --nam 2016 --bucket gs://<tên bucket>"
+  echo "Đóng gói một năm:   bash $0 --nam 2016 --bucket gs://<tên bucket>"
+  echo "Đóng gói mọi năm:   bash $0 --tat-ca --bucket gs://<tên bucket>"
   exit 0
 fi
 

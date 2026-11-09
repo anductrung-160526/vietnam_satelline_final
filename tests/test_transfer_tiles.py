@@ -114,3 +114,21 @@ class PackageTilesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(have_bash(), 'cần bash')
+class BatchModeTest(PackageTilesTest):
+    """--tat-ca làm mọi năm trong một lượt, để chạy trong tmux không cần ngồi canh."""
+
+    def test_every_year_is_packaged_in_one_run(self):
+        done = self._run('--tat-ca', '--bucket', 'gs://x', '--giu-lai')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        goi = sorted(p.name for p in self.root.glob('tiles_*.tar'))
+        self.assertEqual(goi, ['tiles_SENTINEL2_2016.tar', 'tiles_SENTINEL2_2024.tar'])
+        self.assertIn('2016', done.stdout)
+        self.assertIn('2024', done.stdout)
+
+    def test_batch_mode_still_refuses_without_a_bucket(self):
+        done = self._run('--tat-ca')
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn('bucket', done.stderr.lower())
