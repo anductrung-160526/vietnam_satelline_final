@@ -39,6 +39,14 @@ const dinhDang = (v, c = 2) => (v === null || v === undefined)
 })();
 
 /* ===================== bản đồ ===================== */
+/* Hai mức sáng cho đường ranh giới. Khi xem toàn quốc thì đường viền chỉ là nền, phải mờ
+   để không át ảnh đêm. Khi đã chọn một tỉnh thì người dùng cần thấy rõ ranh giới các tỉnh
+   xung quanh để định vị, nên sáng hẳn lên. */
+const VIEN = {
+  mo:    {mau:'#3b4b6b', rong:0.6, dam:0.85},
+  sang:  {mau:'#9db4dd', rong:1.1, dam:1.0},
+};
+
 function kieuNen(){
   return {version:8, sources:{}, layers:[{id:'nen', type:'background',
           paint:{'background-color':'#05070d'}}]};
@@ -108,12 +116,19 @@ async function dungBanDo(){
     /* Lớp bắt sự kiện bấm: trong suốt, nằm dưới ảnh và mặt nạ. */
     banDo.addLayer({id:'tinh-bat', type:'fill', source:'tinh',
       paint:{'fill-color':'#16203a','fill-opacity':0.001}});
+    /* Che hẳn, không để lọt 10% ánh sáng của vùng ngoài ranh giới. */
     banDo.addLayer({id:'mat-na-lop', type:'fill', source:'mat-na',
-      paint:{'fill-color':'#05070d','fill-opacity':0.9}});
+      paint:{'fill-color':'#05070d','fill-opacity':1}});
     banDo.addLayer({id:'tinh-vien', type:'line', source:'tinh',
-      paint:{'line-color':'#3b4b6b','line-width':0.6}});
+      paint:{'line-color':VIEN.mo.mau, 'line-width':VIEN.mo.rong,
+             'line-opacity':VIEN.mo.dam}});
+    /* Quầng sáng mảnh dưới đường viền tỉnh đang chọn, để nó nổi trên nền ảnh đêm. */
+    banDo.addLayer({id:'tinh-vien-quang', type:'line', source:'tinh',
+      filter:['==','ma_tinh',''],
+      paint:{'line-color':'#ffc857','line-width':7,'line-opacity':0.22,'line-blur':4}});
     banDo.addLayer({id:'tinh-vien-dam', type:'line', source:'tinh',
-      filter:['==','ma_tinh',''], paint:{'line-color':'#ffc857','line-width':2}});
+      filter:['==','ma_tinh',''],
+      paint:{'line-color':'#ffd87a','line-width':2.4}});
     banDo.on('click','tinh-bat', e => {
       const ma = String(e.features[0].properties.ma_tinh).padStart(2,'0');
       $('chon-tinh').value = ma; chonPhamVi(ma);
@@ -182,7 +197,12 @@ function chonPhamVi(ma){
   $('nhan-pham-vi').textContent = ten || 'Toàn quốc';
   if(!banDo || !ranhGioi) return;
   datMatNa();
+  const kieu = ma ? VIEN.sang : VIEN.mo;
+  banDo.setPaintProperty('tinh-vien', 'line-color', kieu.mau);
+  banDo.setPaintProperty('tinh-vien', 'line-width', kieu.rong);
+  banDo.setPaintProperty('tinh-vien', 'line-opacity', kieu.dam);
   banDo.setFilter('tinh-vien-dam', ['==','ma_tinh', ma || '']);
+  banDo.setFilter('tinh-vien-quang', ['==','ma_tinh', ma || '']);
   const f = ma && ranhGioi.features.find(x => String(x.properties.ma_tinh).padStart(2,'0') === ma);
   banDo.fitBounds(f ? bienDo(f) : bienDoTatCa(),
                   {padding: f ? 60 : 30, duration:600, maxZoom:10});
