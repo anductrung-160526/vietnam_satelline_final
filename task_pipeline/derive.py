@@ -28,12 +28,14 @@ NODATA=-9999
 DAY_BANDS=['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
 INDICES=['NDVI','NDBI','MNDWI','BSI']
 LIT_THRESHOLD_VIIRS=1.5
-# Ngưỡng "có ánh sáng" theo từng nguồn. DMSP là DN 0-63, không cùng thang với VIIRS
-# (nW/cm2/sr), nên áp 1,5 cho DMSP là sai. Để None cho tới khi có quyết định nghiên cứu;
-# các chỉ số vùng sáng của giai đoạn DMSP sẽ bỏ trống thay vì điền một con số vô nghĩa.
-LIT_THRESHOLD={'VIIRS':LIT_THRESHOLD_VIIRS,'DMSP':None}
+LIT_THRESHOLD_DMSP=5
+# Ngưỡng "có ánh sáng" theo từng nguồn, hai thang đo khác nhau:
+#   VIIRS  1,5 nW/cm2/sr  (task_pipeline/scope.py đặt lit_threshold_viirs=1.5)
+#   DMSP   DN 5           (province_pipeline/profiles.py lit_threshold_dmsp=5)
+# Không dùng chung một con số cho cả hai: DMSP là DN 0-63, VIIRS là bức xạ.
+LIT_THRESHOLD={'VIIRS':LIT_THRESHOLD_VIIRS,'DMSP':LIT_THRESHOLD_DMSP}
 # Đổi công thức trong ntl_stats/day_stats thì tăng số này, nếu không Cache sẽ trả kết quả cũ.
-STATS_VERSION=2
+STATS_VERSION=3
 ROWS=512
 SENSOR={'LANDSAT':'LANDSAT','SENTINEL2':'SENTINEL2'}
 
@@ -512,11 +514,11 @@ CODEBOOK=[
  ('cv_ntl','Hệ số biến thiên std_ntl/mean_ntl: mức chênh lệch sáng–tối trong tỉnh','Numeric','không thứ nguyên'),
  ('hieu_chinh','Trạng thái hiệu chỉnh liên kết DMSP–VIIRS','String',''),
  ('so_pixel_hop_le','Số pixel có dữ liệu trong ranh giới tỉnh','Numeric','pixel'),
- ('so_pixel_sang','Số pixel vượt ngưỡng sáng; bỏ trống với DMSP vì chưa chốt ngưỡng','Numeric','pixel'),
+ ('so_pixel_sang','Số pixel vượt ngưỡng sáng (VIIRS ≥ 1,5 nW/cm²/sr; DMSP ≥ DN 5)','Numeric','pixel'),
  ('dt_sang_km2','Diện tích các pixel vượt ngưỡng sáng','Numeric','km²'),
  ('ty_le_sang_pct','dt_sang_km2 / dt_tu_nhien_km2: tỷ lệ diện tích được chiếu sáng','Numeric','%'),
  ('sol_vung_sang','Tổng bức xạ chỉ trên các pixel vượt ngưỡng','Numeric','DN / nW/cm²/sr'),
- ('nguong_sang','Ngưỡng dùng để xác định pixel sáng (VIIRS 1,5; DMSP chưa chốt)','Numeric','nW/cm²/sr'),
+ ('nguong_sang','Ngưỡng đã dùng để xác định pixel sáng (VIIRS 1,5 nW/cm²/sr; DMSP DN 5)','Numeric','nW/cm²/sr hoặc DN'),
  ('ghi_chu','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS','String',''),
  ('loai_phan_xa','SR (phản xạ bề mặt) hoặc TOA (Sentinel-2 2015–2018)','String',''),
  ('<KÊNH>_mean / _std','Trung bình / độ lệch chuẩn của phản xạ kênh (BLUE..SWIR2) và chỉ số NDVI, NDBI, MNDWI, BSI trên pixel hợp lệ','Numeric','phản xạ (0–1) / không thứ nguyên'),

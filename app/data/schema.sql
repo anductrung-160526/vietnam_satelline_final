@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS ntl_annual(
   dt_sang_km2 REAL,          -- diện tích được chiếu sáng
   ty_le_sang_pct REAL,       -- dt_sang_km2 / diện tích tỉnh
   sol_vung_sang REAL,        -- tổng bức xạ chỉ trên vùng sáng
-  nguong_sang REAL,          -- VIIRS 1,5; DMSP để trống vì chưa chốt ngưỡng
+  nguong_sang REAL,          -- ngưỡng đã dùng: VIIRS 1,5 nW/cm²/sr, DMSP DN 5
   dt_tu_nhien_km2 REAL,
   ghi_chu TEXT, hieu_chinh TEXT, trang_thai TEXT,
   PRIMARY KEY(ma_tinh,nam)

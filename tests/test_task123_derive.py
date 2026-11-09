@@ -91,12 +91,11 @@ class NightTests(unittest.TestCase):
             self.assertEqual(by[2013]['nguon_anh'],'DMSP');self.assertEqual(by[2014]['sol_ntl'],18.0)
             self.assertIsNone(by[2014]['thay_doi_ntl']);self.assertEqual(by[2014]['ghi_chu'],'DOI_NGUON_ANH_CHUA_HIEU_CHINH')
             self.assertEqual(by[2014]['hieu_chinh'],'PENDING')
-            # Chỉ số vùng sáng chỉ tính cho VIIRS: DMSP là thang DN, chưa chốt ngưỡng.
+            # Mỗi nguồn một ngưỡng riêng: VIIRS theo bức xạ, DMSP theo DN.
             self.assertEqual(by[2014]['nguong_sang'],derive.LIT_THRESHOLD['VIIRS'])
+            self.assertEqual(by[2013]['nguong_sang'],derive.LIT_THRESHOLD['DMSP'])
             self.assertIsNotNone(by[2014]['so_pixel_sang'])
-            self.assertIsNone(by[2013]['nguong_sang'])
-            self.assertIsNone(by[2013]['so_pixel_sang'])
-            self.assertIsNone(by[2013]['dt_sang_km2'])
+            self.assertIsNotNone(by[2013]['so_pixel_sang'])
             # Thống kê phân tán phải có ở cả hai nguồn.
             for year in (2013,2014):
                 for field in ('mean_ntl','std_ntl','min_ntl','max_ntl','cv_ntl','so_pixel_hop_le'):
@@ -195,15 +194,30 @@ class NtlFieldCoverageTest(unittest.TestCase):
             with self.subTest(bien=field):
                 self.assertIsNotNone(row.get(field), f'{field} rỗng ở năm VIIRS')
 
-    def test_dmsp_leaves_the_lit_area_indicators_blank_rather_than_guessing(self):
-        """DMSP là thang DN, không cùng đơn vị với VIIRS; áp ngưỡng 1,5 lên nó là sai."""
-        row = self._rows()[2010]
-        self.assertEqual(row['nguon_anh'], 'DMSP')
-        for field in ('so_pixel_sang', 'dt_sang_km2', 'ty_le_sang_pct',
-                      'sol_vung_sang', 'nguong_sang'):
-            with self.subTest(bien=field):
-                self.assertIsNone(row[field])
-        self.assertIsNotNone(row['std_ntl'])        # thống kê phân tán vẫn có
+    def test_each_source_uses_its_own_lit_threshold(self):
+        """DMSP là DN 0-63, VIIRS là bức xạ: hai thang đo, hai ngưỡng, không dùng chung."""
+        rows = self._rows()
+        self.assertEqual(rows[2010]['nguon_anh'], 'DMSP')
+        self.assertEqual(rows[2010]['nguong_sang'], 5)
+        self.assertEqual(rows[2020]['nguon_anh'], 'VIIRS')
+        self.assertEqual(rows[2020]['nguong_sang'], 1.5)
+        # Nền DMSP là 1.0 (< 5) và nền VIIRS 0.5 (< 1,5): chỉ điểm 9,0 vượt ngưỡng ở cả hai.
+        self.assertEqual(rows[2010]['so_pixel_sang'], 1)
+        self.assertEqual(rows[2020]['so_pixel_sang'], 1)
+
+    def test_the_thresholds_match_the_project_configuration(self):
+        """Ngưỡng phải lấy đúng giá trị dự án đã chốt, không tự đặt lại trong derive."""
+        import json
+        from pathlib import Path as _P
+        goc = _P(__file__).resolve().parent.parent
+        cau_hinh = json.loads((goc / 'province_pipeline' / 'config'
+                               / 'full_2004_2025.json').read_text(encoding='utf-8'))
+        self.assertEqual(derive.LIT_THRESHOLD['DMSP'],
+                         cau_hinh['quality']['lit_threshold_dmsp'])
+        # VIIRS được task_pipeline/scope.py ghi đè lên 1,5.
+        scope = (goc / 'task_pipeline' / 'scope.py').read_text(encoding='utf-8')
+        self.assertIn("lit_threshold_viirs']=1.5", scope.replace(' ', ''))
+        self.assertEqual(derive.LIT_THRESHOLD['VIIRS'], 1.5)
 
     def test_the_coefficient_of_variation_is_std_over_mean(self):
         row = self._rows()[2020]

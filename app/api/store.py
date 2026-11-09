@@ -148,7 +148,7 @@ INDICATORS = (
          mo_ta='std/mean — chênh lệch sáng–tối trong tỉnh; cao nghĩa là tập trung vào vài điểm.'),
     dict(ma='so_pixel_sang', ten='Số điểm ảnh sáng', don_vi='điểm ảnh',
          bang='ntl_annual', chu_so=0,
-         mo_ta='Vượt ngưỡng sáng (VIIRS 1,5 nW/cm²/sr). Bỏ trống với DMSP vì chưa chốt ngưỡng.'),
+         mo_ta='Vượt ngưỡng sáng: VIIRS ≥ 1,5 nW/cm²/sr, DMSP ≥ DN 5. Hai thang đo khác nhau.'),
     dict(ma='dt_sang_km2', ten='Diện tích được chiếu sáng', don_vi='km²',
          bang='ntl_annual', chu_so=2, mo_ta='Tổng diện tích các điểm ảnh vượt ngưỡng sáng.'),
     dict(ma='ty_le_sang_pct', ten='Tỷ lệ diện tích được chiếu sáng', don_vi='%',
