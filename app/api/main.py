@@ -34,18 +34,33 @@ def _code(ma_tinh: str) -> str:
     return code
 
 
+GIAO_DIEN = ('index.html', 'style.css', 'app.js')
+
+
+def _bam(du_lieu):
+    import hashlib
+    # Chuẩn hoá xuống dòng: git trên Windows đổi LF thành CRLF khi lấy mã về, nên cùng một
+    # nội dung lại ra mã băm khác máy Linux. Không chuẩn hoá thì phép so này vô dụng.
+    return hashlib.sha256(du_lieu.replace(b'\r\n', b'\n')).hexdigest()
+
+
+def van_tay_tung_tep():
+    out = {}
+    for ten in GIAO_DIEN:
+        duong_dan = WEB / ten
+        out[ten] = _bam(duong_dan.read_bytes())[:12] if duong_dan.is_file() else None
+    return out
+
+
 def dau_van_giao_dien():
     """Vân tay của bộ tệp giao diện đang nằm trên đĩa.
 
     Khi màn hình trông không giống bản vừa sửa, câu hỏi đầu tiên là máy chủ đang phục vụ
     tệp nào. So vân tay này với vân tay của repo là biết ngay, khỏi đoán bộ nhớ đệm.
     """
-    import hashlib
-    bam = hashlib.sha256()
-    for ten in ('index.html', 'style.css', 'app.js'):
-        duong_dan = WEB / ten
-        bam.update(duong_dan.read_bytes() if duong_dan.is_file() else b'')
-    return bam.hexdigest()[:12]
+    noi = b''.join((WEB / ten).read_bytes() if (WEB / ten).is_file() else b''
+                   for ten in GIAO_DIEN)
+    return _bam(noi)[:12]
 
 
 @app.get('/api/health')
@@ -55,7 +70,8 @@ def health():
     except FileNotFoundError as error:
         return JSONResponse({'ok': False, 'ly_do': str(error)}, status_code=503)
     return {'ok': True, 'so_tinh': count, 'db': str(store.database_path()),
-            'thu_muc_giao_dien': str(WEB), 'dau_van_giao_dien': dau_van_giao_dien()}
+            'thu_muc_giao_dien': str(WEB), 'dau_van_giao_dien': dau_van_giao_dien(),
+            'van_tay_tung_tep': van_tay_tung_tep()}
 
 
 @app.get('/api/provinces')

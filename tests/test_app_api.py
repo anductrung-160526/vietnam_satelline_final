@@ -258,11 +258,19 @@ class StaticAndSchemaTest(unittest.TestCase):
 
     def test_health_reports_which_interface_files_are_being_served(self):
         """Khi màn hình không giống bản vừa sửa, phải biết ngay máy chủ dùng tệp nào."""
-        from app.api.main import dau_van_giao_dien
+        from app.api.main import dau_van_giao_dien, van_tay_tung_tep
         body = self.client.get('/api/health').json()
         self.assertEqual(body['dau_van_giao_dien'], dau_van_giao_dien())
         self.assertTrue(body['thu_muc_giao_dien'].endswith('web'))
         self.assertEqual(len(body['dau_van_giao_dien']), 12)
+        self.assertEqual(set(body['van_tay_tung_tep']),
+                         {'index.html', 'style.css', 'app.js'})
+
+    def test_the_fingerprint_ignores_windows_line_endings(self):
+        """Git trên Windows đổi LF thành CRLF; không chuẩn hoá thì phép so vô dụng."""
+        from app.api.main import _bam
+        self.assertEqual(_bam(b'a\r\nb\r\n'), _bam(b'a\nb\n'))
+        self.assertNotEqual(_bam(b'a\nb\n'), _bam(b'a\nc\n'))
 
     def test_the_sidebar_comes_before_the_map_in_the_markup_and_the_grid(self):
         """Cột lọc phải nằm BÊN TRÁI: ô lưới đầu tiên, và cũng là thẻ đầu tiên."""
