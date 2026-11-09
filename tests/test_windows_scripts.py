@@ -72,5 +72,31 @@ class PowerShellScriptTest(unittest.TestCase):
             self.assertIn(group, text)
 
 
+class NativeCommandErrorTest(unittest.TestCase):
+    """Script gọi nhiều lệnh ngoài (gcloud, tar) nên không được dùng ErrorActionPreference Stop.
+
+    Với 'Stop', PowerShell coi MỌI dòng stderr của một lệnh ngoài là lỗi nghiêm trọng và
+    dừng script giữa chừng, dù lệnh đó chạy thành công. gcloud in tiến trình và cả thông
+    báo "Updated property" ra stderr, nên script chết ngay ở bước đầu. Đã xảy ra thật.
+    """
+
+    TAI = Path(__file__).resolve().parent.parent / 'scripts' / 'windows' / 'tai_tiles_ve_o_E.ps1'
+
+    def test_the_download_script_does_not_stop_on_native_stderr(self):
+        text = self.TAI.read_text(encoding='ascii')
+        self.assertNotIn("$ErrorActionPreference = 'Stop'", text)
+        self.assertIn("$ErrorActionPreference = 'Continue'", text)
+        # Bù lại thì phải kiểm mã thoát của từng lệnh ngoài.
+        self.assertGreaterEqual(text.count('$LASTEXITCODE'), 3)
+
+    def test_it_never_changes_the_global_gcloud_configuration(self):
+        """'gcloud config set' sửa cấu hình của cả máy; dùng biến môi trường thay thế."""
+        text = self.TAI.read_text(encoding='ascii')
+        # Bỏ dòng chú thích: nhắc tới tên lệnh trong chú thích là hợp lệ.
+        ma = '\n'.join(d for d in text.splitlines() if not d.lstrip().startswith('#'))
+        self.assertNotIn('gcloud config set', ma)
+        self.assertIn('CLOUDSDK_STORAGE_SLICED_OBJECT_DOWNLOAD_MAX_COMPONENTS', text)
+
+
 if __name__ == '__main__':
     unittest.main()

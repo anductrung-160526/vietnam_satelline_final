@@ -21,16 +21,27 @@ param(
   [switch]$XoaTrenBucket    # xoa goi khoi bucket sau khi kiem tra xong
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Stop' khong dung duoc o day: gcloud va tar in tien trinh ra stderr, va voi 'Stop'
+# PowerShell coi moi dong stderr cua lenh ngoai la loi nghiem trong roi dung script
+# giua chung du lenh chay thanh cong. Thay vao do kiem $LASTEXITCODE sau tung lenh.
+$ErrorActionPreference = 'Continue'
+
+function Dung-Lai($thong_diep) {
+  Write-Host ""
+  Write-Host "LOI: $thong_diep" -ForegroundColor Red
+  exit 1
+}
 
 # Tile da nen ZSTD muc 9 san nen khong nen them duoc nua; cach duy nhat de nhanh hon
 # la dung nhieu luong hon tren duong truyen. gcloud chia mot file lon thanh nhieu manh
 # tai song song - mac dinh 4 manh, nang len giup bao hoa duong truyen tot hon.
+# Dat bang bien moi truong thay vi 'gcloud config set': khong sua cau hinh toan cuc
+# cua may, va khong in gi ra stderr.
 function Dat-SongSong($n) {
-  & gcloud config set storage/sliced_object_download_max_components $n 2>$null | Out-Null
-  & gcloud config set storage/sliced_object_download_threshold 64MiB 2>$null | Out-Null
-  & gcloud config set storage/process_count 8 2>$null | Out-Null
-  & gcloud config set storage/thread_count 8 2>$null | Out-Null
+  $env:CLOUDSDK_STORAGE_SLICED_OBJECT_DOWNLOAD_MAX_COMPONENTS = "$n"
+  $env:CLOUDSDK_STORAGE_SLICED_OBJECT_DOWNLOAD_THRESHOLD = "64MiB"
+  $env:CLOUDSDK_STORAGE_PROCESS_COUNT = "8"
+  $env:CLOUDSDK_STORAGE_THREAD_COUNT = "8"
 }
 
 function Doc-Manifest($path) {
@@ -52,7 +63,7 @@ if ($TatCa) {
   $ds = & gcloud storage ls "$Bucket/tiles_*.tar"
   $nams = $ds | ForEach-Object { if ($_ -match 'tiles_.+_(\d{4})\.tar$') { $matches[1] } } |
           Sort-Object -Unique
-  if (-not $nams) { Write-Error "Khong thay goi nao tren $Bucket. Chay dong_goi_tiles.sh tren may ao truoc." }
+  if (-not $nams) { Dung-Lai "Khong thay goi nao tren $Bucket. Chay dong_goi_tiles.sh tren may ao truoc." }
   Write-Host "=== Se tai $($nams.Count) nam: $($nams -join ', ') ===" -ForegroundColor Cyan
   $batDau = Get-Date
   $hong = @()
@@ -71,7 +82,7 @@ if ($TatCa) {
   exit 0
 }
 
-if (-not $Nam) { Write-Error "Thieu -Nam. Vi du: -Nam 2016. Hoac -TatCa de tai het, -LietKe de xem co nhung goi nao." }
+if (-not $Nam) { Dung-Lai "Thieu -Nam. Vi du: -Nam 2016. Hoac -TatCa de tai het, -LietKe de xem co nhung goi nao." }
 if (-not (Test-Path $Root)) {
   Write-Host "KHONG THAY $Root - o cung chua duoc cam?" -ForegroundColor Red
   Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{n='Trong(GB)';e={[math]::Round($_.Free/1GB,1)}} | Format-Table
@@ -86,10 +97,10 @@ Write-Host "    Trung chuyen qua: $TamThoi"
 Dat-SongSong $SoLuong
 $dongHo = Get-Date
 & gcloud storage cp "$Bucket/tiles_*_$Nam.tar" "$Bucket/tiles_*_$Nam.tar.sha256" "$Bucket/tiles_*_$Nam.tar.manifest" $TamThoi
-if ($LASTEXITCODE -ne 0) { Write-Error "Tai that bai. Chay lai lenh nay, gcloud se tiep tuc cho dang do." }
+if ($LASTEXITCODE -ne 0) { Dung-Lai "Tai that bai. Chay lai lenh nay, gcloud se tiep tuc cho dang do." }
 
 $goi = Get-ChildItem "$TamThoi\tiles_*_$Nam.tar"
-if (-not $goi) { Write-Error "Khong thay goi nao cho nam $Nam trong $TamThoi" }
+if (-not $goi) { Dung-Lai "Khong thay goi nao cho nam $Nam trong $TamThoi" }
 
 $tongByte = ($goi | Measure-Object Length -Sum).Sum
 $giay = ((Get-Date) - $dongHo).TotalSeconds
@@ -120,7 +131,7 @@ foreach ($tar in $goi) {
   New-Item -ItemType Directory -Force -Path $dich | Out-Null
   Write-Host "    Giai nen vao $dich ..."
   & tar.exe -xf $tar.FullName -C $dich
-  if ($LASTEXITCODE -ne 0) { Write-Error "Giai nen that bai. O E con du cho khong?" }
+  if ($LASTEXITCODE -ne 0) { Dung-Lai "Giai nen that bai. O E con du cho khong?" }
 
   $thu_muc = Join-Path $dich "VN_$($manifest['san_pham'])_$Nam"
   $so_that = (Get-ChildItem (Join-Path $thu_muc 'tiles') -Filter *.tif -File -ErrorAction SilentlyContinue | Measure-Object).Count
