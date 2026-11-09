@@ -8,6 +8,8 @@ DEFAULT_DB = Path(__file__).resolve().parent.parent / 'data' / 'vngis.db'
 # Tên cột lấy đúng theo task_pipeline/derive.py. Đổi tên ở đây mà không đổi ở derive thì
 # bảng vẫn nạp được dòng nhưng cột rỗng, và không có gì báo lỗi — đã xảy ra thật.
 NIGHT_FIELDS = ('nam', 'nguon_anh', 'sol_ntl', 'mat_do_ntl', 'thay_doi_ntl',
+                'sol_ntl_hc', 'mat_do_ntl_hc', 'thay_doi_ntl_hc',
+                'sol_ntl_tho', 'nguong_nen', 'so_pixel_nen',
                 'mean_ntl', 'std_ntl', 'min_ntl', 'max_ntl', 'cv_ntl',
                 'so_pixel_hop_le', 'so_pixel_sang', 'dt_sang_km2', 'ty_le_sang_pct',
                 'sol_vung_sang', 'nguong_sang',
@@ -72,10 +74,17 @@ def indices(code, year_from=2004, year_to=2025):
     # derive.py ghi hieu_chinh='PENDING'; CLAUDE.md lại nói 'CHUA_HIEU_CHINH'. Nhận cả hai,
     # và chốt bằng nguon_anh: chuỗi có cả DMSP lẫn VIIRS thì chắc chắn bắc qua mốc đổi vệ tinh.
     nguon = {row.get('nguon_anh') for row in night}
+    bac_qua_moc = len(nguon - {None}) > 1
     chua_hieu_chinh = any(row.get('hieu_chinh') in ('PENDING', 'CHUA_HIEU_CHINH') for row in night)
-    if len(nguon - {None}) > 1 or (night and chua_hieu_chinh):
-        warnings.append('Chuỗi ánh sáng đêm chưa hiệu chỉnh liên vệ tinh DMSP–VIIRS: '
-                        'chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025).')
+    da_hieu_chinh = any(row.get('sol_ntl_hc') is not None for row in night)
+    if bac_qua_moc and da_hieu_chinh and not chua_hieu_chinh:
+        warnings.append('Chuỗi bắc qua mốc đổi vệ tinh 2013 và ĐÃ hiệu chỉnh DMSP→VIIRS: '
+                        'dùng sol_ntl_hc khi so sánh hai giai đoạn, sol_ntl là giá trị gốc '
+                        'theo thang đo riêng của từng vệ tinh.')
+    elif bac_qua_moc or (night and chua_hieu_chinh):
+        warnings.append('Chuỗi ánh sáng đêm CHƯA hiệu chỉnh liên vệ tinh DMSP–VIIRS: '
+                        'chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025). '
+                        'Chạy: python3 -m task_pipeline.harmonize')
     fake = any(row.get('trang_thai') == 'GIA_LAP' for row in night + day) \
         or any(row.get('nguon') == 'GIA_LAP' for row in economy)
     if fake:
@@ -137,6 +146,18 @@ INDICATORS = (
     dict(ma='thay_doi_ntl', ten='Biến động độ sáng so với năm trước', don_vi='%',
          bang='ntl_annual', chu_so=2,
          mo_ta='Chỉ so trong cùng một nguồn; bỏ trống tại mốc DMSP→VIIRS năm 2013.'),
+    dict(ma='sol_ntl_hc', ten='Tổng độ sáng (đã hiệu chỉnh DMSP→VIIRS)', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Chuỗi thống nhất 2004–2025: DMSP quy về thang VIIRS bằng hàm lũy thừa '
+               'khớp trên năm chồng lấn 2013. Dùng cột này khi so sánh xuyên mốc 2013.'),
+    dict(ma='mat_do_ntl_hc', ten='Mật độ sáng (đã hiệu chỉnh)', don_vi='nW/cm²/sr trên km²',
+         bang='ntl_annual', chu_so=4, mo_ta='sol_ntl_hc chia diện tích tỉnh.'),
+    dict(ma='thay_doi_ntl_hc', ten='Biến động (đã hiệu chỉnh)', don_vi='%',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Tính trên chuỗi đã hiệu chỉnh nên có giá trị cả ở mốc 2013→2014.'),
+    dict(ma='sol_ntl_tho', ten='Tổng độ sáng trước khi trừ nền', don_vi='nW/cm²/sr',
+         bang='ntl_annual', chu_so=2,
+         mo_ta='Để đo bước lọc nền lấy đi bao nhiêu; không dùng cho phân tích.'),
     dict(ma='mean_ntl', ten='Độ sáng trung bình mỗi điểm ảnh', don_vi='nW/cm²/sr',
          bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh hợp lệ.'),
     dict(ma='max_ntl', ten='Điểm sáng nhất tỉnh', don_vi='nW/cm²/sr',

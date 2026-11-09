@@ -73,6 +73,20 @@ if ($hong.Count) {
   Write-Host "Chay lai rieng nhom do, vi du:  -Ranges 12-22"
 }
 
+# Hieu chinh lien ket DMSP-VIIRS phai chay SAU khi ca 63 tinh co chi so,
+# vi mo hinh duoc khop tren toan bo 63 tinh cua nam chong lan 2013.
+if (-not $hong.Count -and $Only -ne 'day') {
+  Write-Host ""
+  Write-Host "--- Hieu chinh lien ket DMSP-VIIRS ---" -ForegroundColor Yellow
+  & python -m task_pipeline.harmonize --root $Root
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "    Khong hieu chinh duoc. Chuoi 2004-2025 chua so sanh duoc xuyen moc 2013." -ForegroundColor Red
+  }
+} elseif ($hong.Count) {
+  Write-Host ""
+  Write-Host "Bo qua buoc hieu chinh vi con nhom tinh bi loi." -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "Nap vao ung dung:" -ForegroundColor Cyan
 Write-Host "  python -m app.data.build_indices --root $Root"

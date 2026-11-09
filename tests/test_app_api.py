@@ -203,8 +203,8 @@ class WritableDatabaseTest(unittest.TestCase):
         body = self.client.get('/api/indices', params={'ma_tinh': '01'}).json()
         self.assertEqual(len(body['dem']), 22)
         self.assertFalse(body['thieu_du_lieu']['dem'])
-        self.assertTrue(any('CHUA_HIEU_CHINH' in w or 'chưa hiệu chỉnh' in w
-                            for w in body['canh_bao']))
+        self.assertTrue(any('CHƯA hiệu chỉnh' in w for w in body['canh_bao']),
+                        body['canh_bao'])
 
 
 class DeclaredDependenciesTest(unittest.TestCase):
@@ -262,9 +262,11 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
     """
 
     def _derive_source(self):
-        return (REPO / 'task_pipeline' / 'derive.py').read_text(encoding='utf-8')
+        # Cột _hc do task_pipeline/harmonize.py sinh ra sau bước merge, không phải derive.
+        return ((REPO / 'task_pipeline' / 'derive.py').read_text(encoding='utf-8')
+                + (REPO / 'task_pipeline' / 'harmonize.py').read_text(encoding='utf-8'))
 
-    def test_every_night_field_appears_in_derive(self):
+    def test_every_night_field_appears_in_the_pipeline(self):
         from app.api import store
         nguon = self._derive_source()
         thieu = [f for f in store.NIGHT_FIELDS

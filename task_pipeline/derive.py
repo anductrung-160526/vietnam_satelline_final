@@ -34,8 +34,13 @@ LIT_THRESHOLD_DMSP=5
 #   DMSP   DN 5           (province_pipeline/profiles.py lit_threshold_dmsp=5)
 # Không dùng chung một con số cho cả hai: DMSP là DN 0-63, VIIRS là bức xạ.
 LIT_THRESHOLD={'VIIRS':LIT_THRESHOLD_VIIRS,'DMSP':LIT_THRESHOLD_DMSP}
+# Ngưỡng nền: giá trị dưới mức này coi là nhiễu nền, đóng góp 0 vào sol_ntl.
+#   VIIRS 0,5 nW/cm2/sr — đúng mặc định lit_threshold_viirs của province_pipeline/profiles.py,
+#     thấp hơn ngưỡng "có ánh sáng" 1,5 nên hai khái niệm vẫn tách bạch.
+#   DMSP  0 — sản phẩm stable_lights của NOAA đã loại nền sẵn; trừ thêm lần nữa là trừ hai lần.
+BACKGROUND={'VIIRS':0.5,'DMSP':0.0}
 # Đổi công thức trong ntl_stats/day_stats thì tăng số này, nếu không Cache sẽ trả kết quả cũ.
-STATS_VERSION=3
+STATS_VERSION=4
 ROWS=512
 SENSOR={'LANDSAT':'LANDSAT','SENTINEL2':'SENTINEL2'}
 
@@ -298,21 +303,29 @@ def day_stats(path):
     return row
 
 
-def ntl_stats(path,threshold=None):
+def ntl_stats(path,threshold=None,background=0.0):
     """Thống kê một ảnh đêm trong một lượt đọc.
+
+    background: ngưỡng nền. Pixel dưới ngưỡng vẫn là pixel hợp lệ (vẫn tính vào diện tích
+    và vào mean/std) nhưng đóng góp 0 vào sol_ntl — đó là nghĩa của "trừ ánh sáng nền".
+    sol_ntl_tho giữ tổng chưa trừ nền để đo được bước này lấy đi bao nhiêu.
 
     threshold=None thì bỏ qua mọi chỉ số vùng sáng (trả None), không coi mọi pixel là sáng.
     """
     import numpy as np
     import rasterio
-    total=0.0;sq=0.0;n=0;lit=0;lit_total=0.0;lit_area=0.0;mx=None;mn=None
+    total=0.0;tho=0.0;sq=0.0;n=0;nen=0;lit=0;lit_total=0.0;lit_area=0.0;mx=None;mn=None
     with rasterio.open(path) as ds:
         for w in windows(ds.height,ds.width):
             a=ds.read(1,window=w).astype('float64')
             valid=a!=NODATA
             if not valid.any():continue
             x=a[valid]
-            total+=x.sum();sq+=float((x*x).sum());n+=x.size
+            tho+=x.sum()
+            tren_nen=x>=background if background else np.ones(x.shape,dtype=bool)
+            nen+=int((~tren_nen).sum())
+            total+=float(x[tren_nen].sum())
+            sq+=float((x*x).sum());n+=x.size
             mx=x.max() if mx is None else max(mx,x.max())
             mn=x.min() if mn is None else min(mn,x.min())
             if threshold is not None:
@@ -322,13 +335,14 @@ def ntl_stats(path,threshold=None):
                     lit_area+=float(np.broadcast_to(
                         pixel_area_km2(ds.transform,w,ds.crs),sang.shape)[sang].sum())
     if not n:
-        return dict(sol_ntl=None,so_pixel_hop_le=0,max_ntl=None,min_ntl=None,mean_ntl=None,
-                    std_ntl=None,cv_ntl=None,so_pixel_sang=None,sol_vung_sang=None,
-                    dt_sang_km2=None)
-    mean=total/n
+        return dict(sol_ntl=None,sol_ntl_tho=None,so_pixel_hop_le=0,so_pixel_nen=None,
+                    max_ntl=None,min_ntl=None,mean_ntl=None,std_ntl=None,cv_ntl=None,
+                    so_pixel_sang=None,sol_vung_sang=None,dt_sang_km2=None,nguong_nen=background)
+    mean=tho/n
     std=math.sqrt(max(sq/n-mean*mean,0))
     co_nguong=threshold is not None
-    return dict(sol_ntl=round(total,4),so_pixel_hop_le=n,
+    return dict(sol_ntl=round(total,4),sol_ntl_tho=round(tho,4),
+                so_pixel_hop_le=n,so_pixel_nen=nen,nguong_nen=background,
                 max_ntl=round(float(mx),4),min_ntl=round(float(mn),4),
                 mean_ntl=round(mean,6),std_ntl=round(std,6),
                 # Hệ số biến thiên: mức chênh lệch sáng-tối bên trong tỉnh.
@@ -385,7 +399,7 @@ def ntl_monthly_rows(province,filtered,area,cache):
     rows=[];by={}
     for period,path in sorted(filtered.items()):
         row=base(province,period[:4],period[5:],'VIIRS',area)
-        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'])))
+        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'],BACKGROUND['VIIRS'])))
         row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
         row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
                                if row.get('dt_sang_km2') is not None and area else None)
@@ -406,9 +420,9 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
         elif year>=2014 and y in viirs:path,src=viirs[y],'VIIRS'
         else:path,src=None,'DMSP' if year<=2013 else 'VIIRS'
         row=base(province,year,None,src,area)
-        nguong=LIT_THRESHOLD.get(src)
+        nguong=LIT_THRESHOLD.get(src);nen=BACKGROUND.get(src,0.0)
         if path:
-            row.update(cache.get(path,lambda x:ntl_stats(x,nguong)))
+            row.update(cache.get(path,lambda x:ntl_stats(x,nguong,nen)))
             row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
             row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
                                    if row.get('dt_sang_km2') is not None and area else None)
@@ -503,7 +517,10 @@ CODEBOOK=[
  ('nam','Năm','Numeric',''),('thang','Tháng','Numeric',''),
  ('nguon_anh','DMSP, VIIRS, Landsat hoặc Sentinel-2','String',''),
  ('dt_tu_nhien_km2','Diện tích tự nhiên của tỉnh (polygon GADM 4.1, EPSG:6933)','Numeric','km²'),
- ('sol_ntl','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ trong tỉnh','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
+ ('sol_ntl','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ SAU khi trừ nền','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
+ ('sol_ntl_tho','Tổng giá trị trước khi trừ nền, để đo tác động của bước lọc nền','Numeric','DN / nW/cm²/sr'),
+ ('nguong_nen','Ngưỡng nền đã dùng (VIIRS 0,5; DMSP 0 vì stable_lights đã loại nền)','Numeric','nW/cm²/sr hoặc DN'),
+ ('so_pixel_nen','Số pixel nằm dưới ngưỡng nền, đóng góp 0 vào sol_ntl','Numeric','pixel'),
  ('mat_do_ntl','Mật độ: sol_ntl / dt_tu_nhien_km2','Numeric','đơn vị bức xạ/km²'),
  ('thay_doi_ntl','Mức độ thay đổi so với năm trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
  ('thay_doi_ntl_yoy_pct','Thay đổi so với cùng tháng năm trước (VIIRS)','Numeric','%'),

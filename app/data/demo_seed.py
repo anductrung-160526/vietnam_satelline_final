@@ -31,16 +31,26 @@ def seed(db, seed_value=20261104):
     for index, code in enumerate(TINH):
         area = 1000 + index * 700
         base = 40 + index * 55
-        previous = None
+        previous = None; previous_hc = None
         for year in YEARS:
-            source = 'DMSP_GIA_LAP' if year <= 2013 else 'VIIRS_GIA_LAP'
-            scale = 1.0 if year <= 2013 else 2.3        # bậc nhảy đổi vệ tinh, cố ý để thấy
-            sol = base * scale * (1 + 0.045 * (year - 2004)) * random.uniform(0.95, 1.05)
+            viirs = year >= 2014
+            source = 'VIIRS_GIA_LAP' if viirs else 'DMSP_GIA_LAP'
+            # hc là chuỗi "thật" liền mạch, đã ở thang VIIRS: hiệu chỉnh xong thì không
+            # được còn bước nhảy nào ở mốc 2013-2014.
+            hc = round(base * 2.3 * (1 + 0.045 * (year - 2004))
+                       * random.uniform(0.97, 1.03), 2)
+            # sol là giá trị thô từng vệ tinh ghi được: DMSP đo trên thang DN khác hẳn,
+            # nên chuỗi thô CÓ bước nhảy — đúng thứ mà hiệu chỉnh phải xoá.
+            sol = hc if viirs else round((hc / 2.5) ** (1 / 1.3), 2)
             lit = area * min(0.9, 0.08 + 0.011 * (year - 2004)) * random.uniform(0.96, 1.04)
-            sang = year >= 2014          # chỉ VIIRS mới có ngưỡng sáng
+            sang = viirs
+            nen = 0.5 if viirs else 0.0
             night.append((code, year, source, round(sol, 2), round(sol / area, 6),
                           None if previous is None or year == 2014
                           else round((sol - previous) / previous * 100, 2),
+                          hc, round(hc / area, 6), None if previous is None
+                          else round((hc - (previous_hc or hc)) / (previous_hc or hc) * 100, 2),
+                          round(sol * 1.04, 2), nen, int(area * 0.3),
                           round(sol / area, 6), round(sol / area * 0.6, 6), 0.0,
                           round(sol / 9, 4), 0.6,
                           int(area * 4), int(lit) if sang else None,
@@ -48,8 +58,9 @@ def seed(db, seed_value=20261104):
                           round(100 * lit * 0.25 / area, 2) if sang else None,
                           round(sol * 0.8, 2) if sang else None,
                           1.5 if sang else None,
-                          float(area), 'GIA_LAP', 'PENDING', 'GIA_LAP'))
-            previous = sol
+                          float(area), 'GIA_LAP',
+                          'DMSP_TO_VIIRS_POWER_OVERLAP2013_v1', 'GIA_LAP'))
+            previous = sol; previous_hc = hc
             if year >= 2016:
                 phase = (year - 2016) / 9
                 day.append((code, year, 'SENTINEL2_GIA_LAP', 'TOA' if year < 2019 else 'SR',
@@ -66,10 +77,12 @@ def seed(db, seed_value=20261104):
 
     connection.executemany(
         'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mat_do_ntl,'
-        'thay_doi_ntl,mean_ntl,std_ntl,min_ntl,max_ntl,cv_ntl,so_pixel_hop_le,'
+        'thay_doi_ntl,sol_ntl_hc,mat_do_ntl_hc,thay_doi_ntl_hc,'
+        'sol_ntl_tho,nguong_nen,so_pixel_nen,'
+        'mean_ntl,std_ntl,min_ntl,max_ntl,cv_ntl,so_pixel_hop_le,'
         'so_pixel_sang,dt_sang_km2,ty_le_sang_pct,sol_vung_sang,nguong_sang,'
         'dt_tu_nhien_km2,ghi_chu,hieu_chinh,trang_thai) VALUES('
-        + ','.join('?' * 21) + ')', night)
+        + ','.join('?' * 27) + ')', night)
     connection.executemany(
         'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,loai_phan_xa,'
         'NDVI_mean,NDVI_std,NDBI_mean,NDBI_std,MNDWI_mean,MNDWI_std,BSI_mean,BSI_std,'

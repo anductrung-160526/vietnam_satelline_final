@@ -85,7 +85,8 @@ function veBieuDo(id, nhan, loatSo, mau, haiTruc){
     series: loatSo.map((s,i) => ({
       name:s.name, type:'line', data:s.data, smooth:true, showSymbol:false,
       yAxisIndex: haiTruc ? i : 0,
-      connectNulls:false, lineStyle:{width:2},
+      connectNulls:false,
+      lineStyle:{width: s.mo ? 1.4 : 2, type: s.mo ? 'dashed' : 'solid'},
       itemStyle:{color: s.color || mau[i % mau.length]},
     }))}, true);
 }
@@ -125,8 +126,16 @@ async function veTinh(tieuDiem = true){
 
   const namDemArr  = d.dem.map(r => r.nam);
   const namNgayArr = d.ngay.map(r => r.nam);
-  veBieuDo('bd-dem', namDemArr,
-    [{name:'Tổng độ sáng (SOL)', data:d.dem.map(r => so(r.sol_ntl))}], ['#ffc857']);
+
+  /* Khi đã hiệu chỉnh DMSP→VIIRS thì chuỗi hiệu chỉnh là đường chính: chuỗi thô có một
+     bước nhảy giả ở mốc 2013–2014 do đổi vệ tinh, rất dễ bị đọc thành biến động kinh tế.
+     Vẫn vẽ chuỗi thô bằng nét mờ để thấy được bước hiệu chỉnh đã làm gì. */
+  const coHieuChinh = d.dem.some(r => r.sol_ntl_hc !== null && r.sol_ntl_hc !== undefined);
+  veBieuDo('bd-dem', namDemArr, coHieuChinh
+    ? [{name:'SOL đã hiệu chỉnh', data:d.dem.map(r => so(r.sol_ntl_hc)), color:'#ffc857'},
+       {name:'SOL thô (thang từng vệ tinh)', data:d.dem.map(r => so(r.sol_ntl)),
+        color:'#5a6b88', mo:true}]
+    : [{name:'Tổng độ sáng (SOL)', data:d.dem.map(r => so(r.sol_ntl))}], ['#ffc857','#5a6b88']);
   veBieuDo('bd-dien-tich', namDemArr,
     [{name:'Số điểm ảnh có dữ liệu', data:d.dem.map(r => so(r.so_pixel_hop_le, 0))},
      {name:'Mật độ sáng',      data:d.dem.map(r => so(r.mat_do_ntl, 3))}],

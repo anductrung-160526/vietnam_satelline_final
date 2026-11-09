@@ -14,9 +14,14 @@ CREATE TABLE IF NOT EXISTS tinh(
 -- Đặt tên khác đi thì build_indices vẫn nạp được dòng nhưng cột để rỗng, không báo lỗi.
 CREATE TABLE IF NOT EXISTS ntl_annual(
   ma_tinh TEXT NOT NULL, ten_tinh TEXT, nam INTEGER NOT NULL, nguon_anh TEXT,
-  sol_ntl REAL,              -- quy mô: tổng độ sáng toàn tỉnh
+  sol_ntl REAL,              -- quy mô: tổng độ sáng, SAU khi trừ nền
+  sol_ntl_tho REAL,          -- tổng trước khi trừ nền, để đo tác động bước lọc
+  nguong_nen REAL,           -- ngưỡng nền: VIIRS 0,5; DMSP 0 (stable_lights đã loại nền)
+  so_pixel_nen INTEGER,      -- số điểm dưới ngưỡng nền
   mat_do_ntl REAL,           -- mật độ: sol_ntl / diện tích
-  thay_doi_ntl REAL,         -- % so năm trước, chỉ trong cùng một nguồn
+  thay_doi_ntl REAL,         -- % so năm trước, CHỈ trong cùng một nguồn
+  -- Sau hiệu chỉnh liên kết DMSP->VIIRS: so sánh được xuyên mốc 2013.
+  sol_ntl_hc REAL, mat_do_ntl_hc REAL, thay_doi_ntl_hc REAL,
   mean_ntl REAL,             -- trung bình mỗi điểm ảnh
   std_ntl REAL,              -- độ lệch chuẩn
   min_ntl REAL, max_ntl REAL,

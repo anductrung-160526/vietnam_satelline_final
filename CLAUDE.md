@@ -9,9 +9,23 @@
 - Chỉ số tính theo tháng (DMSP theo năm), cấp tỉnh, 63 tỉnh trước sáp nhập.
 
 ## Quyết định đã chốt
-- Không hiệu chỉnh liên kết DMSP–VIIRS; không dùng bộ dữ liệu harmonized bên ngoài (Li et al.)
-  và không lấy thêm VIIRS 2013. Cột `hieu_chinh = CHUA_HIEU_CHINH`; `thay_doi_ntl` chỉ so trong
-  cùng một nguồn.
+- **CÓ hiệu chỉnh liên kết DMSP–VIIRS** (chốt 09/11/2026, đảo lại quyết định trước đó).
+  Tự khớp mô hình trên năm chồng lấn 2013 của chính bộ dữ liệu này; **không** dùng bộ dữ liệu
+  harmonized bên ngoài (Li et al.) và không lấy thêm VIIRS 2013 từ nguồn khác.
+  `task_pipeline/harmonize.py`: hồi quy log–log trên 63 tỉnh năm 2013, quy DMSP về thang VIIRS
+  (`sol_viirs = a * sol_dmsp^b`), số liệu VIIRS giữ nguyên. Ghi thêm cột `sol_ntl_hc`,
+  `mat_do_ntl_hc`, `thay_doi_ntl_hc`; **không ghi đè** cột gốc. `hieu_chinh` mang tên phương pháp.
+  Tham số mô hình lưu ở `metadata/hieu_chinh_dmsp_viirs.json`.
+  - So sánh xuyên mốc 2013 thì dùng cột `_hc`; cột gốc là giá trị theo thang riêng từng vệ tinh.
+  - `thay_doi_ntl` (gốc) vẫn chỉ so trong cùng một nguồn, bỏ trống ở mốc đổi vệ tinh.
+- **CÓ trừ ánh sáng nền theo ngưỡng** (chốt 09/11/2026). Pixel dưới ngưỡng vẫn hợp lệ nhưng đóng
+  góp 0 vào `sol_ntl`. Ngưỡng nền: VIIRS 0,5 nW/cm²/sr (bằng mặc định `lit_threshold_viirs` của
+  `province_pipeline/profiles.py`); DMSP 0 vì `stable_lights` của NOAA đã loại nền sẵn, trừ nữa
+  là trừ hai lần. `sol_ntl_tho` giữ tổng chưa trừ nền để đo được tác động.
+- Ngưỡng "có ánh sáng" (khác ngưỡng nền): VIIRS 1,5 nW/cm²/sr (`task_pipeline/scope.py`),
+  DMSP DN 5 (`province_pipeline/profiles.py`). Hai thang đo khác nhau, không dùng chung một số.
+- Đổi công thức trong `derive.ntl_stats`/`day_stats` thì **phải tăng `STATS_VERSION`**, nếu không
+  `Cache` trả lại kết quả cũ và cột mới sẽ rỗng mà không báo lỗi.
 - DMSP: năm có nhiều vệ tinh thì dùng vệ tinh mới nhất.
 - Cột lớp phủ (`dt_nong_nghiep`, `dt_do_thi`, `dt_rung`, `dt_mat_nuoc`, `dt_dat_khac`,
   `ty_le_nong_nghiep`, `dt_nn_chuyen_doi`) để trống cho đến khi có bộ điểm mẫu.
