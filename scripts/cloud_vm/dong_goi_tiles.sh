@@ -49,7 +49,9 @@ if [ "$TAT_CA" = 1 ]; then
   for y in "${cac_nam[@]}"; do
     echo
     echo "########## $y ##########"
-    if ! bash "$0" --root "$ROOT" --nam "$y" --bucket "$BUCKET" ${SAN_PHAM:+--san-pham "$SAN_PHAM"}; then
+    # Chuyển tiếp mọi cờ: thiếu --giu-lai ở đây thì cờ đó im lặng không có tác dụng.
+    if ! bash "$0" --root "$ROOT" --nam "$y" --bucket "$BUCKET" \
+         ${SAN_PHAM:+--san-pham "$SAN_PHAM"} $([ "$GIU_LAI" = 1 ] && echo --giu-lai); then
       echo "  $y HỎNG — bỏ qua, làm tiếp năm sau." >&2
     fi
   done
