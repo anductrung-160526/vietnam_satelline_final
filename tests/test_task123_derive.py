@@ -89,8 +89,18 @@ class NightTests(unittest.TestCase):
             rows,_=derive.ntl_annual_rows(P,dmsp,annual,10.0,cache)
             by={r['nam']:r for r in rows}
             self.assertEqual(by[2013]['nguon_anh'],'DMSP');self.assertEqual(by[2014]['sol_ntl'],18.0)
-            self.assertIsNone(by[2014]['thay_doi_ntl_pct']);self.assertEqual(by[2014]['ghi_chu'],'DOI_NGUON_ANH_CHUA_HIEU_CHINH')
+            self.assertIsNone(by[2014]['thay_doi_ntl']);self.assertEqual(by[2014]['ghi_chu'],'DOI_NGUON_ANH_CHUA_HIEU_CHINH')
             self.assertEqual(by[2014]['hieu_chinh'],'PENDING')
+            # Chỉ số vùng sáng chỉ tính cho VIIRS: DMSP là thang DN, chưa chốt ngưỡng.
+            self.assertEqual(by[2014]['nguong_sang'],derive.LIT_THRESHOLD['VIIRS'])
+            self.assertIsNotNone(by[2014]['so_pixel_sang'])
+            self.assertIsNone(by[2013]['nguong_sang'])
+            self.assertIsNone(by[2013]['so_pixel_sang'])
+            self.assertIsNone(by[2013]['dt_sang_km2'])
+            # Thống kê phân tán phải có ở cả hai nguồn.
+            for year in (2013,2014):
+                for field in ('mean_ntl','std_ntl','min_ntl','max_ntl','cv_ntl','so_pixel_hop_le'):
+                    self.assertIsNotNone(by[year][field],f'{field} thiếu ở {year}')
 
 
 class MergeTests(unittest.TestCase):
@@ -134,3 +144,89 @@ class MigrationTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class NtlFieldCoverageTest(unittest.TestCase):
+    """Bảng chỉ số đêm phải đủ các biến kế hoạch quản lý dữ liệu yêu cầu.
+
+    Kế hoạch (metadata/codebook_ntl.md) bắt buộc: ma_tinh, ten_tinh, nam, nguon_anh,
+    sol_ntl (quy mô), mat_do_ntl (mật độ), thay_doi_ntl (mức độ thay đổi).
+    Luồng chạy cũ (Task3 notebook, cấp huyện theo tháng) còn có thêm các chỉ số phân tán
+    và vùng sáng; phần này giữ chúng ở cấp tỉnh theo năm.
+    """
+
+    BAT_BUOC = ('ma_tinh','ten_tinh','nam','nguon_anh','sol_ntl','mat_do_ntl','thay_doi_ntl')
+    BO_SUNG = ('mean_ntl','std_ntl','min_ntl','max_ntl','cv_ntl','so_pixel_hop_le',
+               'so_pixel_sang','dt_sang_km2','ty_le_sang_pct','sol_vung_sang','nguong_sang')
+
+    def _rows(self):
+        import numpy as np, rasterio
+        from affine import Affine
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def anh(path, value):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                data = np.full((4, 4), value, dtype='float32')
+                data[0, 0] = 9.0                       # một điểm sáng vượt ngưỡng
+                with rasterio.open(path, 'w', driver='GTiff', height=4, width=4, count=1,
+                                   dtype='float32', crs='EPSG:4326', nodata=derive.NODATA,
+                                   transform=Affine(0.01, 0, 105.0, 0, -0.01, 21.0)) as ds:
+                    ds.write(data, 1)
+                return path
+            # Nền 0,5 nằm dưới ngưỡng 1,5 nên chỉ điểm 9,0 được tính là sáng;
+            # diện tích tỉnh 20 km² lớn hơn tổng 16 điểm ảnh (~18,5 km²) của ảnh giả.
+            dmsp = {str(y): anh(root / f'd{y}.tif', 1.0) for y in range(2004, 2014)}
+            viirs = {str(y): anh(root / f'v{y}.tif', 0.5) for y in range(2014, 2026)}
+            cache = derive.Cache(root / 'c.json')
+            rows, _ = derive.ntl_annual_rows(
+                dict(ma_tinh='01', ten_tinh='Hà Nội'), dmsp, viirs, 20.0, cache)
+            return {r['nam']: r for r in rows}
+
+    def test_the_plan_mandated_variables_are_all_present(self):
+        row = self._rows()[2020]
+        for field in self.BAT_BUOC:
+            with self.subTest(bien=field):
+                self.assertIn(field, row)
+                self.assertIsNotNone(row[field], f'{field} rỗng')
+
+    def test_the_extra_indicators_from_the_old_pipeline_are_present_for_viirs(self):
+        row = self._rows()[2020]
+        for field in self.BO_SUNG:
+            with self.subTest(bien=field):
+                self.assertIsNotNone(row.get(field), f'{field} rỗng ở năm VIIRS')
+
+    def test_dmsp_leaves_the_lit_area_indicators_blank_rather_than_guessing(self):
+        """DMSP là thang DN, không cùng đơn vị với VIIRS; áp ngưỡng 1,5 lên nó là sai."""
+        row = self._rows()[2010]
+        self.assertEqual(row['nguon_anh'], 'DMSP')
+        for field in ('so_pixel_sang', 'dt_sang_km2', 'ty_le_sang_pct',
+                      'sol_vung_sang', 'nguong_sang'):
+            with self.subTest(bien=field):
+                self.assertIsNone(row[field])
+        self.assertIsNotNone(row['std_ntl'])        # thống kê phân tán vẫn có
+
+    def test_the_coefficient_of_variation_is_std_over_mean(self):
+        row = self._rows()[2020]
+        self.assertAlmostEqual(row['cv_ntl'], row['std_ntl'] / row['mean_ntl'], places=3)
+
+    def test_only_pixels_above_the_threshold_count_as_lit(self):
+        row = self._rows()[2020]
+        self.assertEqual(row['so_pixel_sang'], 1)       # chỉ điểm 9,0; nền 0,5 bị loại
+        self.assertEqual(row['sol_vung_sang'], 9.0)
+        self.assertGreater(row['ty_le_sang_pct'], 0)
+        self.assertLessEqual(row['dt_sang_km2'], row['dt_tu_nhien_km2'] + 1e-6)
+
+    def test_changing_the_formula_invalidates_the_cache(self):
+        """Cache khoá theo size+mtime+STATS_VERSION: đổi công thức là mục cũ hết hiệu lực."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'x.bin'
+            path.write_bytes(b'x')
+            cache = derive.Cache(Path(tmp) / 'c.json')
+            self.assertEqual(cache.get(path, lambda p: {'v': 1}), {'v': 1})
+            self.assertEqual(cache.get(path, lambda p: {'v': 2}), {'v': 1})   # còn hiệu lực
+            goc = derive.STATS_VERSION
+            try:
+                derive.STATS_VERSION = goc + 1
+                self.assertEqual(cache.get(path, lambda p: {'v': 2}), {'v': 2})
+            finally:
+                derive.STATS_VERSION = goc

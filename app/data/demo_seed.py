@@ -37,11 +37,17 @@ def seed(db, seed_value=20261104):
             scale = 1.0 if year <= 2013 else 2.3        # bậc nhảy đổi vệ tinh, cố ý để thấy
             sol = base * scale * (1 + 0.045 * (year - 2004)) * random.uniform(0.95, 1.05)
             lit = area * min(0.9, 0.08 + 0.011 * (year - 2004)) * random.uniform(0.96, 1.04)
+            sang = year >= 2014          # chỉ VIIRS mới có ngưỡng sáng
             night.append((code, year, source, round(sol, 2), round(sol / area, 6),
-                          round(sol / 9, 4), round(sol / area, 6), int(area * 4),
-                          int(lit),
                           None if previous is None or year == 2014
                           else round((sol - previous) / previous * 100, 2),
+                          round(sol / area, 6), round(sol / area * 0.6, 6), 0.0,
+                          round(sol / 9, 4), 0.6,
+                          int(area * 4), int(lit) if sang else None,
+                          round(lit * 0.25, 2) if sang else None,
+                          round(100 * lit * 0.25 / area, 2) if sang else None,
+                          round(sol * 0.8, 2) if sang else None,
+                          1.5 if sang else None,
                           float(area), 'GIA_LAP', 'PENDING', 'GIA_LAP'))
             previous = sol
             if year >= 2016:
@@ -59,9 +65,11 @@ def seed(db, seed_value=20261104):
                             None, 'GIA_LAP'))
 
     connection.executemany(
-        'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mean_ntl,max_ntl,'
-        'mat_do_ntl,so_pixel_hop_le,so_pixel_sang,thay_doi_ntl_pct,dt_tu_nhien_km2,'
-        'ghi_chu,hieu_chinh,trang_thai) VALUES(' + ','.join('?' * 14) + ')', night)
+        'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mat_do_ntl,'
+        'thay_doi_ntl,mean_ntl,std_ntl,min_ntl,max_ntl,cv_ntl,so_pixel_hop_le,'
+        'so_pixel_sang,dt_sang_km2,ty_le_sang_pct,sol_vung_sang,nguong_sang,'
+        'dt_tu_nhien_km2,ghi_chu,hieu_chinh,trang_thai) VALUES('
+        + ','.join('?' * 21) + ')', night)
     connection.executemany(
         'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,loai_phan_xa,'
         'NDVI_mean,NDVI_std,NDBI_mean,NDBI_std,MNDWI_mean,MNDWI_std,BSI_mean,BSI_std,'

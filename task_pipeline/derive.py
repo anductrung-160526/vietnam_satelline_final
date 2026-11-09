@@ -28,6 +28,12 @@ NODATA=-9999
 DAY_BANDS=['BLUE','GREEN','RED','NIR','SWIR1','SWIR2']
 INDICES=['NDVI','NDBI','MNDWI','BSI']
 LIT_THRESHOLD_VIIRS=1.5
+# Ngưỡng "có ánh sáng" theo từng nguồn. DMSP là DN 0-63, không cùng thang với VIIRS
+# (nW/cm2/sr), nên áp 1,5 cho DMSP là sai. Để None cho tới khi có quyết định nghiên cứu;
+# các chỉ số vùng sáng của giai đoạn DMSP sẽ bỏ trống thay vì điền một con số vô nghĩa.
+LIT_THRESHOLD={'VIIRS':LIT_THRESHOLD_VIIRS,'DMSP':None}
+# Đổi công thức trong ntl_stats/day_stats thì tăng số này, nếu không Cache sẽ trả kết quả cũ.
+STATS_VERSION=2
 ROWS=512
 SENSOR={'LANDSAT':'LANDSAT','SENTINEL2':'SENTINEL2'}
 
@@ -291,17 +297,43 @@ def day_stats(path):
 
 
 def ntl_stats(path,threshold=None):
+    """Thống kê một ảnh đêm trong một lượt đọc.
+
+    threshold=None thì bỏ qua mọi chỉ số vùng sáng (trả None), không coi mọi pixel là sáng.
+    """
     import numpy as np
     import rasterio
-    total=0.0;n=0;lit=0;mx=None
+    total=0.0;sq=0.0;n=0;lit=0;lit_total=0.0;lit_area=0.0;mx=None;mn=None
     with rasterio.open(path) as ds:
         for w in windows(ds.height,ds.width):
-            x=ds.read(1,window=w).astype('float64');x=x[x!=NODATA]
-            if not x.size:continue
-            total+=x.sum();n+=x.size;mx=max(mx or x.max(),x.max())
-            if threshold is not None:lit+=int((x>=threshold).sum())
-    return dict(sol_ntl=round(total,4) if n else None,so_pixel_hop_le=n,max_ntl=round(float(mx),4) if mx is not None else None,
-                mean_ntl=round(total/n,6) if n else None,so_pixel_sang=lit if threshold is not None else None)
+            a=ds.read(1,window=w).astype('float64')
+            valid=a!=NODATA
+            if not valid.any():continue
+            x=a[valid]
+            total+=x.sum();sq+=float((x*x).sum());n+=x.size
+            mx=x.max() if mx is None else max(mx,x.max())
+            mn=x.min() if mn is None else min(mn,x.min())
+            if threshold is not None:
+                sang=valid&(a>=threshold)
+                if sang.any():
+                    lit+=int(sang.sum());lit_total+=float(a[sang].sum())
+                    lit_area+=float(np.broadcast_to(
+                        pixel_area_km2(ds.transform,w,ds.crs),sang.shape)[sang].sum())
+    if not n:
+        return dict(sol_ntl=None,so_pixel_hop_le=0,max_ntl=None,min_ntl=None,mean_ntl=None,
+                    std_ntl=None,cv_ntl=None,so_pixel_sang=None,sol_vung_sang=None,
+                    dt_sang_km2=None)
+    mean=total/n
+    std=math.sqrt(max(sq/n-mean*mean,0))
+    co_nguong=threshold is not None
+    return dict(sol_ntl=round(total,4),so_pixel_hop_le=n,
+                max_ntl=round(float(mx),4),min_ntl=round(float(mn),4),
+                mean_ntl=round(mean,6),std_ntl=round(std,6),
+                # Hệ số biến thiên: mức chênh lệch sáng-tối bên trong tỉnh.
+                cv_ntl=round(std/mean,4) if mean>0 else None,
+                so_pixel_sang=lit if co_nguong else None,
+                sol_vung_sang=round(lit_total,4) if co_nguong else None,
+                dt_sang_km2=round(lit_area,4) if co_nguong else None)
 
 
 def pct(cur,prev):
@@ -313,7 +345,8 @@ class Cache:
     def __init__(self,path):
         self.path=Path(path);self.data=json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {}
     def get(self,path,compute):
-        st=Path(path).stat();key=str(path);sig=[st.st_size,st.st_mtime_ns]
+        # STATS_VERSION nằm trong khoá: đổi công thức là mọi mục cũ tự hết hiệu lực.
+        st=Path(path).stat();key=str(path);sig=[st.st_size,st.st_mtime_ns,STATS_VERSION]
         hit=self.data.get(key)
         if hit and hit['sig']==sig:return hit['row']
         row=compute(path);self.data[key]=dict(sig=sig,row=row);return row
@@ -350,8 +383,11 @@ def ntl_monthly_rows(province,filtered,area,cache):
     rows=[];by={}
     for period,path in sorted(filtered.items()):
         row=base(province,period[:4],period[5:],'VIIRS',area)
-        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD_VIIRS)))
+        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'])))
         row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
+        row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
+                               if row.get('dt_sang_km2') is not None and area else None)
+        row['nguong_sang']=LIT_THRESHOLD['VIIRS']
         by[period]=row;rows.append(row)
     for period,row in by.items():
         prev=by.get(f'{int(period[:4])-1}-{period[5:]}')
@@ -368,14 +404,19 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
         elif year>=2014 and y in viirs:path,src=viirs[y],'VIIRS'
         else:path,src=None,'DMSP' if year<=2013 else 'VIIRS'
         row=base(province,year,None,src,area)
+        nguong=LIT_THRESHOLD.get(src)
         if path:
-            row.update(cache.get(path,ntl_stats))
+            row.update(cache.get(path,lambda x:ntl_stats(x,nguong)))
             row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
+            row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
+                                   if row.get('dt_sang_km2') is not None and area else None)
         else:
-            row.update(sol_ntl=None,mat_do_ntl=None)
+            row.update(sol_ntl=None,mat_do_ntl=None,ty_le_sang_pct=None)
         same=prev is not None and prev['nguon_anh']==src
-        row['thay_doi_ntl_pct']=pct(row['sol_ntl'],prev['sol_ntl']) if same else None
+        # Tên biến theo codebook (metadata/codebook_ntl.md), không phải thay_doi_ntl_pct.
+        row['thay_doi_ntl']=pct(row['sol_ntl'],prev['sol_ntl']) if same else None
         row['ghi_chu']='' if same or prev is None else 'DOI_NGUON_ANH_CHUA_HIEU_CHINH'
+        row['nguong_sang']=nguong
         row['hieu_chinh']='PENDING';row['trang_thai']='OK' if path else 'CHUA_CO_ANH'
         rows.append(row);prev=row
     if '2013' in dmsp and '2013' in viirs:
@@ -462,10 +503,21 @@ CODEBOOK=[
  ('dt_tu_nhien_km2','Diện tích tự nhiên của tỉnh (polygon GADM 4.1, EPSG:6933)','Numeric','km²'),
  ('sol_ntl','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ trong tỉnh','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
  ('mat_do_ntl','Mật độ: sol_ntl / dt_tu_nhien_km2','Numeric','đơn vị bức xạ/km²'),
- ('thay_doi_ntl_pct','Mức độ thay đổi so với năm trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
+ ('thay_doi_ntl','Mức độ thay đổi so với năm trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
  ('thay_doi_ntl_yoy_pct','Thay đổi so với cùng tháng năm trước (VIIRS)','Numeric','%'),
+ ('mean_ntl','Bức xạ trung bình trên pixel hợp lệ','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
+ ('std_ntl','Độ lệch chuẩn bức xạ trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('min_ntl','Giá trị nhỏ nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('max_ntl','Giá trị lớn nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('cv_ntl','Hệ số biến thiên std_ntl/mean_ntl: mức chênh lệch sáng–tối trong tỉnh','Numeric','không thứ nguyên'),
  ('hieu_chinh','Trạng thái hiệu chỉnh liên kết DMSP–VIIRS','String',''),
- ('so_pixel_sang','Số pixel VIIRS ≥ 1,5 nW/cm²/sr','Numeric','pixel'),
+ ('so_pixel_hop_le','Số pixel có dữ liệu trong ranh giới tỉnh','Numeric','pixel'),
+ ('so_pixel_sang','Số pixel vượt ngưỡng sáng; bỏ trống với DMSP vì chưa chốt ngưỡng','Numeric','pixel'),
+ ('dt_sang_km2','Diện tích các pixel vượt ngưỡng sáng','Numeric','km²'),
+ ('ty_le_sang_pct','dt_sang_km2 / dt_tu_nhien_km2: tỷ lệ diện tích được chiếu sáng','Numeric','%'),
+ ('sol_vung_sang','Tổng bức xạ chỉ trên các pixel vượt ngưỡng','Numeric','DN / nW/cm²/sr'),
+ ('nguong_sang','Ngưỡng dùng để xác định pixel sáng (VIIRS 1,5; DMSP chưa chốt)','Numeric','nW/cm²/sr'),
+ ('ghi_chu','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS','String',''),
  ('loai_phan_xa','SR (phản xạ bề mặt) hoặc TOA (Sentinel-2 2015–2018)','String',''),
  ('<KÊNH>_mean / _std','Trung bình / độ lệch chuẩn của phản xạ kênh (BLUE..SWIR2) và chỉ số NDVI, NDBI, MNDWI, BSI trên pixel hợp lệ','Numeric','phản xạ (0–1) / không thứ nguyên'),
  ('ty_le_hop_le_pct','Diện tích pixel hợp lệ / diện tích tự nhiên','Numeric','%'),
