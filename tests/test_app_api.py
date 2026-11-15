@@ -135,6 +135,25 @@ class ApiTest(unittest.TestCase):
                                                        'nam_tu': 2016, 'nam_den': 2020}).json()
         self.assertEqual(inside['canh_bao'], [])
 
+    def test_a_series_spanning_2010_warns_about_the_dmsp_satellite_change(self):
+        """Mốc F16→F18 nằm GIỮA giai đoạn DMSP; cột _hc không sửa nó, nên app phải nói ra."""
+        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                     'nam_tu': 2008, 'nam_den': 2012}).json()
+        self.assertTrue(any('2010' in w and 'F16' in w for w in body['canh_bao']),
+                        body['canh_bao'])
+        trong = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                      'nam_tu': 2010, 'nam_den': 2013}).json()
+        self.assertFalse(any('F16' in w for w in trong['canh_bao']),
+                         'nằm gọn trong giai đoạn F18 thì không có mốc nào để cảnh báo')
+
+    def test_the_2010_warning_says_the_harmonised_column_does_not_fix_it(self):
+        """Hiểu nhầm nguy hiểm nhất: tưởng sol_ntl_hc đã sửa mọi mốc đổi vệ tinh."""
+        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+                                                     'nam_tu': 2008, 'nam_den': 2012}).json()
+        moc = [w for w in body['canh_bao'] if 'F16' in w]
+        self.assertTrue(moc, body['canh_bao'])
+        self.assertIn('hiệu chỉnh', moc[0])
+
     def test_an_indicator_code_can_never_reach_the_sql(self):
         """Mã chỉ số do người dùng gửi: chỉ nhận mã có trong danh mục, không ghép vào SQL."""
         for bad in ('sol_ntl; DROP TABLE tinh', '"', 'khong_co_that', '*'):
@@ -382,6 +401,19 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
                  for y in range(2004, 2026)])
         data = store.indices('01', 2004, 2025)
         self.assertTrue(any('DMSP' in w and 'VIIRS' in w for w in data['canh_bao']))
+        self.assertTrue(any('F16' in w for w in data['canh_bao']),
+                        'chuỗi 2004-2025 cũng bắc qua mốc F16->F18 năm 2010')
+
+    def test_a_series_entirely_inside_the_f18_years_carries_no_2010_warning(self):
+        import sqlite3
+        from app.api import store
+        db, _, _ = fresh_database(self)
+        with sqlite3.connect(db) as connection:
+            connection.executemany(
+                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl) '
+                'VALUES(?,?,?,?)', [('01', y, 'DMSP', 1.0) for y in range(2010, 2014)])
+        data = store.indices('01', 2010, 2013)
+        self.assertFalse(any('F16' in w for w in data['canh_bao']), data['canh_bao'])
 
 
 class BuildBoundariesTest(unittest.TestCase):

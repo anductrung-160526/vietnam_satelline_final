@@ -133,5 +133,27 @@ class ItCatchesEachKindOfBreakage(unittest.TestCase):
         self._hong(sua, 'cùng biến động mạnh')
 
 
+class TheKnown2010SatelliteBreakIsNotReportedAsANewFault(unittest.TestCase):
+    """Mốc 2010 đã chốt giữ nguyên. Báo nó như lỗi mới mỗi lần chạy thì script mất tác dụng:
+    người dùng quen với màu đỏ và sẽ bỏ qua cả những lỗi thật."""
+
+    def test_the_2010_break_is_labelled_known_and_does_not_fail_the_run(self):
+        def sua(row):
+            if row['nam'] == 2010:
+                row['thay_doi_ntl'] = 420.0
+        code, out = chay(bang(sua))
+        self.assertIn('ĐÃ BIẾT', out)
+        self.assertIn('F16', out)
+        self.assertEqual(code, 0, f'mốc 2010 đã chốt giữ nguyên, không được coi là lỗi:\n{out}')
+
+    def test_the_same_break_in_another_year_still_fails(self):
+        def sua(row):
+            if row['nam'] == 2011:
+                row['thay_doi_ntl'] = 420.0
+        code, out = chay(bang(sua))
+        self.assertEqual(code, 1, f'năm khác 2010 vẫn phải báo lỗi:\n{out}')
+        self.assertIn('2011', out)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -59,6 +59,11 @@ chung một con số. Ngưỡng thật đã dùng được ghi ở cột `nguong
 
 Ngưỡng nền: VIIRS **0,5** nW/cm²/sr; DMSP **0** vì `stable_lights` của NOAA đã loại nền sẵn.
 
+> **Một tỉnh sáng bất thường chưa chắc là lỗi.** Bình Thuận đứng đầu cả nước về
+> `sol_ntl` năm 2025, trên cả TP.HCM, vì vùng trồng thanh long thắp đèn cao áp ban đêm
+> để ép cây ra hoa trái vụ. Đây là hoạt động kinh tế thật và là một ví dụ cho thấy ánh
+> sáng đêm bắt được cả kinh tế nông nghiệp, không riêng đô thị và công nghiệp.
+
 ---
 
 ## 2. Nhóm B — chưa tính, cần ghép ánh sáng với dân số và GDP
@@ -87,7 +92,7 @@ nhóm B nối ánh sáng với hoạt động kinh tế.
 
 ---
 
-## 3. Ba ràng buộc phương pháp
+## 3. Bốn ràng buộc phương pháp
 
 ### 3.1. GDP phải ở giá so sánh
 
@@ -103,7 +108,24 @@ DMSP (DN 0–63, bão hoà ở lõi đô thị) và VIIRS (bức xạ, không b�
 khác nhau. Dùng `sol_ntl` gốc cho chuỗi 2004–2025 sẽ tạo một bước nhảy giả ở mốc 2013→2014,
 và mọi độ co giãn tính qua mốc đó đều vô nghĩa.
 
-### 3.3. Thận trọng với DMSP ở tỉnh nhỏ và nghèo
+### 3.3. Không so sánh bắc qua năm 2010
+
+Ảnh DMSP không do một vệ tinh chụp: 2004–2009 là **F16**, 2010–2013 là **F18**, và NOAA
+không hiệu chuẩn các vệ tinh DMSP với nhau. Vì F16 dừng ở 2009 còn F18 bắt đầu 2010,
+hai vệ tinh **không có năm nào cùng phủ**, nên không thể đo độ lệch bằng chính bộ dữ
+liệu này như đã làm được ở mốc 2013. Dự án đã chốt giữ nguyên, không hiệu chỉnh.
+
+Biểu hiện trong bảng: nhiều tỉnh có `thay_doi_ntl` năm 2010 vọt lên hàng trăm phần trăm
+(Đắk Nông +576%, Bình Phước +371%). Đó là đổi cảm biến chứ không phải kinh tế.
+
+> **Quan trọng:** cột `_hc` **không** sửa mốc này. Nó chỉ quy DMSP về thang VIIRS ở mốc
+> 2013. Bắc qua 2010 thì cả cột gốc lẫn cột `_hc` đều không dùng được.
+
+Chuỗi 2004–2025 vì vậy có ba đoạn so sánh được trong nội bộ: 2004–2009, 2010–2013,
+và 2014–2025. Riêng hai đoạn sau nối được với nhau qua cột `_hc`. Mọi chỉ số nhóm B
+tính trên toàn chuỗi phải nêu hạn chế này, hoặc giới hạn ở 2014–2025.
+
+### 3.4. Thận trọng với DMSP ở tỉnh nhỏ và nghèo
 
 Gibson và cộng sự [8] chỉ ra DMSP kém tin cậy ở đơn vị địa lý nhỏ và vùng nông thôn, do
 bão hoà ở đô thị và nhiễu nền ở nông thôn. Nếu một kết luận phụ thuộc vào các tỉnh nhỏ

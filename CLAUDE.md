@@ -22,6 +22,16 @@
   Tham số mô hình lưu ở `metadata/hieu_chinh_dmsp_viirs.json`.
   - So sánh xuyên mốc 2013 thì dùng cột `_hc`; cột gốc là giá trị theo thang riêng từng vệ tinh.
   - `thay_doi_ntl` (gốc) vẫn chỉ so trong cùng một nguồn, bỏ trống ở mốc đổi vệ tinh.
+- **KHÔNG hiệu chỉnh mốc đổi vệ tinh DMSP F16→F18 năm 2010** (chốt 15/11/2026).
+  Ảnh DMSP 2004–2009 là vệ tinh F16, 2010–2013 là F18; NOAA không hiệu chuẩn các vệ tinh
+  DMSP với nhau. F16 dừng ở 2009 còn F18 bắt đầu 2010 nên **không có năm chồng lấn**:
+  không thể đo độ lệch bằng chính bộ dữ liệu này như đã làm ở mốc 2013.
+  Hệ quả: `thay_doi_ntl` năm 2010 của nhiều tỉnh vọt lên hàng trăm phần trăm — đó là
+  đổi cảm biến, không phải kinh tế. **`sol_ntl_hc` KHÔNG sửa mốc này**, nó chỉ xử lý
+  mốc DMSP→VIIRS năm 2013.
+  Mọi so sánh bắc qua 2010 là không hợp lệ, kể cả trên cột `_hc`. Giai đoạn VIIRS
+  2014–2025 không có mốc nối nào nên sạch. `app/api/store.py: MOC_2010` cảnh báo trên API;
+  `scripts/kiem_tra_chi_so_dem.py` nhắc lại khi soi bảng.
 - **CÓ trừ ánh sáng nền theo ngưỡng** (chốt 09/11/2026). Pixel dưới ngưỡng vẫn hợp lệ nhưng đóng
   góp 0 vào `sol_ntl`. Ngưỡng nền: VIIRS 0,5 nW/cm²/sr (bằng mặc định `lit_threshold_viirs` của
   `province_pipeline/profiles.py`); DMSP 0 vì `stable_lights` của NOAA đã loại nền sẵn, trừ nữa

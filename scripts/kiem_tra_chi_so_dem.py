@@ -97,17 +97,28 @@ def kiem_tra(rows):
     print('\n6. Biến động bất thường trong cùng một nguồn ảnh')
     manh = [(abs(so(r['thay_doi_ntl'])), r) for r in rows
             if so(r.get('thay_doi_ntl')) is not None and abs(so(r['thay_doi_ntl'])) > 50]
-    tot &= ket(len(manh) < len(rows) * 0.02,
-               f'{len(manh)} dòng biến động quá 50%/năm', 'dưới 2% tổng số là bình thường')
+    ngoai_2010 = [x for x in manh if str(x[1]['nam']) != '2010']
+    tot &= ket(len(ngoai_2010) < len(rows) * 0.02,
+               f'{len(ngoai_2010)} dòng biến động quá 50%/năm (không kể mốc 2010)',
+               'dưới 2% tổng số là bình thường')
     # Một tỉnh nhảy vọt là chuyện thường. Nhiều tỉnh cùng nhảy trong MỘT năm thì không
     # phải kinh tế, mà là lỗi xử lý của riêng năm đó — đây mới là dấu hiệu đáng tìm.
     theo_nam = {}
     for _, r in manh:
         theo_nam[r['nam']] = theo_nam.get(r['nam'], 0) + 1
     dong_loat = sorted(((n, c) for n, c in theo_nam.items() if c >= 10), key=lambda x: -x[1])
-    tot &= ket(not dong_loat, 'không năm nào có từ 10 tỉnh cùng biến động mạnh',
-               '; '.join(f'{n}: {c} tỉnh' for n, c in dong_loat[:4]) if dong_loat else '')
-    for _, r in sorted(manh, reverse=True, key=lambda x: x[0])[:5]:
+    # 2010 là mốc đổi vệ tinh DMSP F16->F18, đã chốt KHÔNG hiệu chỉnh (CLAUDE.md).
+    # Nó sẽ luôn hiện ra ở đây; báo như lỗi mới mỗi lần chạy thì lần sau không ai đọc nữa.
+    la_biet_truoc = [(n, c) for n, c in dong_loat if str(n) == '2010']
+    con_lai = [(n, c) for n, c in dong_loat if str(n) != '2010']
+    if la_biet_truoc:
+        n, c = la_biet_truoc[0]
+        print(f'  [ĐÃ BIẾT] 2010: {c} tỉnh — mốc đổi vệ tinh DMSP F16→F18, dự án chốt giữ'
+              ' nguyên vì hai vệ tinh không có năm chồng lấn để đo độ lệch.')
+        print('            Không so sánh bắc qua 2010, kể cả trên cột _hc.')
+    tot &= ket(not con_lai, 'không năm nào khác có từ 10 tỉnh cùng biến động mạnh',
+               '; '.join(f'{n}: {c} tỉnh' for n, c in con_lai[:4]) if con_lai else '')
+    for _, r in sorted(ngoai_2010, reverse=True, key=lambda x: x[0])[:5]:
         print(f"     {r['ten_tinh']:<20} {r['nam']}  {so(r['thay_doi_ntl']):+8.1f}%"
               f"  ({r.get('nguon_anh')})")
     return tot

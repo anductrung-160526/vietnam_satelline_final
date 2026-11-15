@@ -27,6 +27,16 @@ TOA_YEARS = range(2015, 2019)
 TOA_WARNING = ('Sentinel-2 2015–2018 là phản xạ đỉnh khí quyển (TOA, L1C); từ 2019 là phản xạ '
                'bề mặt (L2A). So sánh trực tiếp giữa hai giai đoạn cần nêu rõ khác biệt này.')
 
+# Mốc đổi vệ tinh thứ hai, nằm GIỮA giai đoạn DMSP và chưa được hiệu chỉnh.
+# NOAA không hiệu chuẩn các vệ tinh DMSP với nhau, và F16 (đến 2009) với F18
+# (từ 2010) không có năm nào cùng phủ nên không đo được độ lệch bằng dữ liệu này.
+# Cột sol_ntl_hc KHÔNG sửa mốc này — nó chỉ xử lý mốc DMSP→VIIRS năm 2013.
+MOC_2010 = ('Chuỗi bắc qua năm 2010, là mốc đổi vệ tinh DMSP F16→F18. Hai vệ tinh '
+            'không được NOAA hiệu chuẩn với nhau và dự án đã chốt KHÔNG hiệu chỉnh '
+            'mốc này, nên chênh lệch tại đây phần lớn là do đổi cảm biến chứ không '
+            'phải kinh tế. Không so sánh trực tiếp 2004–2009 với 2010–2013, kể cả '
+            'trên cột đã hiệu chỉnh.')
+
 
 def database_path():
     return Path(os.environ.get('VNGIS_DB', DEFAULT_DB))
@@ -73,6 +83,9 @@ def indices(code, year_from=2004, year_to=2025):
         warnings.append(TOA_WARNING)
     # derive.py ghi hieu_chinh='PENDING'; CLAUDE.md lại nói 'CHUA_HIEU_CHINH'. Nhận cả hai,
     # và chốt bằng nguon_anh: chuỗi có cả DMSP lẫn VIIRS thì chắc chắn bắc qua mốc đổi vệ tinh.
+    nam_dem = [int(row['nam']) for row in night if row.get('nam') is not None]
+    if nam_dem and min(nam_dem) <= 2009 and max(nam_dem) >= 2010:
+        warnings.append(MOC_2010)
     nguon = {row.get('nguon_anh') for row in night}
     bac_qua_moc = len(nguon - {None}) > 1
     chua_hieu_chinh = any(row.get('hieu_chinh') in ('PENDING', 'CHUA_HIEU_CHINH') for row in night)
@@ -268,6 +281,8 @@ def panel(code, year_from=2004, year_to=2025, codes=None):
 
 def _panel_warnings(entry, years):
     warnings = []
+    if entry['bang'] == 'ntl_annual' and min(years) <= 2009 and max(years) >= 2010:
+        warnings.append(MOC_2010)
     if entry['bang'] == 'ntl_annual' and min(years) <= 2013 <= max(years):
         warnings.append('Chuỗi bắc qua mốc đổi vệ tinh: DMSP-OLS đến 2013, VIIRS từ 2014. '
                         'Chưa hiệu chỉnh liên vệ tinh — không so sánh trực tiếp hai giai đoạn.')
