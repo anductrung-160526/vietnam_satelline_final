@@ -360,9 +360,15 @@ class Cache:
     """Per-file statistics cache keyed by size+mtime, so re-runs only read changed files."""
     def __init__(self,path):
         self.path=Path(path);self.data=json.loads(self.path.read_text(encoding='utf-8')) if self.path.exists() else {}
-    def get(self,path,compute):
+    def get(self,path,compute,nhan=()):
         # STATS_VERSION nằm trong khoá: đổi công thức là mọi mục cũ tự hết hiệu lực.
-        st=Path(path).stat();key=str(path);sig=[st.st_size,st.st_mtime_ns,STATS_VERSION]
+        # nhan: phân biệt các lần gọi cùng một file nhưng khác tham số (ngưỡng nền,
+        # ngưỡng sáng). Thiếu nó thì lần gọi sau nhận kết quả của lần gọi trước mà
+        # không có gì báo — chính là lỗi đã làm sai bảng chồng lấn 2013.
+        st=Path(path).stat();sig=[st.st_size,st.st_mtime_ns,STATS_VERSION]
+        # nhan vào KHÓA, không vào sig: cùng một file với hai bộ ngưỡng là hai mục
+        # riêng, nếu không chúng ghi đè nhau và mỗi lần chạy lại đọc lại cả ảnh.
+        key='|'.join((str(path),*nhan))
         hit=self.data.get(key)
         if hit and hit['sig']==sig:return hit['row']
         row=compute(path);self.data[key]=dict(sig=sig,row=row);return row
@@ -436,7 +442,14 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
         row['hieu_chinh']='PENDING';row['trang_thai']='OK' if path else 'CHUA_CO_ANH'
         rows.append(row);prev=row
     if '2013' in dmsp and '2013' in viirs:
-        d=cache.get(dmsp['2013'],ntl_stats);v=cache.get(viirs['2013'],ntl_stats)
+        # Phải dùng ĐÚNG ngưỡng nền của cột sol_ntl. Gọi ntl_stats trần (background=0)
+        # thì sol_viirs gồm cả nhiễu nền dưới 0,5 — một lượng tỷ lệ với diện tích tỉnh
+        # chứ không với kinh tế — và mô hình sẽ khớp trên đại lượng khác với đại lượng
+        # nó được áp lên. Đã xảy ra thật: R² tụt còn 0,57 và b < 1 (sai chiều vật lý).
+        d=cache.get(dmsp['2013'],lambda x:ntl_stats(x,LIT_THRESHOLD['DMSP'],BACKGROUND['DMSP']),
+                    nhan=('DMSP',))
+        v=cache.get(viirs['2013'],lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'],BACKGROUND['VIIRS']),
+                    nhan=('VIIRS',))
         overlap=dict(ma_tinh=province['ma_tinh'],ten_tinh=province['ten_tinh'],nam=2013,
                      sol_dmsp=d['sol_ntl'],sol_viirs=v['sol_ntl'],dt_tu_nhien_km2=round(area,3))
     return rows,overlap

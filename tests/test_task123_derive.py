@@ -244,3 +244,50 @@ class NtlFieldCoverageTest(unittest.TestCase):
                 self.assertEqual(cache.get(path, lambda p: {'v': 2}), {'v': 2})
             finally:
                 derive.STATS_VERSION = goc
+
+
+class OverlapTableMatchesTheColumnTheModelIsAppliedTo(unittest.TestCase):
+    """Bảng chồng lấn 2013 phải đo cùng một đại lượng với cột sol_ntl.
+
+    Lỗi đã xảy ra: bảng chồng lấn gọi ntl_stats trần (background=0) nên sol_viirs gồm cả
+    nhiễu nền dưới 0,5 — một lượng tỷ lệ với diện tích tỉnh. Mô hình hiệu chỉnh khớp trên
+    đại lượng đó rồi được áp cho sol_ntl đã trừ nền: R² 0,57 và b < 1 (sai chiều vật lý,
+    DMSP bão hòa thì b phải > 1).
+    """
+
+    def _overlap(self, gia_tri_nen):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def anh(path, nen):
+                # 15 điểm ảnh ở mức nền + 1 điểm đô thị thật.
+                data = np.full((1, 4, 4), nen, dtype='float32')
+                data[0, 0, 0] = 40.0
+                return tif(path, data, 'float32')
+
+            dmsp = {'2013': anh(root / 'd2013.tif', 1.0)}
+            viirs = {'2013': anh(root / 'v2013.tif', gia_tri_nen)}
+            cache = derive.Cache(root / 'c.json')
+            rows, overlap = derive.ntl_annual_rows(P, dmsp, viirs, 20.0, cache)
+            return overlap, {r['nam']: r for r in rows}
+
+    def test_viirs_background_is_subtracted_in_the_overlap_pair(self):
+        """15 điểm ở 0,2 nW nằm dưới ngưỡng nền 0,5: chúng không được vào sol_viirs."""
+        overlap, _ = self._overlap(0.2)
+        self.assertEqual(overlap['sol_viirs'], 40.0,
+                         'sol_viirs còn cộng cả nhiễu nền -> mô hình khớp sai đại lượng')
+
+    def test_the_dmsp_side_matches_the_annual_column_exactly(self):
+        overlap, rows = self._overlap(0.2)
+        self.assertEqual(overlap['sol_dmsp'], rows[2013]['sol_ntl'])
+
+    def test_the_cache_does_not_mix_two_threshold_sets_for_one_file(self):
+        """Cùng một file gọi với hai bộ ngưỡng phải là hai mục cache riêng."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = tif(Path(tmp) / 'a.tif',
+                       np.full((1, 4, 4), 0.2, dtype='float32'), 'float32')
+            cache = derive.Cache(Path(tmp) / 'c.json')
+            co_nen = cache.get(path, lambda x: derive.ntl_stats(x, 1.5, 0.5), nhan=('VIIRS',))
+            khong = cache.get(path, lambda x: derive.ntl_stats(x, None, 0.0), nhan=('tho',))
+            self.assertEqual(co_nen['sol_ntl'], 0.0)
+            self.assertAlmostEqual(khong['sol_ntl'], 0.2 * 16, places=4)

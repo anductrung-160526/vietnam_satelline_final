@@ -182,6 +182,14 @@ def main():
     print(f"Đã ghi {count} dòng, thêm cột sol_ntl_hc, mat_do_ntl_hc, thay_doi_ntl_hc.")
     if model['b'] > 1:
         print('  b > 1: mô hình đang bù cho sự bão hòa của DMSP ở các tỉnh sáng nhất.')
+    else:
+        print('  CẢNH BÁO b <= 1: sai chiều vật lý. DMSP bão hòa ở DN 63 nên tỉnh càng sáng'
+              ' thì DMSP càng hụt so với VIIRS, b phải > 1. Kiểm tra lại bảng chồng lấn'
+              ' có đo cùng đại lượng với cột sol_ntl (cùng ngưỡng nền) hay không.')
+    if model['r2'] is not None and model['r2'] < 0.8:
+        print(f"  CẢNH BÁO R² = {model['r2']:.4f} < 0,80: quan hệ hai thang đo yếu."
+              ' Chuỗi _hc dùng được để vẽ xu thế, nhưng KHÔNG nên rút kết luận định lượng'
+              ' bắc qua mốc 2013 mà không nói rõ mức tin cậy này trong báo cáo.')
 
 
 if __name__ == '__main__':
