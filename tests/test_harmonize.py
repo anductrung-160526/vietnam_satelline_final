@@ -60,53 +60,53 @@ class ApplyTest(unittest.TestCase):
              'so_tinh': 63, 'nam_chong_lan': 2013, 'huong': 'DMSP -> thang VIIRS'}
 
     def _rows(self, dmsp=100.0, viirs=1000.0):
-        return [dict(ma_tinh='01', nam=y, nguon_anh='DMSP' if y <= 2013 else 'VIIRS',
-                     sol_ntl=dmsp if y <= 2013 else viirs, dt_tu_nhien_km2=10.0)
+        return [dict(province_code='01', year=y, source='DMSP' if y <= 2013 else 'VIIRS',
+                     sol=dmsp if y <= 2013 else viirs, area_km2=10.0)
                 for y in range(2011, 2017)]
 
     def test_viirs_values_are_never_altered(self):
         """VIIRS là thang đích: một phép biến đổi chạm vào nó là sai."""
         rows = harmonize.apply(self._rows(), self.MODEL)
         for row in rows:
-            if row['nguon_anh'] == 'VIIRS':
-                self.assertEqual(row['sol_ntl_hc'], row['sol_ntl'])
+            if row['source'] == 'VIIRS':
+                self.assertEqual(row['sol_cal'], row['sol'])
 
     def test_dmsp_values_move_onto_the_viirs_scale(self):
         rows = harmonize.apply(self._rows(), self.MODEL)
-        dmsp = [r for r in rows if r['nguon_anh'] == 'DMSP'][0]
-        self.assertAlmostEqual(dmsp['sol_ntl_hc'], 2.5 * 100.0 ** 1.3, places=2)
-        self.assertNotEqual(dmsp['sol_ntl_hc'], dmsp['sol_ntl'])
+        dmsp = [r for r in rows if r['source'] == 'DMSP'][0]
+        self.assertAlmostEqual(dmsp['sol_cal'], 2.5 * 100.0 ** 1.3, places=2)
+        self.assertNotEqual(dmsp['sol_cal'], dmsp['sol'])
 
     def test_the_original_columns_survive_for_comparison(self):
         rows = harmonize.apply(self._rows(), self.MODEL)
-        self.assertTrue(all(r['sol_ntl'] in (100.0, 1000.0) for r in rows))
+        self.assertTrue(all(r['sol'] in (100.0, 1000.0) for r in rows))
 
     def test_the_fake_jump_at_the_satellite_change_disappears(self):
         """Đây chính là lý do phải hiệu chỉnh: +900% giả phải biến mất."""
         rows = harmonize.apply(self._rows(), self.MODEL)
-        theo_nam = {r['nam']: r for r in rows}
+        theo_nam = {r['year']: r for r in rows}
         tho = 100 * (1000.0 / 100.0 - 1)
         self.assertEqual(tho, 900.0)
-        self.assertLess(abs(theo_nam[2014]['thay_doi_ntl_hc']), 50.0)
+        self.assertLess(abs(theo_nam[2014]['sol_change_cal_pct']), 50.0)
 
     def test_density_is_recomputed_from_the_harmonised_value(self):
         rows = harmonize.apply(self._rows(), self.MODEL)
         for row in rows:
-            self.assertAlmostEqual(row['mat_do_ntl_hc'], row['sol_ntl_hc'] / 10.0, places=5)
+            self.assertAlmostEqual(row['sol_density_cal'], row['sol_cal'] / 10.0, places=5)
 
     def test_without_a_model_the_rows_say_so_instead_of_pretending(self):
         rows = harmonize.apply(self._rows(), None)
         for row in rows:
-            self.assertIsNone(row['sol_ntl_hc'])
-            self.assertEqual(row['hieu_chinh'], 'KHONG_DU_DU_LIEU_CHONG_LAN')
+            self.assertIsNone(row['sol_cal'])
+            self.assertEqual(row['calibration'], 'KHONG_DU_DU_LIEU_CHONG_LAN')
 
     def test_provinces_are_harmonised_independently(self):
-        rows = self._rows() + [dict(r, ma_tinh='27') for r in self._rows(dmsp=50.0)]
+        rows = self._rows() + [dict(r, province_code='27') for r in self._rows(dmsp=50.0)]
         harmonize.apply(rows, self.MODEL)
-        mot = [r for r in rows if r['ma_tinh'] == '01' and r['nam'] == 2012][0]
-        hai = [r for r in rows if r['ma_tinh'] == '27' and r['nam'] == 2012][0]
-        self.assertNotEqual(mot['sol_ntl_hc'], hai['sol_ntl_hc'])
-        self.assertIsNone([r for r in rows if r['ma_tinh'] == '27'][0]['thay_doi_ntl_hc'])
+        mot = [r for r in rows if r['province_code'] == '01' and r['year'] == 2012][0]
+        hai = [r for r in rows if r['province_code'] == '27' and r['year'] == 2012][0]
+        self.assertNotEqual(mot['sol_cal'], hai['sol_cal'])
+        self.assertIsNone([r for r in rows if r['province_code'] == '27'][0]['sol_change_cal_pct'])
 
 
 class EndToEndTest(unittest.TestCase):
@@ -119,7 +119,7 @@ class EndToEndTest(unittest.TestCase):
         overlap = []
         for i in range(63):
             d = random.uniform(10, 900)
-            overlap.append({'ma_tinh': f'{i + 1:02}', 'nam': 2013,
+            overlap.append({'province_code': f'{i + 1:02}', 'year': 2013,
                             'sol_dmsp': round(d, 4), 'sol_viirs': round(2.5 * d ** 1.3, 4)})
         with (processed / 'ntl_overlap_2013.csv').open('w', encoding='utf-8-sig',
                                                        newline='') as stream:
@@ -129,10 +129,10 @@ class EndToEndTest(unittest.TestCase):
         annual = []
         for i in range(63):
             for year in range(2004, 2026):
-                annual.append({'ma_tinh': f'{i + 1:02}', 'ten_tinh': f'T{i}', 'nam': year,
-                               'nguon_anh': 'DMSP' if year <= 2013 else 'VIIRS',
-                               'sol_ntl': 100.0 + i, 'dt_tu_nhien_km2': 10.0,
-                               'hieu_chinh': 'PENDING'})
+                annual.append({'province_code': f'{i + 1:02}', 'province_name': f'T{i}', 'year': year,
+                               'source': 'DMSP' if year <= 2013 else 'VIIRS',
+                               'sol': 100.0 + i, 'area_km2': 10.0,
+                               'calibration': 'PENDING'})
         with (processed / 'ntl_annual.csv').open('w', encoding='utf-8-sig',
                                                  newline='') as stream:
             writer = csv.DictWriter(stream, fieldnames=list(annual[0]))
@@ -143,18 +143,18 @@ class EndToEndTest(unittest.TestCase):
         from province_pipeline.sources import NTL_PACKAGE
         with tempfile.TemporaryDirectory() as directory:
             processed = self._write(directory)
-            model, count = harmonize.run(directory)
+            model, da_ghi = harmonize.run(directory)
             self.assertAlmostEqual(model['b'], 1.3, places=4)
-            self.assertEqual(count, 63 * 22)
+            self.assertEqual(da_ghi['ntl_annual'], 63 * 22)
 
             with (processed / 'ntl_annual.csv').open(encoding='utf-8-sig') as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 63 * 22)
-            for field in ('sol_ntl_hc', 'mat_do_ntl_hc', 'thay_doi_ntl_hc'):
+            for field in ('sol_cal', 'sol_density_cal', 'sol_change_cal_pct'):
                 self.assertIn(field, rows[0])
-            self.assertTrue(all(r['hieu_chinh'] == harmonize.METHOD for r in rows))
+            self.assertTrue(all(r['calibration'] == harmonize.METHOD for r in rows))
             # Cột gốc không bị ghi đè.
-            self.assertTrue(all(float(r['sol_ntl']) >= 100.0 for r in rows))
+            self.assertTrue(all(float(r['sol']) >= 100.0 for r in rows))
 
             meta = json.loads((Path(directory) / NTL_PACKAGE / 'metadata'
                                / 'hieu_chinh_dmsp_viirs.json').read_text(encoding='utf-8'))

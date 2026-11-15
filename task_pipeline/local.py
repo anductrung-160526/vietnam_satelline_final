@@ -282,9 +282,11 @@ def local_stages(config,root,control,state,boundaries,metadata,job_source,only='
         if do_day:
             tables['day_indices_monthly']+=derive.day_rows(p,day_status,day,area,cache)
         if do_night:
-            tables['ntl_monthly']+=derive.ntl_monthly_rows(p,filtered,area,cache)
+            thang=derive.ntl_monthly_rows(p,filtered,area,cache)
+            tables['ntl_monthly']+=thang
             rows,overlap=derive.ntl_annual_rows(p,{y:v for y,v in dmsp.items()},annual,area,cache)
             tables['ntl_annual']+=rows
+            tables['ntl_panel']+=derive.ntl_panel_rows(rows,thang)
             if overlap:tables['ntl_overlap_2013'].append(overlap)
         cache.save()
     for name,rows in tables.items():

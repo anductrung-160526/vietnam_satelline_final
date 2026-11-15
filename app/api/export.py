@@ -15,7 +15,7 @@ from pathlib import Path
 from . import store
 
 README = """VNGISDash — dữ liệu trích xuất
-Tỉnh: {ten_tinh} (mã {ma_tinh})
+Tỉnh: {province_name} (mã {province_code})
 Giai đoạn: {nam_tu}-{nam_den}
 Ngày trích xuất: {thoi_diem}
 
@@ -56,7 +56,7 @@ def build(code, year_from, year_to, include_images=True, timestamp=''):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('DOC_TRUOC.txt', README.format(
-            ten_tinh=data['ten_tinh'], ma_tinh=code, nam_tu=year_from, nam_den=year_to,
+            province_name=data['province_name'], province_code=code, nam_tu=year_from, nam_den=year_to,
             thoi_diem=timestamp, canh_bao=warnings).encode('utf-8'))
         archive.writestr('chi_so_dem.csv', _csv_bytes(
             data['dem'], store.NIGHT_FIELDS,
@@ -65,14 +65,14 @@ def build(code, year_from, year_to, include_images=True, timestamp=''):
             data['ngay'], store.DAY_FIELDS,
             'Chưa có chỉ số ảnh ngày cho tỉnh/giai đoạn này.'))
         archive.writestr('chi_so_kinh_te.csv', _csv_bytes(
-            data['kinh_te'], store.ECONOMY_FIELDS,
+            data['economy'], store.ECONOMY_FIELDS,
             'Chưa có dữ liệu kinh tế (dân số, GDP) — chờ giảng viên cung cấp.'))
         if include_images:
             added = 0
             for entry in store.cog_years('NTL'):
-                if not (year_from <= entry['nam'] <= year_to):
+                if not (year_from <= entry['year'] <= year_to):
                     continue
-                path = Path(entry['duong_dan'])
+                path = Path(entry['path'])
                 if path.is_file():
                     archive.write(path, f'anh_dem/{path.name}')
                     added += 1
@@ -99,16 +99,16 @@ def panel_csv(data, shape='rong'):
         writer.writerow([f'# LƯU Ý: {warning}'])
     writer.writerow([])
     if shape == 'rong':
-        writer.writerow(['ma_tinh', 'ten_tinh', 'chi_so', 'don_vi', 'nguon_anh', *years])
+        writer.writerow(['province_code', 'province_name', 'chi_so', 'don_vi', 'source', *years])
         for row in data['dong']:
-            writer.writerow([row['ma_tinh'], row['ten_tinh'], entry['ma'], entry['don_vi'],
-                             row['nguon_anh'] or '', *['' if v is None else v for v in row['gia_tri']]])
+            writer.writerow([row['province_code'], row['province_name'], entry['ma'], entry['don_vi'],
+                             row['source'] or '', *['' if v is None else v for v in row['gia_tri']]])
     else:
-        writer.writerow(['ma_tinh', 'ten_tinh', 'nam', 'chi_so', 'don_vi', 'gia_tri', 'nguon_anh'])
+        writer.writerow(['province_code', 'province_name', 'year', 'chi_so', 'don_vi', 'gia_tri', 'source'])
         for row in data['dong']:
             for year, value in zip(years, row['gia_tri']):
                 if value is None:
                     continue
-                writer.writerow([row['ma_tinh'], row['ten_tinh'], year, entry['ma'],
-                                 entry['don_vi'], value, row['nguon_anh'] or ''])
+                writer.writerow([row['province_code'], row['province_name'], year, entry['ma'],
+                                 entry['don_vi'], value, row['source'] or ''])
     return buffer.getvalue().encode('utf-8-sig')

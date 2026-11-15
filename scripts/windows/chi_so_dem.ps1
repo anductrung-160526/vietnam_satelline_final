@@ -88,6 +88,13 @@ if (-not $hong.Count -and $Only -ne 'day') {
 }
 
 Write-Host ""
+Write-Host "--- Kiem nghiem chat luong bo du lieu ---" -ForegroundColor Yellow
+& python scripts/kiem_dinh_chat_luong.py --root $Root
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "    Co muc can xem lai o tren. Khong phai muc nao cung la loi." -ForegroundColor Yellow
+}
+
+Write-Host ""
 Write-Host "Nap vao ung dung:" -ForegroundColor Cyan
 Write-Host "  python -m app.data.build_indices --root $Root"
 Write-Host "  uvicorn app.api.main:app --reload"

@@ -53,27 +53,27 @@ class ApiTest(unittest.TestCase):
         """63 tỉnh trước sáp nhập — con số này là quy tắc dự án, không phải tuỳ chọn."""
         body = self.client.get('/api/provinces').json()
         self.assertEqual(len(body['tinh']), 63)
-        self.assertEqual(body['tinh'][0]['ma_tinh'], '01')
-        self.assertTrue(all(len(t['ma_tinh']) == 2 for t in body['tinh']))
+        self.assertEqual(body['tinh'][0]['province_code'], '01')
+        self.assertTrue(all(len(t['province_code']) == 2 for t in body['tinh']))
 
     def test_a_province_without_indices_answers_empty_not_an_error(self):
         """Tỉnh chưa tính chỉ số vẫn phải trả 200 + mảng rỗng: app không được trắng xoá."""
-        response = self.client.get('/api/indices', params={'ma_tinh': '02'})
+        response = self.client.get('/api/indices', params={'province_code': '02'})
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body['ten_tinh'], 'Hà Giang')
+        self.assertEqual(body['province_name'], 'Hà Giang')
         self.assertEqual(body['dem'], [])
         self.assertTrue(body['thieu_du_lieu']['dem'])
-        self.assertTrue(body['thieu_du_lieu']['kinh_te'])
+        self.assertTrue(body['thieu_du_lieu']['economy'])
 
     def test_an_unknown_province_is_a_404_and_a_bad_year_range_a_400(self):
-        self.assertEqual(self.client.get('/api/indices', params={'ma_tinh': '99'}).status_code, 404)
+        self.assertEqual(self.client.get('/api/indices', params={'province_code': '99'}).status_code, 404)
         self.assertEqual(self.client.get(
-            '/api/indices', params={'ma_tinh': '01', 'nam_tu': 2020, 'nam_den': 2010}).status_code, 400)
+            '/api/indices', params={'province_code': '01', 'nam_tu': 2020, 'nam_den': 2010}).status_code, 400)
 
     def test_export_always_holds_the_four_parts_the_supervisor_asked_for(self):
         """Ảnh đêm, chỉ số ngày, chỉ số đêm, chỉ số kinh tế — kể cả khi phần đó còn trống."""
-        response = self.client.get('/api/export.zip', params={'ma_tinh': '01'})
+        response = self.client.get('/api/export.zip', params={'province_code': '01'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['content-type'], 'application/zip')
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
@@ -89,7 +89,7 @@ class ApiTest(unittest.TestCase):
 
     def test_the_export_filename_survives_an_http_header(self):
         """Header HTTP chỉ nhận latin-1; tên tỉnh có dấu từng làm hỏng cả lượt tải."""
-        response = self.client.get('/api/export.zip', params={'ma_tinh': '01'})
+        response = self.client.get('/api/export.zip', params={'province_code': '01'})
         disposition = response.headers['content-disposition']
         self.assertIn('ha_noi', disposition)
         disposition.encode('latin-1')
@@ -97,58 +97,58 @@ class ApiTest(unittest.TestCase):
     def test_health_and_coverage_do_not_crash_on_an_empty_database(self):
         self.assertTrue(self.client.get('/api/health').json()['ok'])
         body = self.client.get('/api/coverage').json()
-        self.assertEqual(set(body), {'dem', 'ngay', 'kinh_te', 'anh_cog'})
+        self.assertEqual(set(body), {'dem', 'ngay', 'economy', 'cog_image'})
 
     def test_the_province_list_is_loaded_from_the_pipelines_own_file(self):
         """Không có danh sách tỉnh thứ hai trong app: nó phải đến từ task_pipeline."""
-        self.assertEqual(self.report['tinh'], 63)
+        self.assertEqual(self.report['province'], 63)
         self.assertTrue((REPO / 'task_pipeline' / 'provinces.json').exists())
 
     def test_the_indicator_catalogue_reports_real_coverage(self):
         """Giao diện phải biết chỉ số nào còn trống để nói ra, thay vì vẽ bảng rỗng."""
         body = self.client.get('/api/indicators').json()['chi_so']
         codes = [c['ma'] for c in body]
-        self.assertIn('sol_ntl', codes)
+        self.assertIn('sol', codes)
         self.assertIn('gdp', codes)
         for entry in body:
             for field in ('ma', 'ten', 'don_vi', 'bang', 'chu_so', 'so_tinh', 'mo_ta'):
                 self.assertIn(field, entry)
-        # kinh_te rỗng khi giảng viên chưa gửi số liệu: phải báo 0, không báo None.
+        # economy rỗng khi giảng viên chưa gửi số liệu: phải báo 0, không báo None.
         self.assertEqual([c for c in body if c['ma'] == 'gdp'][0]['so_tinh'], 0)
 
     def test_the_panel_covers_all_63_provinces_even_the_empty_ones(self):
         """Bảng kiểu WDI liệt kê đủ 63 tỉnh; tỉnh chưa có số liệu là ô trống, không bị bỏ."""
-        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        body = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                      'nam_tu': 2020, 'nam_den': 2025}).json()
         self.assertEqual(len(body['dong']), 63)
         self.assertEqual(body['nam'], [2020, 2021, 2022, 2023, 2024, 2025])
         self.assertTrue(all(len(r['gia_tri']) == 6 for r in body['dong']))
         trong = [r for r in body['dong'] if all(v is None for v in r['gia_tri'])]
         self.assertEqual(len(trong) + body['so_tinh_co_du_lieu'], 63)
-        self.assertIn('02', [r['ma_tinh'] for r in trong])
+        self.assertIn('02', [r['province_code'] for r in trong])
 
     def test_a_panel_spanning_2013_warns_about_the_satellite_change(self):
-        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        body = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                      'nam_tu': 2010, 'nam_den': 2016}).json()
         self.assertTrue(any('DMSP' in w and 'VIIRS' in w for w in body['canh_bao']))
-        inside = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        inside = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                        'nam_tu': 2016, 'nam_den': 2020}).json()
         self.assertEqual(inside['canh_bao'], [])
 
     def test_a_series_spanning_2010_warns_about_the_dmsp_satellite_change(self):
         """Mốc F16→F18 nằm GIỮA giai đoạn DMSP; cột _hc không sửa nó, nên app phải nói ra."""
-        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        body = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                      'nam_tu': 2008, 'nam_den': 2012}).json()
         self.assertTrue(any('2010' in w and 'F16' in w for w in body['canh_bao']),
                         body['canh_bao'])
-        trong = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        trong = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                       'nam_tu': 2010, 'nam_den': 2013}).json()
         self.assertFalse(any('F16' in w for w in trong['canh_bao']),
                          'nằm gọn trong giai đoạn F18 thì không có mốc nào để cảnh báo')
 
     def test_the_2010_warning_says_the_harmonised_column_does_not_fix_it(self):
-        """Hiểu nhầm nguy hiểm nhất: tưởng sol_ntl_hc đã sửa mọi mốc đổi vệ tinh."""
-        body = self.client.get('/api/panel', params={'chi_so': 'sol_ntl',
+        """Hiểu nhầm nguy hiểm nhất: tưởng sol_cal đã sửa mọi mốc đổi vệ tinh."""
+        body = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                      'nam_tu': 2008, 'nam_den': 2012}).json()
         moc = [w for w in body['canh_bao'] if 'F16' in w]
         self.assertTrue(moc, body['canh_bao'])
@@ -156,23 +156,23 @@ class ApiTest(unittest.TestCase):
 
     def test_an_indicator_code_can_never_reach_the_sql(self):
         """Mã chỉ số do người dùng gửi: chỉ nhận mã có trong danh mục, không ghép vào SQL."""
-        for bad in ('sol_ntl; DROP TABLE tinh', '"', 'khong_co_that', '*'):
+        for bad in ('sol; DROP TABLE tinh', '"', 'khong_co_that', '*'):
             self.assertEqual(self.client.get('/api/panel', params={'chi_so': bad}).status_code, 404)
             self.assertEqual(self.client.get('/api/choropleth',
                                              params={'chi_so': bad}).status_code, 404)
         self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
 
     def test_the_two_csv_shapes_carry_the_header_and_the_method_note(self):
-        wide = self.client.get('/api/panel.csv', params={'chi_so': 'sol_ntl', 'nam_tu': 2004,
+        wide = self.client.get('/api/panel.csv', params={'chi_so': 'sol', 'nam_tu': 2004,
                                                          'nam_den': 2006}).content.decode('utf-8-sig')
-        self.assertIn('ma_tinh,ten_tinh,chi_so,don_vi,nguon_anh,2004,2005,2006', wide)
+        self.assertIn('province_code,province_name,chi_so,don_vi,source,2004,2005,2006', wide)
         self.assertIn('# Tổng độ sáng ban đêm', wide)
         self.assertIn('01,Hà Nội', wide)
-        long = self.client.get('/api/panel.csv', params={'chi_so': 'sol_ntl', 'dang': 'dai'}
+        long = self.client.get('/api/panel.csv', params={'chi_so': 'sol', 'dang': 'dai'}
                                ).content.decode('utf-8-sig')
-        self.assertIn('ma_tinh,ten_tinh,nam,chi_so,don_vi,gia_tri,nguon_anh', long)
+        self.assertIn('province_code,province_name,year,chi_so,don_vi,gia_tri,source', long)
         self.assertEqual(self.client.get('/api/panel.csv',
-                                         params={'chi_so': 'sol_ntl', 'dang': 'xxx'}).status_code, 400)
+                                         params={'chi_so': 'sol', 'dang': 'xxx'}).status_code, 400)
 
 
 class WritableDatabaseTest(unittest.TestCase):
@@ -191,7 +191,7 @@ class WritableDatabaseTest(unittest.TestCase):
         from app.api import store
         with sqlite3.connect(self.db) as connection:
             connection.execute(
-                'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,NDVI_mean) VALUES(?,?,?,?)',
+                'INSERT OR REPLACE INTO day_annual(province_code,year,source,NDVI_mean) VALUES(?,?,?,?)',
                 ('01', 2017, 'SENTINEL2', 0.42))
         data = store.indices('01', 2004, 2025)
         self.assertEqual(len(data['ngay']), 1)
@@ -204,22 +204,22 @@ class WritableDatabaseTest(unittest.TestCase):
         import sqlite3
         with sqlite3.connect(self.db) as connection:
             connection.executemany(
-                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,sol_ntl) VALUES(?,?,?)',
+                'INSERT OR REPLACE INTO ntl_annual(province_code,year,sol) VALUES(?,?,?)',
                 [('01', 2022, 10.0), ('27', 2022, 90.0), ('48', 2022, 50.0)])
-        body = self.client.get('/api/choropleth', params={'chi_so': 'sol_ntl', 'nam': 2022}).json()
+        body = self.client.get('/api/choropleth', params={'chi_so': 'sol', 'nam': 2022}).json()
         self.assertEqual(body['nho_nhat'], 10.0)
         self.assertEqual(body['lon_nhat'], 90.0)
         self.assertEqual(body['gia_tri']['27'], 90.0)
-        trong = self.client.get('/api/choropleth', params={'chi_so': 'sol_ntl', 'nam': 1999}).json()
+        trong = self.client.get('/api/choropleth', params={'chi_so': 'sol', 'nam': 1999}).json()
         self.assertIsNone(trong['nho_nhat'])
 
     def test_a_province_with_data_reports_it_and_keeps_the_calibration_note(self):
         import sqlite3
         with sqlite3.connect(self.db) as connection:
             connection.executemany(
-                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,sol_ntl,hieu_chinh) VALUES(?,?,?,?)',
+                'INSERT OR REPLACE INTO ntl_annual(province_code,year,sol,calibration) VALUES(?,?,?,?)',
                 [('01', y, float(y - 2000), 'CHUA_HIEU_CHINH') for y in range(2004, 2026)])
-        body = self.client.get('/api/indices', params={'ma_tinh': '01'}).json()
+        body = self.client.get('/api/indices', params={'province_code': '01'}).json()
         self.assertEqual(len(body['dem']), 22)
         self.assertFalse(body['thieu_du_lieu']['dem'])
         self.assertTrue(any('CHƯA hiệu chỉnh' in w for w in body['canh_bao']),
@@ -303,9 +303,9 @@ class StaticAndSchemaTest(unittest.TestCase):
 
     def test_static_files_are_served_with_no_cache(self):
         """Trình duyệt từng giữ style.css cũ rồi ghép với index.html mới -> giao diện lai."""
-        for duong_dan in ('/', '/style.css', '/app.js'):
-            with self.subTest(duong_dan=duong_dan):
-                phan_hoi = self.client.get(duong_dan)
+        for path in ('/', '/style.css', '/app.js'):
+            with self.subTest(path=path):
+                phan_hoi = self.client.get(path)
                 self.assertEqual(phan_hoi.status_code, 200)
                 self.assertIn('no-cache', phan_hoi.headers.get('cache-control', ''))
 
@@ -318,7 +318,7 @@ class StaticAndSchemaTest(unittest.TestCase):
         connection = build_indices.mo(self.db)
         try:
             self.assertEqual(
-                connection.execute('SELECT COUNT(*) FROM tinh').fetchone()[0], 63)
+                connection.execute('SELECT COUNT(*) FROM province').fetchone()[0], 63)
             self.assertEqual(
                 connection.execute('PRAGMA user_version').fetchone()[0],
                 build_indices.SCHEMA_VERSION)
@@ -330,7 +330,7 @@ class StaticAndSchemaTest(unittest.TestCase):
         from app.data import build_cogs
         with sqlite3.connect(self.db) as connection:
             connection.execute('PRAGMA user_version = 1')
-        build_cogs.record(self.db, 'anh_cog',
+        build_cogs.record(self.db, 'cog_image',
                           [('NTL', 2024, '/cog/v.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)])
         self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
 
@@ -340,9 +340,9 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
 
     Lệch tên thì build_indices vẫn nạp đủ dòng, API vẫn trả 200, giao diện vẫn vẽ —
     chỉ là mọi ô của cột đó trống. Không có gì báo lỗi. Đã xảy ra thật: app đi tìm
-    'thay_doi_ntl', 'rad_mean', 'lit_pixels', 'dien_tich_km2', 'status' trong khi derive
-    ghi 'thay_doi_ntl_pct', 'mean_ntl', 'so_pixel_sang', 'dt_tu_nhien_km2', 'trang_thai'.
-    Hậu quả nặng nhất: cảnh báo DMSP–VIIRS bị tắt vì derive ghi hieu_chinh='PENDING'
+    'sol_change_pct', 'rad_mean', 'lit_pixels', 'dien_tich_km2', 'status' trong khi derive
+    ghi 'thay_doi_ntl_pct', 'rad_mean', 'lit_pixels', 'area_km2', 'status'.
+    Hậu quả nặng nhất: cảnh báo DMSP–VIIRS bị tắt vì derive ghi calibration='PENDING'
     còn app dò 'CHUA_HIEU_CHINH'.
     """
 
@@ -355,15 +355,15 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
         from app.api import store
         nguon = self._derive_source()
         thieu = [f for f in store.NIGHT_FIELDS
-                 if f not in ('nam',) and f"'{f}'" not in nguon and f'{f}=' not in nguon]
+                 if f not in ('year',) and f"'{f}'" not in nguon and f'{f}=' not in nguon]
         self.assertEqual(thieu, [], f'Cột đêm không có trong derive.py: {thieu}')
 
     def test_every_day_field_appears_in_derive(self):
         from app.api import store
         nguon = self._derive_source()
-        # so_thang do build_indices tạo khi gộp tháng lên năm, derive không có.
+        # months_used do build_indices tạo khi gộp tháng lên năm, derive không có.
         thieu = [f for f in store.DAY_FIELDS
-                 if f not in ('nam', 'so_thang')
+                 if f not in ('year', 'months_used')
                  and f"'{f}'" not in nguon and f'{f}=' not in nguon
                  and f"'{f.replace('_mean', '')}'" not in nguon
                  and f"'{f.replace('_std', '')}'" not in nguon]
@@ -381,21 +381,21 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
                     self.assertIn(entry['ma'], cot)
 
     def test_the_calibration_flag_derive_actually_writes_is_accepted(self):
-        """derive ghi hieu_chinh='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai."""
+        """derive ghi calibration='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai."""
         nguon = self._derive_source()
-        self.assertIn("'hieu_chinh']='PENDING'", nguon.replace(' ', ''))
+        self.assertIn("'calibration']='PENDING'", nguon.replace(' ', ''))
         store_source = (REPO / 'app' / 'api' / 'store.py').read_text(encoding='utf-8')
         self.assertIn("'PENDING'", store_source)
         self.assertIn("'CHUA_HIEU_CHINH'", store_source)
 
     def test_a_dmsp_to_viirs_series_always_carries_the_warning(self):
-        """Chuỗi có cả hai nguồn thì cảnh báo phải hiện, dù cột hieu_chinh ghi gì."""
+        """Chuỗi có cả hai nguồn thì cảnh báo phải hiện, dù cột calibration ghi gì."""
         import sqlite3
         from app.api import store
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
             connection.executemany(
-                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,hieu_chinh) '
+                'INSERT OR REPLACE INTO ntl_annual(province_code,year,source,sol,calibration) '
                 'VALUES(?,?,?,?,?)',
                 [('01', y, 'DMSP' if y <= 2013 else 'VIIRS', 1.0, None)
                  for y in range(2004, 2026)])
@@ -410,7 +410,7 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
             connection.executemany(
-                'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl) '
+                'INSERT OR REPLACE INTO ntl_annual(province_code,year,source,sol) '
                 'VALUES(?,?,?,?)', [('01', y, 'DMSP', 1.0) for y in range(2010, 2014)])
         data = store.indices('01', 2010, 2013)
         self.assertFalse(any('F16' in w for w in data['canh_bao']), data['canh_bao'])
@@ -484,23 +484,23 @@ class BuildCogsTest(unittest.TestCase):
             self.assertEqual(build_cogs.find_sources(root, 'DMSP'), {})
 
     def test_originals_are_recorded_but_never_treated_as_servable(self):
-        """Ảnh gốc 24 GB chỉ được ghi sổ ở tầng lạnh, không bao giờ vào bảng anh_cog."""
+        """Ảnh gốc 24 GB chỉ được ghi sổ ở tầng lạnh, không bao giờ vào bảng cog_image."""
         import sqlite3
         from app.data import build_cogs
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
-            build_cogs.record(db, 'anh_cog',
+            build_cogs.record(db, 'cog_image',
                               [('NTL', 2024, '/cog/v.tif', 'VIIRS', 10,
                                 102.0, 8.5, 110.0, 23.5)])
-            build_cogs.record(db, 'anh_goc', [('SENTINEL2', 2024, '/data/vn.vrt', 2 << 34, 'lạnh')])
+            build_cogs.record(db, 'source_image', [('SENTINEL2', 2024, '/data/vn.vrt', 2 << 34, 'lạnh')])
             with sqlite3.connect(db) as connection:
-                self.assertEqual(connection.execute('SELECT COUNT(*) FROM anh_cog').fetchone()[0], 1)
-                self.assertEqual(connection.execute('SELECT loai FROM anh_cog').fetchone()[0], 'NTL')
+                self.assertEqual(connection.execute('SELECT COUNT(*) FROM cog_image').fetchone()[0], 1)
+                self.assertEqual(connection.execute('SELECT kind FROM cog_image').fetchone()[0], 'NTL')
                 self.assertEqual(connection.execute(
-                    'SELECT duong_dan FROM anh_goc').fetchone()[0], '/data/vn.vrt')
+                    'SELECT path FROM source_image').fetchone()[0], '/data/vn.vrt')
                 # Phạm vi ảnh phải được ghi: thiếu nó thì bản đồ xin ô khắp thế giới.
                 self.assertEqual(connection.execute(
-                    'SELECT tay,nam_do,dong,bac FROM anh_cog').fetchone(),
+                    'SELECT west,south,east,north FROM cog_image').fetchone(),
                     (102.0, 8.5, 110.0, 23.5))
 
     def test_the_illustrative_day_image_is_rgb_eight_bit_and_downsampled(self):
@@ -526,6 +526,38 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class TheFieldTableInClaudeMdMatchesTheCodebook(unittest.TestCase):
+    """CLAUDE.md là nơi người ta tra tên cột. Lệch với mã nguồn là tra ra số sai."""
+
+    def _bang(self):
+        return (REPO / 'CLAUDE.md').read_text(encoding='utf-8')
+
+    def test_every_documented_column_exists_in_the_codebook(self):
+        from task_pipeline.derive import CODEBOOK
+        ten = {c[0] for c in CODEBOOK}
+        for name in ten:
+            with self.subTest(cot=name):
+                self.assertIn(f'| `{name}` |', self._bang(),
+                              f'{name} có trong CODEBOOK nhưng thiếu ở CLAUDE.md')
+
+    def test_the_night_table_columns_are_all_documented(self):
+        """Mọi cột app đọc từ ntl_annual phải tra được trong CLAUDE.md."""
+        from app.api import store
+        bang = self._bang()
+        for name in store.NIGHT_FIELDS:
+            with self.subTest(cot=name):
+                self.assertIn(f'| `{name}` |', bang)
+
+    def test_the_column_names_are_english(self):
+        """Dấu hiệu sót lại của đợt đổi tên: cột vẫn mang tên tiếng Việt."""
+        from task_pipeline.derive import CODEBOOK
+        viet = ('ma_tinh', 'ten_tinh', 'nam', 'thang', 'sol_ntl', 'mat_do_ntl',
+                'thay_doi_ntl', 'cv_ntl', 'dt_sang_km2', 'nguon_anh', 'trang_thai',
+                'hieu_chinh', 'ghi_chu', 'dt_tu_nhien_km2')
+        for name, *_ in CODEBOOK:
+            self.assertNotIn(name, viet, f'cột {name} chưa đổi sang tiếng Anh')
+
+
 class EconomyIndicatorDocTest(unittest.TestCase):
     """Tài liệu chỉ số kinh tế đêm phải khớp với danh mục thật trong app.
 
@@ -542,7 +574,7 @@ class EconomyIndicatorDocTest(unittest.TestCase):
     def test_the_three_mandated_indicators_are_documented_and_real(self):
         from app.api import store
         text = self.DOC.read_text(encoding='utf-8')
-        for ma in ('sol_ntl', 'mat_do_ntl', 'thay_doi_ntl'):
+        for ma in ('sol', 'sol_density', 'sol_change_pct'):
             with self.subTest(chi_so=ma):
                 self.assertIn(f'`{ma}`', text)
                 self.assertIn(ma, store.NIGHT_FIELDS)
@@ -553,7 +585,7 @@ class EconomyIndicatorDocTest(unittest.TestCase):
         text = self.DOC.read_text(encoding='utf-8')
         thuc = set(store.NIGHT_FIELDS) | {i['ma'] for i in store.INDICATORS}
         bo_qua = self.DE_XUAT | {
-            'ma_tinh', 'nam', 'kinh_te', 'dan_so', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
+            'province_code', 'year', 'economy', 'population', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
             'stable_lights', 'data_processed', 'metadata', 'task_pipeline', 'app', 'derive',
             'ntl_annual', '_hc'}
         ten = {t for t in re.findall(r'`([a-z0-9_]+)`', text)

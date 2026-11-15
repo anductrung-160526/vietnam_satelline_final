@@ -128,7 +128,7 @@ def main():
                         target.stat().st_size, *pham_vi(target)))
 
     if ban_ghi:
-        record(arguments.db, 'anh_cog', ban_ghi, theo_thang=True)
+        record(arguments.db, 'cog_image', ban_ghi, theo_thang=True)
     print(f'\n{len(ban_ghi)} tháng đã vào sổ' + (f', {bo_qua} tháng đã có sẵn.' if bo_qua else '.'))
     print('Nạp lại chỉ số rồi mở app:')
     print(f'  python3 -m app.data.build_indices --root {arguments.root}')

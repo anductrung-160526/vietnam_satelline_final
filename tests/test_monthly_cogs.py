@@ -103,26 +103,26 @@ class MergeTest(unittest.TestCase):
             target = goc / 'ghep.tif'
             ghep_thang.ghep(manh, target)
             with rasterio.open(target) as ds:
-                tay, nam_do, dong, bac = ds.bounds
-            self.assertAlmostEqual(tay, 103.0, places=4)
-            self.assertAlmostEqual(dong, 103.0 + 3 * 1.0 + 70 * RES, places=4)
+                west, south, east, north = ds.bounds
+            self.assertAlmostEqual(west, 103.0, places=4)
+            self.assertAlmostEqual(east, 103.0 + 3 * 1.0 + 70 * RES, places=4)
 
 
 class CatalogueTest(unittest.TestCase):
 
     def test_annual_and_monthly_live_side_by_side(self):
-        """Khoá chính là (loai, nam, thang): ảnh năm 2016 và ảnh 07/2016 không đè nhau."""
+        """Khoá chính là (kind, year, month): ảnh năm 2016 và ảnh 07/2016 không đè nhau."""
         from app.data.build_cogs import record
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
-            record(db, 'anh_cog',
+            record(db, 'cog_image',
                    [('NTL', 2016, '/a/nam.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)])
-            record(db, 'anh_cog',
+            record(db, 'cog_image',
                    [('NTL', 2016, 7, '/a/thang.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)],
                    theo_thang=True)
             with sqlite3.connect(db) as connection:
                 hang = connection.execute(
-                    'SELECT thang,duong_dan FROM anh_cog WHERE nam=2016 ORDER BY thang').fetchall()
+                    'SELECT month,path FROM cog_image WHERE year=2016 ORDER BY month').fetchall()
             self.assertEqual(hang, [(0, '/a/nam.tif'), (7, '/a/thang.tif')])
 
     def test_the_store_separates_the_two_time_steps(self):
@@ -131,9 +131,9 @@ class CatalogueTest(unittest.TestCase):
         from app.api import store
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
-            record(db, 'anh_cog',
+            record(db, 'cog_image',
                    [('NTL', 2016, '/a/nam.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)])
-            record(db, 'anh_cog',
+            record(db, 'cog_image',
                    [('NTL', 2016, m, f'/a/{m}.tif', 'VIIRS', 10, 102.0, 8.5, 110.0, 23.5)
                     for m in (7, 8)], theo_thang=True)
             os.environ['VNGIS_DB'] = str(db)

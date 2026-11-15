@@ -38,41 +38,41 @@ def ket(dat, nhan, chi_tiet=''):
 def kiem_tra(rows):
     tot = True
     print('\n1. Độ phủ')
-    tinh = {r['ma_tinh'] for r in rows}
+    tinh = {r['province_code'] for r in rows}
     tot &= ket(len(tinh) == SO_TINH, f'{len(tinh)} tỉnh', f'cần {SO_TINH}')
-    thieu = [f"{r['ma_tinh']}/{r['nam']}" for r in rows if so(r.get('sol_ntl')) is None]
-    tot &= ket(not thieu, f'{len(rows) - len(thieu)}/{len(rows)} dòng có sol_ntl',
+    thieu = [f"{r['province_code']}/{r['year']}" for r in rows if so(r.get('sol')) is None]
+    tot &= ket(not thieu, f'{len(rows) - len(thieu)}/{len(rows)} dòng có sol',
                ', '.join(thieu[:6]) + (' …' if len(thieu) > 6 else '') if thieu else '')
 
     print('\n2. Nguồn ảnh đúng giai đoạn (DMSP ≤2013, VIIRS ≥2014)')
-    sai = [f"{r['ma_tinh']}/{r['nam']}={r.get('nguon_anh')}" for r in rows
-           if r.get('nguon_anh') != ('DMSP' if int(r['nam']) <= 2013 else 'VIIRS')]
+    sai = [f"{r['province_code']}/{r['year']}={r.get('source')}" for r in rows
+           if r.get('source') != ('DMSP' if int(r['year']) <= 2013 else 'VIIRS')]
     tot &= ket(not sai, f'{len(rows) - len(sai)}/{len(rows)} dòng đúng nguồn',
                ', '.join(sai[:6]) if sai else '')
 
     print('\n3. Trừ ánh sáng nền có tác dụng thật không')
-    viirs = [r for r in rows if r.get('nguon_anh') == 'VIIRS']
-    cap = [(so(r.get('sol_ntl')), so(r.get('sol_ntl_tho'))) for r in viirs]
+    viirs = [r for r in rows if r.get('source') == 'VIIRS']
+    cap = [(so(r.get('sol')), so(r.get('sol_raw'))) for r in viirs]
     cap = [(a, b) for a, b in cap if a is not None and b is not None and b > 0]
     if cap:
         ty = 100 * (1 - sum(a for a, _ in cap) / sum(b for _, b in cap))
         tot &= ket(0.1 < ty < 60, f'nền chiếm {ty:.1f}% tổng thô của VIIRS',
                    'bằng 0 là chưa trừ; trên 60% là ngưỡng quá cao')
-    dmsp = [r for r in rows if r.get('nguon_anh') == 'DMSP']
-    bang = sum(1 for r in dmsp if so(r.get('sol_ntl')) == so(r.get('sol_ntl_tho')))
+    dmsp = [r for r in rows if r.get('source') == 'DMSP']
+    bang = sum(1 for r in dmsp if so(r.get('sol')) == so(r.get('sol_raw')))
     tot &= ket(bang == len(dmsp), f'DMSP: {bang}/{len(dmsp)} dòng không bị trừ nền',
                'đúng quy tắc, stable_lights đã loại nền sẵn')
 
     print('\n4. Mốc đổi vệ tinh 2013→2014')
     goc, hc = [], []
-    for ma in sorted({r['ma_tinh'] for r in rows}):
-        theo = {int(r['nam']): r for r in rows if r['ma_tinh'] == ma}
+    for ma in sorted({r['province_code'] for r in rows}):
+        theo = {int(r['year']): r for r in rows if r['province_code'] == ma}
         a, b = theo.get(2013), theo.get(2014)
         if not (a and b):
             continue
-        if so(b.get('thay_doi_ntl')) is not None:
+        if so(b.get('sol_change_pct')) is not None:
             goc.append(ma)
-        v = so(b.get('thay_doi_ntl_hc'))
+        v = so(b.get('sol_change_cal_pct'))
         if v is not None:
             hc.append(abs(v))
     tot &= ket(not goc, f'cột gốc bỏ trống ở mốc đổi nguồn ({len(goc)} tỉnh có số)',
@@ -83,21 +83,21 @@ def kiem_tra(rows):
                    f'{len(hc)} tỉnh; trên 60% nghĩa là hiệu chỉnh chưa khớp')
 
     print('\n5. Xếp hạng 2025 — kiểm tra bằng hiểu biết thực tế')
-    cuoi = sorted((r for r in rows if int(r['nam']) == NAM_CUOI
-                   and so(r.get('sol_ntl')) is not None),
-                  key=lambda r: -so(r['sol_ntl']))[:5]
+    cuoi = sorted((r for r in rows if int(r['year']) == NAM_CUOI
+                   and so(r.get('sol')) is not None),
+                  key=lambda r: -so(r['sol']))[:5]
     for i, r in enumerate(cuoi, 1):
-        print(f"     {i}. {r['ten_tinh']:<20} sol={so(r['sol_ntl']):>12,.0f}"
-              f"  mật độ={so(r.get('mat_do_ntl')) or 0:>8.2f}"
-              f"  sáng={so(r.get('ty_le_sang_pct')) or 0:>5.1f}%")
-    ten = ' '.join(r['ten_tinh'] for r in cuoi).lower()
+        print(f"     {i}. {r['province_name']:<20} sol={so(r['sol']):>12,.0f}"
+              f"  mật độ={so(r.get('sol_density')) or 0:>8.2f}"
+              f"  sáng={so(r.get('lit_area_pct')) or 0:>5.1f}%")
+    ten = ' '.join(r['province_name'] for r in cuoi).lower()
     tot &= ket('chí minh' in ten or 'nội' in ten, 'hai đô thị lớn nhất nằm trong tốp 5',
                'nếu không, nhiều khả năng ảnh bị lệch tỉnh')
 
     print('\n6. Biến động bất thường trong cùng một nguồn ảnh')
-    manh = [(abs(so(r['thay_doi_ntl'])), r) for r in rows
-            if so(r.get('thay_doi_ntl')) is not None and abs(so(r['thay_doi_ntl'])) > 50]
-    ngoai_2010 = [x for x in manh if str(x[1]['nam']) != '2010']
+    manh = [(abs(so(r['sol_change_pct'])), r) for r in rows
+            if so(r.get('sol_change_pct')) is not None and abs(so(r['sol_change_pct'])) > 50]
+    ngoai_2010 = [x for x in manh if str(x[1]['year']) != '2010']
     tot &= ket(len(ngoai_2010) < len(rows) * 0.02,
                f'{len(ngoai_2010)} dòng biến động quá 50%/năm (không kể mốc 2010)',
                'dưới 2% tổng số là bình thường')
@@ -105,7 +105,7 @@ def kiem_tra(rows):
     # phải kinh tế, mà là lỗi xử lý của riêng năm đó — đây mới là dấu hiệu đáng tìm.
     theo_nam = {}
     for _, r in manh:
-        theo_nam[r['nam']] = theo_nam.get(r['nam'], 0) + 1
+        theo_nam[r['year']] = theo_nam.get(r['year'], 0) + 1
     dong_loat = sorted(((n, c) for n, c in theo_nam.items() if c >= 10), key=lambda x: -x[1])
     # 2010 là mốc đổi vệ tinh DMSP F16->F18, đã chốt KHÔNG hiệu chỉnh (CLAUDE.md).
     # Nó sẽ luôn hiện ra ở đây; báo như lỗi mới mỗi lần chạy thì lần sau không ai đọc nữa.
@@ -119,27 +119,27 @@ def kiem_tra(rows):
     tot &= ket(not con_lai, 'không năm nào khác có từ 10 tỉnh cùng biến động mạnh',
                '; '.join(f'{n}: {c} tỉnh' for n, c in con_lai[:4]) if con_lai else '')
     for _, r in sorted(ngoai_2010, reverse=True, key=lambda x: x[0])[:5]:
-        print(f"     {r['ten_tinh']:<20} {r['nam']}  {so(r['thay_doi_ntl']):+8.1f}%"
-              f"  ({r.get('nguon_anh')})")
+        print(f"     {r['province_name']:<20} {r['year']}  {so(r['sol_change_pct']):+8.1f}%"
+              f"  ({r.get('source')})")
     return tot
 
 
 def mot_tinh(rows, ma):
-    cua = sorted((r for r in rows if r['ma_tinh'] == ma.zfill(2)), key=lambda r: int(r['nam']))
+    cua = sorted((r for r in rows if r['province_code'] == ma.zfill(2)), key=lambda r: int(r['year']))
     if not cua:
         raise SystemExit(f'Không có tỉnh mã {ma}.')
-    print(f"\n=== {cua[0]['ten_tinh']} (mã {cua[0]['ma_tinh']}) ===")
-    print(f"{'Năm':<6}{'Nguồn':<7}{'sol_ntl':>14}{'sol_ntl_hc':>14}"
+    print(f"\n=== {cua[0]['province_name']} (mã {cua[0]['province_code']}) ===")
+    print(f"{'Năm':<6}{'Nguồn':<7}{'sol':>14}{'sol_cal':>14}"
           f"{'mật độ':>10}{'%sáng':>8}{'thay đổi':>10}{'cv':>7}")
     for r in cua:
         def c(k, d=2):
             v = so(r.get(k))
             return f'{v:,.{d}f}' if v is not None else '—'
-        print(f"{r['nam']:<6}{r.get('nguon_anh', ''):<7}{c('sol_ntl', 0):>14}"
-              f"{c('sol_ntl_hc', 0):>14}{c('mat_do_ntl'):>10}{c('ty_le_sang_pct', 1):>8}"
-              f"{c('thay_doi_ntl', 1):>10}{c('cv_ntl'):>7}")
+        print(f"{r['year']:<6}{r.get('source', ''):<7}{c('sol', 0):>14}"
+              f"{c('sol_cal', 0):>14}{c('sol_density'):>10}{c('lit_area_pct', 1):>8}"
+              f"{c('sol_change_pct', 1):>10}{c('rad_cv'):>7}")
     print('\nCột thay đổi bỏ trống ở 2014 là đúng: đó là mốc đổi vệ tinh, '
-          'muốn so xuyên mốc thì dùng thay_doi_ntl_hc.')
+          'muốn so xuyên mốc thì dùng sol_change_cal_pct.')
 
 
 def main():

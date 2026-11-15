@@ -44,6 +44,71 @@
 - Cột lớp phủ (`dt_nong_nghiep`, `dt_do_thi`, `dt_rung`, `dt_mat_nuoc`, `dt_dat_khac`,
   `ty_le_nong_nghiep`, `dt_nn_chuyen_doi`) để trống cho đến khi có bộ điểm mẫu.
 
+## Bảng mô tả trường dữ liệu (một bảng duy nhất cho mọi bảng số liệu)
+
+Tên cột trong `data_processed/*.csv` và trong `app/data/schema.sql` **bằng tiếng Anh**.
+Khoá chung: `province_code` + `year` + `month` (`month` = 0 với dòng ghi theo năm).
+Bảng này sinh ra từ `task_pipeline/derive.py: CODEBOOK` — sửa ở đó rồi chạy lại,
+đừng sửa tay ở đây; `tests/test_app_api.py` kiểm hai nơi khớp nhau.
+
+| Cột | Ý nghĩa | Kiểu | Đơn vị |
+|---|---|---|---|
+| `province_code` | Mã tỉnh, thành phố theo Cục Thống kê (63 tỉnh trước sáp nhập) | String | — |
+| `province_name` | Tên tỉnh, thành phố | String | — |
+| `year` | Năm | Numeric | — |
+| `month` | Tháng; 0 với dòng ghi theo năm | Numeric | — |
+| `period` | "2010" (theo năm) hoặc "2016-03" (theo tháng) | String | — |
+| `frequency` | annual hoặc monthly — tần suất của chính dòng đó | String | — |
+| `source` | DMSP, VIIRS, Landsat hoặc Sentinel-2 | String | — |
+| `area_km2` | Diện tích tự nhiên của tỉnh (polygon GADM 4.1, EPSG:6933) | Numeric | km² |
+| `sol` | Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ SAU khi trừ nền | Numeric | DN (DMSP) / nW/cm²/sr (VIIRS) |
+| `sol_density` | Mật độ kinh tế đêm: sol / area_km2 | Numeric | đơn vị bức xạ/km² |
+| `sol_change_pct` | Thay đổi so với NĂM trước, chỉ khi cùng nguồn ảnh | Numeric | % |
+| `sol_change_yoy_pct` | Thay đổi so với CÙNG THÁNG năm trước | Numeric | % |
+| `sol_change_mom_pct` | Thay đổi so với THÁNG LIỀN TRƯỚC; trống nếu tháng trước thiếu | Numeric | % |
+| `sol_ma3` | Trung bình trượt 3 tháng của sol, làm mượt dao động mùa | Numeric | nW/cm²/sr |
+| `sol_raw` | Tổng giá trị TRƯỚC khi trừ nền, để đo tác động của bước lọc nền | Numeric | DN / nW/cm²/sr |
+| `background_threshold` | Ngưỡng nền đã dùng (VIIRS 0,5; DMSP 0 vì stable_lights đã loại nền) | Numeric | nW/cm²/sr hoặc DN |
+| `background_pixels` | Số pixel dưới ngưỡng nền, đóng góp 0 vào sol | Numeric | pixel |
+| `rad_mean` | Bức xạ trung bình trên pixel hợp lệ | Numeric | DN / nW/cm²/sr |
+| `rad_std` | Độ lệch chuẩn bức xạ trong tỉnh | Numeric | DN / nW/cm²/sr |
+| `rad_min` | Giá trị nhỏ nhất trong tỉnh | Numeric | DN / nW/cm²/sr |
+| `rad_max` | Giá trị lớn nhất trong tỉnh | Numeric | DN / nW/cm²/sr |
+| `rad_cv` | Hệ số biến thiên rad_std/rad_mean: chênh lệch sáng–tối trong tỉnh | Numeric | không thứ nguyên |
+| `lit_pixels` | Số pixel vượt ngưỡng sáng | Numeric | pixel |
+| `lit_area_km2` | Diện tích các pixel vượt ngưỡng sáng | Numeric | km² |
+| `lit_area_pct` | lit_area_km2 / area_km2: tỷ lệ diện tích tỉnh được chiếu sáng | Numeric | % |
+| `lit_pixel_pct` | lit_pixels / valid_pixels: tỷ lệ số pixel sáng trên số pixel có dữ liệu | Numeric | % |
+| `lit_sol` | Tổng bức xạ CHỈ trên các pixel vượt ngưỡng | Numeric | DN / nW/cm²/sr |
+| `lit_threshold` | Ngưỡng xác định pixel sáng (VIIRS 1,5 nW/cm²/sr; DMSP DN 5) | Numeric | nW/cm²/sr hoặc DN |
+| `valid_pixels` | Số pixel có dữ liệu trong ranh giới tỉnh | Numeric | pixel |
+| `cloud_free_obs` | Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP | Numeric | lượt |
+| `status` | OK, OK_TOA, CHUA_CO_ANH, MISSING_SOURCE, INSUFFICIENT_QUALITY | String | — |
+| `note` | DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS | String | — |
+| `sol_cal` | sol sau khi quy DMSP về thang VIIRS; dòng VIIRS giữ nguyên | Numeric | nW/cm²/sr |
+| `sol_density_cal` | sol_cal / area_km2 | Numeric | nW/cm²/sr trên km² |
+| `sol_change_cal_pct` | Thay đổi trên chuỗi đã hiệu chỉnh; CÓ giá trị tại mốc 2013→2014 | Numeric | % |
+| `calibration` | Tên phương pháp hiệu chỉnh, hoặc PENDING | String | — |
+| `sol_dmsp` | sol của ảnh DMSP 2013, dùng để khớp mô hình hiệu chỉnh | Numeric | DN |
+| `sol_viirs` | sol của ảnh VIIRS 2013, cùng ngưỡng nền với cột sol | Numeric | nW/cm²/sr |
+| `reflectance_type` | SR (phản xạ bề mặt) hoặc TOA (Sentinel-2 2015–2018) | String | — |
+| `<KÊNH>_mean / _std` | Trung bình / độ lệch chuẩn phản xạ kênh (BLUE..SWIR2) và chỉ số NDVI, NDBI, MNDWI, BSI | Numeric | phản xạ (0–1) / không thứ nguyên |
+| `valid_area_km2` | Diện tích pixel hợp lệ ở mọi kênh | Numeric | km² |
+| `valid_area_pct` | valid_area_km2 / area_km2 | Numeric | % |
+| `window_days` | Cửa sổ ngày của ảnh tổng hợp | String | — |
+| `collections` | Bộ sưu tập ảnh đã dùng | String | — |
+| `months_used` | Số tháng đã gộp lên dòng năm | Numeric | tháng |
+
+Bảng nào có cột nào:
+
+| Bảng | Nội dung | Cột riêng |
+|---|---|---|
+| `ntl_panel` | **Bộ chính**: DMSP theo năm 2004–2013 + VIIRS theo tháng 2014–2025 | cả hai nhóm, phân biệt bằng `frequency` |
+| `ntl_annual` | Chuỗi theo năm 2004–2025 (VIIRS năm = trung vị các tháng) | `sol_change_pct`, nhóm `_cal` |
+| `ntl_monthly` | Mọi tháng VIIRS có ảnh, kể cả 2013 | `sol_change_mom_pct`, `sol_change_yoy_pct`, `sol_ma3` |
+| `ntl_overlap_2013` | Cặp DMSP–VIIRS năm 2013 để khớp mô hình hiệu chỉnh | `sol_dmsp`, `sol_viirs` |
+| `day_indices_monthly` | Chỉ số ảnh ngày theo tháng | `reflectance_type`, `<KÊNH>_mean/_std` |
+
 ## Mười tài khoản và project Earth Engine
 
 | Luồng | Tài khoản | Project | Profile trên Windows |

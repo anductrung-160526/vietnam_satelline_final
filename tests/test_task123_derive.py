@@ -55,13 +55,13 @@ class DayTests(unittest.TestCase):
             path=tif(Path(tmp)/'m.tif',data,'int16')
             row=derive.day_stats(path)
         self.assertAlmostEqual(row['RED_mean'],.3);self.assertAlmostEqual(row['NDVI_mean'],.25)
-        self.assertEqual(row['NDVI_std'],0);self.assertEqual(row['so_pixel_hop_le'],16)
+        self.assertEqual(row['NDVI_std'],0);self.assertEqual(row['valid_pixels'],16)
         status={('SENTINEL2','2016-01'):'DONE_LOCAL',('SENTINEL2','2016-02'):'MISSING_SOURCE'}
         with tempfile.TemporaryDirectory() as tmp:
             cache=derive.Cache(Path(tmp)/'c.json')
             rows=derive.day_rows(P,status,{('SENTINEL2','2016-01'):tif(Path(tmp)/'m.tif',data,'int16')},100,cache)
-        self.assertEqual([r['trang_thai'] for r in rows],['OK_TOA','MISSING_SOURCE'])
-        self.assertEqual(rows[0]['thang'],1);self.assertEqual(rows[0]['nguon_anh'],'Sentinel-2')
+        self.assertEqual([r['status'] for r in rows],['OK_TOA','MISSING_SOURCE'])
+        self.assertEqual(rows[0]['month'],1);self.assertEqual(rows[0]['source'],'Sentinel-2')
 
 
 class NightTests(unittest.TestCase):
@@ -85,20 +85,20 @@ class NightTests(unittest.TestCase):
             dmsp=derive.dmsp_annual(raw,P,tmp)
             cache=derive.Cache(Path(tmp)/'c.json')
             monthly=derive.ntl_monthly_rows(P,filtered,10.0,cache)
-            self.assertEqual(monthly[0]['sol_ntl'],18.0);self.assertEqual(monthly[0]['mat_do_ntl'],1.8)
+            self.assertEqual(monthly[0]['sol'],18.0);self.assertEqual(monthly[0]['sol_density'],1.8)
             rows,_=derive.ntl_annual_rows(P,dmsp,annual,10.0,cache)
-            by={r['nam']:r for r in rows}
-            self.assertEqual(by[2013]['nguon_anh'],'DMSP');self.assertEqual(by[2014]['sol_ntl'],18.0)
-            self.assertIsNone(by[2014]['thay_doi_ntl']);self.assertEqual(by[2014]['ghi_chu'],'DOI_NGUON_ANH_CHUA_HIEU_CHINH')
-            self.assertEqual(by[2014]['hieu_chinh'],'PENDING')
+            by={r['year']:r for r in rows}
+            self.assertEqual(by[2013]['source'],'DMSP');self.assertEqual(by[2014]['sol'],18.0)
+            self.assertIsNone(by[2014]['sol_change_pct']);self.assertEqual(by[2014]['note'],'DOI_NGUON_ANH_CHUA_HIEU_CHINH')
+            self.assertEqual(by[2014]['calibration'],'PENDING')
             # Mỗi nguồn một ngưỡng riêng: VIIRS theo bức xạ, DMSP theo DN.
-            self.assertEqual(by[2014]['nguong_sang'],derive.LIT_THRESHOLD['VIIRS'])
-            self.assertEqual(by[2013]['nguong_sang'],derive.LIT_THRESHOLD['DMSP'])
-            self.assertIsNotNone(by[2014]['so_pixel_sang'])
-            self.assertIsNotNone(by[2013]['so_pixel_sang'])
+            self.assertEqual(by[2014]['lit_threshold'],derive.LIT_THRESHOLD['VIIRS'])
+            self.assertEqual(by[2013]['lit_threshold'],derive.LIT_THRESHOLD['DMSP'])
+            self.assertIsNotNone(by[2014]['lit_pixels'])
+            self.assertIsNotNone(by[2013]['lit_pixels'])
             # Thống kê phân tán phải có ở cả hai nguồn.
             for year in (2013,2014):
-                for field in ('mean_ntl','std_ntl','min_ntl','max_ntl','cv_ntl','so_pixel_hop_le'):
+                for field in ('rad_mean','rad_std','rad_min','rad_max','rad_cv','valid_pixels'):
                     self.assertIsNotNone(by[year][field],f'{field} thiếu ở {year}')
 
 
@@ -106,11 +106,11 @@ class MergeTests(unittest.TestCase):
     def test_parts_from_two_branches_merge_without_overwriting(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
-            derive.write_part(root/'_control/001_011','ntl_annual',[dict(ma_tinh='01',ten_tinh='Hà Nội',nam=2014,nguon_anh='VIIRS',sol_ntl=1.0)])
-            derive.write_part(root/'_control/054_063','ntl_annual',[dict(ma_tinh='84',ten_tinh='Trà Vinh',nam=2014,nguon_anh='VIIRS',sol_ntl=2.0)])
+            derive.write_part(root/'_control/001_011','ntl_annual',[dict(province_code='01',province_name='Hà Nội',year=2014,source='VIIRS',sol=1.0)])
+            derive.write_part(root/'_control/054_063','ntl_annual',[dict(province_code='84',province_name='Trà Vinh',year=2014,source='VIIRS',sol=2.0)])
             written=derive.merge(root)
-            frame=pd.read_csv(root/'VN_NTL_Panel_2004_2025/data_processed/ntl_annual.csv',dtype={'ma_tinh':str})
-            self.assertEqual(list(frame['ma_tinh']),['01','84'])
+            frame=pd.read_csv(root/'VN_NTL_Panel_2004_2025/data_processed/ntl_annual.csv',dtype={'province_code':str})
+            self.assertEqual(list(frame['province_code']),['01','84'])
             self.assertTrue((root/'VN_NTL_Panel_2004_2025/data_processed/ntl_annual.dta').exists())
             self.assertIn('.xlsx',{p.suffix for p in written})
             derive.write_docs(root)
@@ -148,15 +148,15 @@ if __name__=='__main__':
 class NtlFieldCoverageTest(unittest.TestCase):
     """Bảng chỉ số đêm phải đủ các biến kế hoạch quản lý dữ liệu yêu cầu.
 
-    Kế hoạch (metadata/codebook_ntl.md) bắt buộc: ma_tinh, ten_tinh, nam, nguon_anh,
-    sol_ntl (quy mô), mat_do_ntl (mật độ), thay_doi_ntl (mức độ thay đổi).
+    Kế hoạch (metadata/codebook_ntl.md) bắt buộc: province_code, province_name, year, source,
+    sol (quy mô), sol_density (mật độ), sol_change_pct (mức độ thay đổi).
     Luồng chạy cũ (Task3 notebook, cấp huyện theo tháng) còn có thêm các chỉ số phân tán
     và vùng sáng; phần này giữ chúng ở cấp tỉnh theo năm.
     """
 
-    BAT_BUOC = ('ma_tinh','ten_tinh','nam','nguon_anh','sol_ntl','mat_do_ntl','thay_doi_ntl')
-    BO_SUNG = ('mean_ntl','std_ntl','min_ntl','max_ntl','cv_ntl','so_pixel_hop_le',
-               'so_pixel_sang','dt_sang_km2','ty_le_sang_pct','sol_vung_sang','nguong_sang')
+    BAT_BUOC = ('province_code','province_name','year','source','sol','sol_density','sol_change_pct')
+    BO_SUNG = ('rad_mean','rad_std','rad_min','rad_max','rad_cv','valid_pixels',
+               'lit_pixels','lit_area_km2','lit_area_pct','lit_sol','lit_threshold')
 
     def _rows(self):
         import numpy as np, rasterio
@@ -179,7 +179,7 @@ class NtlFieldCoverageTest(unittest.TestCase):
             cache = derive.Cache(root / 'c.json')
             rows, _ = derive.ntl_annual_rows(
                 dict(ma_tinh='01', ten_tinh='Hà Nội'), dmsp, viirs, 20.0, cache)
-            return {r['nam']: r for r in rows}
+            return {r['year']: r for r in rows}
 
     def test_the_plan_mandated_variables_are_all_present(self):
         row = self._rows()[2020]
@@ -197,13 +197,13 @@ class NtlFieldCoverageTest(unittest.TestCase):
     def test_each_source_uses_its_own_lit_threshold(self):
         """DMSP là DN 0-63, VIIRS là bức xạ: hai thang đo, hai ngưỡng, không dùng chung."""
         rows = self._rows()
-        self.assertEqual(rows[2010]['nguon_anh'], 'DMSP')
-        self.assertEqual(rows[2010]['nguong_sang'], 5)
-        self.assertEqual(rows[2020]['nguon_anh'], 'VIIRS')
-        self.assertEqual(rows[2020]['nguong_sang'], 1.5)
+        self.assertEqual(rows[2010]['source'], 'DMSP')
+        self.assertEqual(rows[2010]['lit_threshold'], 5)
+        self.assertEqual(rows[2020]['source'], 'VIIRS')
+        self.assertEqual(rows[2020]['lit_threshold'], 1.5)
         # Nền DMSP là 1.0 (< 5) và nền VIIRS 0.5 (< 1,5): chỉ điểm 9,0 vượt ngưỡng ở cả hai.
-        self.assertEqual(rows[2010]['so_pixel_sang'], 1)
-        self.assertEqual(rows[2020]['so_pixel_sang'], 1)
+        self.assertEqual(rows[2010]['lit_pixels'], 1)
+        self.assertEqual(rows[2020]['lit_pixels'], 1)
 
     def test_the_thresholds_match_the_project_configuration(self):
         """Ngưỡng phải lấy đúng giá trị dự án đã chốt, không tự đặt lại trong derive."""
@@ -221,14 +221,14 @@ class NtlFieldCoverageTest(unittest.TestCase):
 
     def test_the_coefficient_of_variation_is_std_over_mean(self):
         row = self._rows()[2020]
-        self.assertAlmostEqual(row['cv_ntl'], row['std_ntl'] / row['mean_ntl'], places=3)
+        self.assertAlmostEqual(row['rad_cv'], row['rad_std'] / row['rad_mean'], places=3)
 
     def test_only_pixels_above_the_threshold_count_as_lit(self):
         row = self._rows()[2020]
-        self.assertEqual(row['so_pixel_sang'], 1)       # chỉ điểm 9,0; nền 0,5 bị loại
-        self.assertEqual(row['sol_vung_sang'], 9.0)
-        self.assertGreater(row['ty_le_sang_pct'], 0)
-        self.assertLessEqual(row['dt_sang_km2'], row['dt_tu_nhien_km2'] + 1e-6)
+        self.assertEqual(row['lit_pixels'], 1)       # chỉ điểm 9,0; nền 0,5 bị loại
+        self.assertEqual(row['lit_sol'], 9.0)
+        self.assertGreater(row['lit_area_pct'], 0)
+        self.assertLessEqual(row['lit_area_km2'], row['area_km2'] + 1e-6)
 
     def test_changing_the_formula_invalidates_the_cache(self):
         """Cache khoá theo size+mtime+STATS_VERSION: đổi công thức là mục cũ hết hiệu lực."""
@@ -247,11 +247,11 @@ class NtlFieldCoverageTest(unittest.TestCase):
 
 
 class OverlapTableMatchesTheColumnTheModelIsAppliedTo(unittest.TestCase):
-    """Bảng chồng lấn 2013 phải đo cùng một đại lượng với cột sol_ntl.
+    """Bảng chồng lấn 2013 phải đo cùng một đại lượng với cột sol.
 
     Lỗi đã xảy ra: bảng chồng lấn gọi ntl_stats trần (background=0) nên sol_viirs gồm cả
     nhiễu nền dưới 0,5 — một lượng tỷ lệ với diện tích tỉnh. Mô hình hiệu chỉnh khớp trên
-    đại lượng đó rồi được áp cho sol_ntl đã trừ nền: R² 0,57 và b < 1 (sai chiều vật lý,
+    đại lượng đó rồi được áp cho sol đã trừ nền: R² 0,57 và b < 1 (sai chiều vật lý,
     DMSP bão hòa thì b phải > 1).
     """
 
@@ -269,7 +269,7 @@ class OverlapTableMatchesTheColumnTheModelIsAppliedTo(unittest.TestCase):
             viirs = {'2013': anh(root / 'v2013.tif', gia_tri_nen)}
             cache = derive.Cache(root / 'c.json')
             rows, overlap = derive.ntl_annual_rows(P, dmsp, viirs, 20.0, cache)
-            return overlap, {r['nam']: r for r in rows}
+            return overlap, {r['year']: r for r in rows}
 
     def test_viirs_background_is_subtracted_in_the_overlap_pair(self):
         """15 điểm ở 0,2 nW nằm dưới ngưỡng nền 0,5: chúng không được vào sol_viirs."""
@@ -279,7 +279,7 @@ class OverlapTableMatchesTheColumnTheModelIsAppliedTo(unittest.TestCase):
 
     def test_the_dmsp_side_matches_the_annual_column_exactly(self):
         overlap, rows = self._overlap(0.2)
-        self.assertEqual(overlap['sol_dmsp'], rows[2013]['sol_ntl'])
+        self.assertEqual(overlap['sol_dmsp'], rows[2013]['sol'])
 
     def test_the_cache_does_not_mix_two_threshold_sets_for_one_file(self):
         """Cùng một file gọi với hai bộ ngưỡng phải là hai mục cache riêng."""
@@ -289,5 +289,126 @@ class OverlapTableMatchesTheColumnTheModelIsAppliedTo(unittest.TestCase):
             cache = derive.Cache(Path(tmp) / 'c.json')
             co_nen = cache.get(path, lambda x: derive.ntl_stats(x, 1.5, 0.5), nhan=('VIIRS',))
             khong = cache.get(path, lambda x: derive.ntl_stats(x, None, 0.0), nhan=('tho',))
-            self.assertEqual(co_nen['sol_ntl'], 0.0)
-            self.assertAlmostEqual(khong['sol_ntl'], 0.2 * 16, places=4)
+            self.assertEqual(co_nen['sol'], 0.0)
+            self.assertAlmostEqual(khong['sol'], 0.2 * 16, places=4)
+
+
+class TheCombinedPanelIsOneDatasetWithTwoFrequencies(unittest.TestCase):
+    """ntl_panel: DMSP theo NĂM đến 2013, VIIRS theo THÁNG từ 2014, trong cùng một bảng."""
+
+    def _bo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def anh(path, value, cf=None):
+                data = np.full((1, 4, 4), value, dtype='float32')
+                data[0, 0, 0] = 40.0
+                path = tif(path, data, 'float32')
+                if cf is not None:
+                    with rasterio.open(path, 'r+') as ds:
+                        ds.update_tags(CF_CVG_MEAN=str(cf))
+                return path
+
+            dmsp = {str(y): anh(root / f'd{y}.tif', 1.0) for y in range(2004, 2014)}
+            viirs = {str(y): anh(root / f'v{y}.tif', 0.2) for y in range(2014, 2026)}
+            filtered = {f'{y}-{m:02}': anh(root / f'f{y}{m:02}.tif', 0.2, cf=12.5)
+                        for y in (2014, 2015) for m in range(1, 13)}
+            cache = derive.Cache(root / 'c.json')
+            annual, _ = derive.ntl_annual_rows(P, dmsp, viirs, 20.0, cache)
+            monthly = derive.ntl_monthly_rows(P, filtered, 20.0, cache)
+            return derive.ntl_panel_rows(annual, monthly), annual, monthly
+
+    def test_the_dmsp_half_is_annual_and_the_viirs_half_is_monthly(self):
+        panel, _, _ = self._bo()
+        dmsp = [r for r in panel if r['source'] == 'DMSP']
+        viirs = [r for r in panel if r['source'] == 'VIIRS']
+        self.assertTrue(all(r['frequency'] == 'annual' and r['month'] == 0 for r in dmsp))
+        self.assertTrue(all(r['frequency'] == 'monthly' and 1 <= r['month'] <= 12
+                            for r in viirs))
+        self.assertEqual({r['year'] for r in dmsp}, set(range(2004, 2014)))
+        self.assertEqual(len(viirs), 24)
+
+    def test_no_year_is_covered_by_both_halves(self):
+        """Trùng năm ở hai nửa là đếm hai lần cùng một hoạt động kinh tế."""
+        panel, _, _ = self._bo()
+        nam_dmsp = {r['year'] for r in panel if r['source'] == 'DMSP'}
+        nam_viirs = {r['year'] for r in panel if r['source'] == 'VIIRS'}
+        self.assertEqual(nam_dmsp & nam_viirs, set())
+
+    def test_the_period_column_reads_the_same_way_in_both_halves(self):
+        panel, _, _ = self._bo()
+        theo = {r['period'] for r in panel}
+        self.assertIn('2010', theo)
+        self.assertIn('2014-01', theo)
+
+    def test_editing_the_panel_never_touches_the_other_two_tables(self):
+        panel, annual, monthly = self._bo()
+        panel[0]['sol'] = -1
+        self.assertNotEqual(annual[0]['sol'], -1)
+        self.assertNotEqual(monthly[0]['sol'], -1)
+
+
+class TheFieldsTheOriginalNotebookHadAreAllPresent(unittest.TestCase):
+    """Notebook Task3 cũ có bốn trường mà bảng này từng thiếu."""
+
+    def _thang(self, so_thang=24, cf=12.5):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            filtered = {}
+            for i in range(so_thang):
+                y, m = 2014 + i // 12, i % 12 + 1
+                data = np.full((1, 4, 4), 0.2, dtype='float32')
+                data[0, 0, 0] = 10.0 + i          # tăng dần để biến động khác 0
+                path = tif(root / f'f{y}{m:02}.tif', data, 'float32')
+                if cf is not None:
+                    with rasterio.open(path, 'r+') as ds:
+                        ds.update_tags(CF_CVG_MEAN=str(cf))
+                filtered[f'{y}-{m:02}'] = path
+            cache = derive.Cache(root / 'c.json')
+            rows = derive.ntl_monthly_rows(P, filtered, 20.0, cache)
+            return {r['period']: r for r in rows}
+
+    def test_cloud_free_obs_comes_through_from_the_filter_step(self):
+        """cf_cvg chỉ có ở ảnh thô và bị bỏ khi ghi ảnh đã lọc; phải được giữ lại."""
+        rows = self._thang()
+        self.assertEqual(rows['2014-05']['cloud_free_obs'], 12.5)
+
+    def test_a_missing_cf_cvg_tag_is_empty_not_zero(self):
+        """Không có thẻ nghĩa là KHÔNG BIẾT. Ghi 0 là nói sai: 0 lượt sạch mây."""
+        rows = self._thang(so_thang=12, cf=None)
+        self.assertIsNone(rows['2014-05']['cloud_free_obs'])
+
+    def test_month_over_month_and_year_over_year_are_both_there(self):
+        rows = self._thang()
+        self.assertIsNotNone(rows['2015-06']['sol_change_mom_pct'])
+        self.assertIsNotNone(rows['2015-06']['sol_change_yoy_pct'])
+        self.assertIsNone(rows['2014-01']['sol_change_mom_pct'],
+                          'tháng đầu chuỗi không có tháng trước để so')
+        self.assertIsNone(rows['2014-06']['sol_change_yoy_pct'],
+                          'năm đầu chuỗi không có cùng kỳ năm trước')
+
+    def test_a_gap_in_the_series_is_not_compared_across(self):
+        """Thiếu tháng 3 thì tháng 4 không được so với tháng 2 như thể liền nhau."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            filtered = {}
+            for m in (1, 2, 4):
+                data = np.full((1, 4, 4), 0.2, dtype='float32');data[0, 0, 0] = 10.0 * m
+                filtered[f'2014-{m:02}'] = tif(root / f'f{m}.tif', data, 'float32')
+            rows = {r['period']: r for r in derive.ntl_monthly_rows(
+                P, filtered, 20.0, derive.Cache(root / 'c.json'))}
+        self.assertIsNotNone(rows['2014-02']['sol_change_mom_pct'])
+        self.assertIsNone(rows['2014-04']['sol_change_mom_pct'])
+
+    def test_the_three_month_average_smooths_the_series(self):
+        rows = self._thang()
+        ba = [rows[f'2014-{m:02}']['sol'] for m in (1, 2, 3)]
+        self.assertAlmostEqual(rows['2014-03']['sol_ma3'], round(sum(ba) / 3, 4), places=3)
+
+    def test_the_lit_pixel_ratio_is_over_valid_pixels_not_province_area(self):
+        """Notebook gọi là electrification ratio: số pixel sáng / số pixel CÓ DỮ LIỆU."""
+        rows = self._thang()
+        row = rows['2014-05']
+        self.assertAlmostEqual(row['lit_pixel_pct'],
+                               100 * row['lit_pixels'] / row['valid_pixels'], places=4)
+        self.assertNotEqual(row['lit_pixel_pct'], row['lit_area_pct'])

@@ -13,8 +13,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / 'scripts' / 'kiem_tra_chi_so_dem.py'
 A, B = 0.00682, 1.3558          # mô hình hiệu chỉnh thật của bộ dữ liệu
-COLS = ['ma_tinh', 'ten_tinh', 'nam', 'nguon_anh', 'sol_ntl', 'sol_ntl_tho', 'sol_ntl_hc',
-        'mat_do_ntl', 'ty_le_sang_pct', 'thay_doi_ntl', 'thay_doi_ntl_hc', 'cv_ntl']
+COLS = ['province_code', 'province_name', 'year', 'source', 'sol', 'sol_raw', 'sol_cal',
+        'sol_density', 'lit_area_pct', 'sol_change_pct', 'sol_change_cal_pct', 'rad_cv']
 TEN = {1: 'Hà Nội', 2: 'Hồ Chí Minh'}
 
 
@@ -24,20 +24,20 @@ def bang(sua=None):
     for i in range(1, 64):
         quy = (3 if i <= 2 else 1) * (1 + (i % 7) / 10)
         truoc = truoc_hc = None
-        for nam in range(2004, 2026):
-            src = 'DMSP' if nam <= 2013 else 'VIIRS'
-            that = quy * (1 + 0.06 * (nam - 2004)) * 5000
+        for year in range(2004, 2026):
+            src = 'DMSP' if year <= 2013 else 'VIIRS'
+            that = quy * (1 + 0.06 * (year - 2004)) * 5000
             sol = that if src == 'VIIRS' else (that / A) ** (1 / B)
             row = dict(
-                ma_tinh=f'{i:02}', ten_tinh=TEN.get(i, f'Tỉnh {i}'), nam=nam, nguon_anh=src,
-                sol_ntl=round(sol, 2), sol_ntl_hc=round(that, 2),
-                sol_ntl_tho=round(sol if src == 'DMSP' else sol / 0.85, 2),
-                mat_do_ntl=round(sol / 3000, 4), ty_le_sang_pct=round(min(99, quy * 12), 2),
-                thay_doi_ntl=(None if truoc is None or nam == 2014
+                province_code=f'{i:02}', province_name=TEN.get(i, f'Tỉnh {i}'), year=year, source=src,
+                sol=round(sol, 2), sol_cal=round(that, 2),
+                sol_raw=round(sol if src == 'DMSP' else sol / 0.85, 2),
+                sol_density=round(sol / 3000, 4), lit_area_pct=round(min(99, quy * 12), 2),
+                sol_change_pct=(None if truoc is None or year == 2014
                               else round(100 * (sol / truoc - 1), 2)),
-                thay_doi_ntl_hc=(None if truoc_hc is None
+                sol_change_cal_pct=(None if truoc_hc is None
                                  else round(100 * (that / truoc_hc - 1), 2)),
-                cv_ntl=1.8)
+                rad_cv=1.8)
             truoc, truoc_hc = sol, that
             if sua:
                 sua(row)
@@ -90,46 +90,46 @@ class ItCatchesEachKindOfBreakage(unittest.TestCase):
 
     def test_a_missing_sol_ntl_is_reported(self):
         def sua(row):
-            if row['ma_tinh'] == '05' and row['nam'] == 2019:
-                row['sol_ntl'] = ''
-        self._hong(sua, 'dòng có sol_ntl')
+            if row['province_code'] == '05' and row['year'] == 2019:
+                row['sol'] = ''
+        self._hong(sua, 'dòng có sol')
 
     def test_a_landsat_era_row_marked_viirs_is_reported(self):
         def sua(row):
-            if row['nam'] == 2009:
-                row['nguon_anh'] = 'VIIRS'
+            if row['year'] == 2009:
+                row['source'] = 'VIIRS'
         self._hong(sua, 'đúng nguồn')
 
     def test_background_never_subtracted_is_reported(self):
-        """sol_ntl == sol_ntl_tho ở mọi dòng VIIRS nghĩa là bước trừ nền không chạy."""
+        """sol == sol_raw ở mọi dòng VIIRS nghĩa là bước trừ nền không chạy."""
         def sua(row):
-            row['sol_ntl_tho'] = row['sol_ntl']
+            row['sol_raw'] = row['sol']
         self._hong(sua, 'nền chiếm')
 
     def test_comparing_across_the_satellite_change_is_reported(self):
         """Cột gốc có số ở 2014 là so hai thang đo khác nhau."""
         def sua(row):
-            if row['nam'] == 2014:
-                row['thay_doi_ntl'] = -76.4
+            if row['year'] == 2014:
+                row['sol_change_pct'] = -76.4
         self._hong(sua, 'cột gốc bỏ trống')
 
     def test_a_harmonisation_that_leaves_a_jump_is_reported(self):
         def sua(row):
-            if row['nam'] >= 2014:
-                row['thay_doi_ntl_hc'] = 900.0 if row['nam'] == 2014 else row['thay_doi_ntl_hc']
+            if row['year'] >= 2014:
+                row['sol_change_cal_pct'] = 900.0 if row['year'] == 2014 else row['sol_change_cal_pct']
         self._hong(sua, 'cột _hc')
 
     def test_provinces_shifted_so_the_big_cities_are_not_brightest(self):
         def sua(row):
-            if row['ten_tinh'] in TEN.values():
-                row['sol_ntl'] = round(float(row['sol_ntl']) / 100, 2)
+            if row['province_name'] in TEN.values():
+                row['sol'] = round(float(row['sol']) / 100, 2)
         self._hong(sua, 'tốp 5')
 
     def test_one_year_where_most_provinces_jump_at_once_is_reported(self):
         """Lỗi xử lý của riêng một năm, thứ dễ bị bỏ sót nhất."""
         def sua(row):
-            if row['nam'] == 2021:
-                row['thay_doi_ntl'] = 180.0
+            if row['year'] == 2021:
+                row['sol_change_pct'] = 180.0
         self._hong(sua, 'cùng biến động mạnh')
 
 
@@ -139,8 +139,8 @@ class TheKnown2010SatelliteBreakIsNotReportedAsANewFault(unittest.TestCase):
 
     def test_the_2010_break_is_labelled_known_and_does_not_fail_the_run(self):
         def sua(row):
-            if row['nam'] == 2010:
-                row['thay_doi_ntl'] = 420.0
+            if row['year'] == 2010:
+                row['sol_change_pct'] = 420.0
         code, out = chay(bang(sua))
         self.assertIn('ĐÃ BIẾT', out)
         self.assertIn('F16', out)
@@ -148,8 +148,8 @@ class TheKnown2010SatelliteBreakIsNotReportedAsANewFault(unittest.TestCase):
 
     def test_the_same_break_in_another_year_still_fails(self):
         def sua(row):
-            if row['nam'] == 2011:
-                row['thay_doi_ntl'] = 420.0
+            if row['year'] == 2011:
+                row['sol_change_pct'] = 420.0
         code, out = chay(bang(sua))
         self.assertEqual(code, 1, f'năm khác 2010 vẫn phải báo lỗi:\n{out}')
         self.assertIn('2011', out)

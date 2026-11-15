@@ -2,7 +2,7 @@
 
     python3 -m app.data.demo_seed --db app/data/vngis.db
 
-Mọi dòng ghi ra đều có trang_thai='GIA_LAP' và nguon_anh kết thúc bằng '_GIA_LAP'; giao diện
+Mọi dòng ghi ra đều có status='GIA_LAP' và source kết thúc bằng '_GIA_LAP'; giao diện
 dựa vào đó để treo biển báo đỏ. Khi chỉ số thật có rồi, chạy lại build_indices.py là các
 dòng này bị xoá sạch (build_indices DELETE toàn bảng trước khi nạp).
 
@@ -75,24 +75,24 @@ def seed(db, seed_value=20261104):
                             None, 'GIA_LAP'))
 
     connection.executemany(
-        'INSERT OR REPLACE INTO ntl_annual(ma_tinh,nam,nguon_anh,sol_ntl,mat_do_ntl,'
-        'thay_doi_ntl,sol_ntl_hc,mat_do_ntl_hc,thay_doi_ntl_hc,'
-        'sol_ntl_tho,nguong_nen,so_pixel_nen,'
-        'mean_ntl,std_ntl,min_ntl,max_ntl,cv_ntl,so_pixel_hop_le,'
-        'so_pixel_sang,dt_sang_km2,ty_le_sang_pct,sol_vung_sang,nguong_sang,'
-        'dt_tu_nhien_km2,ghi_chu,hieu_chinh,trang_thai) VALUES('
+        'INSERT OR REPLACE INTO ntl_annual(province_code,year,source,sol,sol_density,'
+        'sol_change_pct,sol_cal,sol_density_cal,sol_change_cal_pct,'
+        'sol_raw,background_threshold,background_pixels,'
+        'rad_mean,rad_std,rad_min,rad_max,rad_cv,valid_pixels,'
+        'lit_pixels,lit_area_km2,lit_area_pct,lit_sol,lit_threshold,'
+        'area_km2,note,calibration,status) VALUES('
         + ','.join('?' * 27) + ')', night)
     connection.executemany(
-        'INSERT OR REPLACE INTO day_annual(ma_tinh,nam,nguon_anh,loai_phan_xa,'
+        'INSERT OR REPLACE INTO day_annual(province_code,year,source,reflectance_type,'
         'NDVI_mean,NDVI_std,NDBI_mean,NDBI_std,MNDWI_mean,MNDWI_std,BSI_mean,BSI_std,'
-        'ty_le_hop_le_pct,dt_hop_le_km2,dt_tu_nhien_km2,so_thang,trang_thai) VALUES('
+        'valid_area_pct,valid_area_km2,area_km2,months_used,status) VALUES('
         + ','.join('?' * 17) + ')', day)
     connection.executemany(
-        'INSERT OR REPLACE INTO kinh_te(ma_tinh,nam,dan_so,gdp,grdp_bq_dau_nguoi,nguon) '
+        'INSERT OR REPLACE INTO economy(province_code,year,population,gdp,gdp_per_capita,source) '
         'VALUES(?,?,?,?,?,?)', economy)
     connection.commit()
     connection.close()
-    return {'ntl_annual': len(night), 'day_annual': len(day), 'kinh_te': len(economy),
+    return {'ntl_annual': len(night), 'day_annual': len(day), 'economy': len(economy),
             'tinh': TINH}
 
 
@@ -101,7 +101,7 @@ def main():
     parser.add_argument('--db', default=str(HERE / 'vngis.db'))
     report = seed(parser.parse_args().db)
     print('ĐÃ NẠP SỐ LIỆU GIẢ LẬP (status=GIA_LAP) cho các tỉnh', ', '.join(report['tinh']))
-    print('  ntl_annual %(ntl_annual)d dòng · day_annual %(day_annual)d · kinh_te %(kinh_te)d' % report)
+    print('  ntl_annual %(ntl_annual)d dòng · day_annual %(day_annual)d · economy %(economy)d' % report)
     print('  Không dùng cho báo cáo. Chạy build_indices.py để thay bằng số liệu thật.')
 
 

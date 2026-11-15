@@ -12,7 +12,7 @@ let banDo = null;
 let buoc = 'nam';            // 'nam' hoặc 'thang'
 let cacMoc = [];             // các mốc thời gian có ảnh, theo thứ tự
 const THANG_VN = ['01','02','03','04','05','06','07','08','09','10','11','12'];
-const tenMoc = m => m.thang ? `${THANG_VN[m.thang - 1]}/${m.nam}` : String(m.nam);
+const tenMoc = m => m.month ? `${THANG_VN[m.month - 1]}/${m.year}` : String(m.year);
 
 async function layJSON(duongDan){
   const r = await fetch(duongDan);
@@ -96,7 +96,7 @@ function datMatNa(){
      cả 63 tỉnh là hình nặng nhất, dễ dựng hỏng nhất. Chỉ che khi đã chọn một tỉnh. */
   if(!maDangXem){ banDo.getSource('mat-na').setData(rong); return; }
   const giu = ranhGioi.features.filter(
-    f => String(f.properties.ma_tinh).padStart(2,'0') === maDangXem);
+    f => String(f.properties.province_code).padStart(2,'0') === maDangXem);
   if(!giu.length){
     /* Không tìm thấy ranh giới của tỉnh này: che hết sẽ ra màn hình đen trơn, tệ hơn là
        không che. Nói ra thay vì để người dùng nhìn một khung trống. */
@@ -135,7 +135,7 @@ async function dungBanDo(){
   }
 
   if(ranhGioi){
-    banDo.addSource('tinh', {type:'geojson', data:ranhGioi, promoteId:'ma_tinh'});
+    banDo.addSource('tinh', {type:'geojson', data:ranhGioi, promoteId:'province_code'});
     banDo.addSource('mat-na', {type:'geojson', data:{type:'FeatureCollection', features:[]}});
     /* Lớp bắt sự kiện bấm: trong suốt, nằm dưới ảnh và mặt nạ. */
     banDo.addLayer({id:'tinh-bat', type:'fill', source:'tinh',
@@ -148,13 +148,13 @@ async function dungBanDo(){
              'line-opacity':VIEN.mo.dam}});
     /* Quầng sáng mảnh dưới đường viền tỉnh đang chọn, để nó nổi trên nền ảnh đêm. */
     banDo.addLayer({id:'tinh-vien-quang', type:'line', source:'tinh',
-      filter:['==','ma_tinh',''],
+      filter:['==','province_code',''],
       paint:{'line-color':'#ffc857','line-width':7,'line-opacity':0.22,'line-blur':4}});
     banDo.addLayer({id:'tinh-vien-dam', type:'line', source:'tinh',
-      filter:['==','ma_tinh',''],
+      filter:['==','province_code',''],
       paint:{'line-color':'#ffd87a','line-width':2.4}});
     banDo.on('click','tinh-bat', e => {
-      const ma = String(e.features[0].properties.ma_tinh).padStart(2,'0');
+      const ma = String(e.features[0].properties.province_code).padStart(2,'0');
       $('chon-tinh').value = ma; chonPhamVi(ma);
     });
     banDo.on('mouseenter','tinh-bat',()=>banDo.getCanvas().style.cursor='pointer');
@@ -176,12 +176,12 @@ function doiAnhNen(chiSo){
   const muc = cacMoc[chiSo];
   if(!muc || !thongTinNen?.tiles){ veThongTin(null); return; }
   const nguon = {type:'raster', tileSize:256,
-    tiles:[`${thongTinNen.tiles}${encodeURIComponent(muc.duong_dan)}`
+    tiles:[`${thongTinNen.tiles}${encodeURIComponent(muc.path)}`
            + `&rescale=0,60&colormap_name=inferno&nodata=-9999`]};
   /* Giới hạn theo phạm vi ảnh: thiếu nó thì bản đồ xin ô khắp thế giới và TiTiler
      trả 500 cho mọi ô nằm ngoài ảnh — hàng trăm lượt gọi hỏng mỗi lần mở trang. */
-  if([muc.tay, muc.nam_do, muc.dong, muc.bac].every(v => typeof v === 'number')){
-    nguon.bounds = [muc.tay, muc.nam_do, muc.dong, muc.bac];
+  if([muc.tay, muc.south, muc.dong, muc.bac].every(v => typeof v === 'number')){
+    nguon.bounds = [muc.tay, muc.south, muc.dong, muc.bac];
   }
   banDo.addSource('anh-dem', nguon);
   /* Ảnh nằm DƯỚI mặt nạ, nên phần ngoài ranh giới bị che — ảnh hiện đúng trong ranh giới. */
@@ -199,12 +199,12 @@ function veThongTin(muc){
     $('thang-mau').style.display = 'none';
     return;
   }
-  const mb = muc.dung_luong_byte ? (muc.dung_luong_byte / 1048576).toFixed(1) + ' MB' : '—';
-  const donVi = muc.nguon_anh === 'DMSP' ? 'DN 0–63' : 'nW/cm²/sr';
+  const mb = muc.size_bytes ? (muc.size_bytes / 1048576).toFixed(1) + ' MB' : '—';
+  const donVi = muc.source === 'DMSP' ? 'DN 0–63' : 'nW/cm²/sr';
   o.innerHTML =
-    `<div><span>Nguồn</span><span>${muc.nguon_anh || '—'}</span></div>` +
-    `<div><span>${muc.thang ? 'Tháng' : 'Năm'}</span><span>${tenMoc(muc)}</span></div>` +
-    `<div><span>Độ phân giải</span><span>${muc.nguon_anh === 'DMSP' ? '1 km' : '500 m'}</span></div>` +
+    `<div><span>Nguồn</span><span>${muc.source || '—'}</span></div>` +
+    `<div><span>${muc.month ? 'Tháng' : 'Năm'}</span><span>${tenMoc(muc)}</span></div>` +
+    `<div><span>Độ phân giải</span><span>${muc.source === 'DMSP' ? '1 km' : '500 m'}</span></div>` +
     `<div><span>Đơn vị</span><span>${donVi}</span></div>` +
     `<div><span>Dung lượng</span><span>${mb}</span></div>`;
   $('nut-tai-anh').disabled = false;
@@ -217,7 +217,7 @@ function veThongTin(muc){
 
 function chonPhamVi(ma){
   maDangXem = ma || null;
-  const ten = ma ? (danhSachTinh.find(t => t.ma_tinh === ma) || {}).ten_tinh : 'Toàn quốc';
+  const ten = ma ? (danhSachTinh.find(t => t.province_code === ma) || {}).province_name : 'Toàn quốc';
   $('nhan-pham-vi').textContent = ten || 'Toàn quốc';
   if(!banDo || !ranhGioi) return;
   datMatNa();
@@ -225,9 +225,9 @@ function chonPhamVi(ma){
   banDo.setPaintProperty('tinh-vien', 'line-color', kieu.mau);
   banDo.setPaintProperty('tinh-vien', 'line-width', kieu.rong);
   banDo.setPaintProperty('tinh-vien', 'line-opacity', kieu.dam);
-  banDo.setFilter('tinh-vien-dam', ['==','ma_tinh', ma || '']);
-  banDo.setFilter('tinh-vien-quang', ['==','ma_tinh', ma || '']);
-  const f = ma && ranhGioi.features.find(x => String(x.properties.ma_tinh).padStart(2,'0') === ma);
+  banDo.setFilter('tinh-vien-dam', ['==','province_code', ma || '']);
+  banDo.setFilter('tinh-vien-quang', ['==','province_code', ma || '']);
+  const f = ma && ranhGioi.features.find(x => String(x.properties.province_code).padStart(2,'0') === ma);
   banDo.fitBounds(f ? bienDo(f) : bienDoTatCa(),
                   {padding: f ? 60 : 30, duration:600, maxZoom:10});
 }
@@ -235,7 +235,7 @@ function chonPhamVi(ma){
 $('nut-toan-quoc').onclick = () => { $('chon-tinh').value = ''; chonPhamVi(null); };
 $('nut-tai-anh').onclick = () => {
   const muc = cacMoc[Number($('chon-nam').value)];
-  if(muc) window.location = `/api/anh-dem.tif?nam=${muc.nam}&thang=${muc.thang || 0}`;
+  if(muc) window.location = `/api/anh-dem.tif?nam=${muc.year}&thang=${muc.month || 0}`;
 };
 
 async function napMoc(buocMoi){
@@ -292,7 +292,7 @@ function nhacThoiGian(chu){
 
   danhSachTinh = (await layJSON('/api/provinces')).tinh;
   $('chon-tinh').innerHTML = '<option value="">Toàn quốc</option>'
-    + danhSachTinh.map(t => `<option value="${t.ma_tinh}">${t.ten_tinh}</option>`).join('');
+    + danhSachTinh.map(t => `<option value="${t.province_code}">${t.province_name}</option>`).join('');
   $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
 
   const chon = $('chon-nam'), truot = $('nam-truot');

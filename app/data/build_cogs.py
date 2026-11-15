@@ -6,7 +6,7 @@ Hai loại ảnh, theo đúng lời dặn của giảng viên:
   NTL  mỗi năm một ảnh ánh sáng đêm toàn quốc. Vốn đã nhẹ (500 m–1 km), chỉ đổi sang COG.
   DAY  mỗi năm MỘT ảnh ngày duy nhất để minh họa, RGB 8-bit giảm mẫu còn ~100 m
        (từ 24 GB xuống ~100 MB). Ảnh gốc KHÔNG lên đám mây: nó ở tầng lạnh (ổ E / NAS),
-       bảng anh_goc chỉ ghi nhận nó nằm ở đâu.
+       bảng source_image chỉ ghi nhận nó nằm ở đâu.
 
 Ảnh đêm đổi được bằng rasterio nếu máy không có gdal_translate (thường là Windows).
 Ảnh ngày vẫn cần gdal_translate vì phải giảm mẫu và đổi sang 8-bit.
@@ -101,21 +101,21 @@ def pham_vi(path):
 
 
 def record(db, table, rows, theo_thang=False):
-    """theo_thang=True thì mỗi dòng có thêm cột thang ngay sau nam."""
+    """theo_thang=True thì mỗi dòng có thêm cột month ngay sau year."""
     from .build_indices import mo
     connection = mo(db)
-    if table == 'anh_cog' and theo_thang:
+    if table == 'cog_image' and theo_thang:
         connection.executemany(
-            'INSERT OR REPLACE INTO anh_cog(loai,nam,thang,duong_dan,nguon_anh,'
-            'dung_luong_byte,tay,nam_do,dong,bac) VALUES(?,?,?,?,?,?,?,?,?,?)', rows)
-    elif table == 'anh_cog':
-        # thang=0 nghĩa là ảnh tổng hợp cả năm.
+            'INSERT OR REPLACE INTO cog_image(kind,year,month,path,source,'
+            'size_bytes,west,south,east,north) VALUES(?,?,?,?,?,?,?,?,?,?)', rows)
+    elif table == 'cog_image':
+        # month=0 nghĩa là ảnh tổng hợp cả năm.
         connection.executemany(
-            'INSERT OR REPLACE INTO anh_cog(loai,nam,thang,duong_dan,nguon_anh,'
-            'dung_luong_byte,tay,nam_do,dong,bac) VALUES(?,?,0,?,?,?,?,?,?,?)', rows)
+            'INSERT OR REPLACE INTO cog_image(kind,year,month,path,source,'
+            'size_bytes,west,south,east,north) VALUES(?,?,0,?,?,?,?,?,?,?)', rows)
     else:
         connection.executemany(
-            'INSERT OR REPLACE INTO anh_goc(loai,nam,duong_dan,dung_luong_byte,ghi_chu) '
+            'INSERT OR REPLACE INTO source_image(kind,year,path,size_bytes,note) '
             'VALUES(?,?,?,?,?)', rows)
     connection.commit()
     connection.close()
@@ -166,10 +166,10 @@ def main():
                                   'Tầng lạnh — không tải lên đám mây (tránh chi phí egress)'))
 
     if cogs:
-        record(arguments.db, 'anh_cog', cogs)
+        record(arguments.db, 'cog_image', cogs)
     if originals:
-        record(arguments.db, 'anh_goc', originals)
-    print(json.dumps({'cog': len(cogs), 'anh_goc': len(originals),
+        record(arguments.db, 'source_image', originals)
+    print(json.dumps({'cog': len(cogs), 'source_image': len(originals),
                       'tong_byte_cog': sum(r[4] for r in cogs)}, indent=2))
 
 

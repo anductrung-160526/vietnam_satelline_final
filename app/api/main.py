@@ -28,10 +28,10 @@ app = FastAPI(title='VNGISDash API',
               version='0.1.0')
 
 
-def _code(ma_tinh: str) -> str:
-    code = ma_tinh.strip().zfill(2)
+def _code(province_code: str) -> str:
+    code = province_code.strip().zfill(2)
     if not code.isdigit():
-        raise HTTPException(400, 'ma_tinh phải là mã số, ví dụ 01 hoặc 27')
+        raise HTTPException(400, 'province_code phải là mã số, ví dụ 01 hoặc 27')
     return code
 
 
@@ -48,8 +48,8 @@ def _bam(du_lieu):
 def van_tay_tung_tep():
     out = {}
     for ten in GIAO_DIEN:
-        duong_dan = WEB / ten
-        out[ten] = _bam(duong_dan.read_bytes())[:12] if duong_dan.is_file() else None
+        path = WEB / ten
+        out[ten] = _bam(path.read_bytes())[:12] if path.is_file() else None
     return out
 
 
@@ -82,14 +82,14 @@ def list_provinces():
 
 
 @app.get('/api/indices')
-def get_indices(ma_tinh: str = Query(..., description='Mã tỉnh, ví dụ 01'),
+def get_indices(province_code: str = Query(..., description='Mã tỉnh, ví dụ 01'),
                 nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
                 nam_den: int = Query(YEAR_MAX, ge=1990, le=2100)):
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    data = store.indices(_code(ma_tinh), nam_tu, nam_den)
+    data = store.indices(_code(province_code), nam_tu, nam_den)
     if data is None:
-        raise HTTPException(404, f'Không có tỉnh với mã {ma_tinh}')
+        raise HTTPException(404, f'Không có tỉnh với mã {province_code}')
     return data
 
 
@@ -100,32 +100,32 @@ def list_indicators():
 
 
 @app.get('/api/panel')
-def get_panel(chi_so: str = Query('sol_ntl', description='Mã chỉ số, xem /api/indicators'),
+def get_panel(chi_so: str = Query('sol', description='Mã chỉ số, xem /api/indicators'),
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
-              ma_tinh: str = Query('', description='Danh sách mã tỉnh ngăn bằng dấu phẩy; '
+              province_code: str = Query('', description='Danh sách mã tỉnh ngăn bằng dấu phẩy; '
                                                    'để trống là tất cả')):
     """Bảng rộng: mỗi dòng một tỉnh, mỗi cột một năm — như World Development Indicators."""
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    data = store.panel(chi_so, nam_tu, nam_den, ma_tinh.split(',') if ma_tinh else None)
+    data = store.panel(chi_so, nam_tu, nam_den, province_code.split(',') if province_code else None)
     if data is None:
         raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}. Xem /api/indicators')
     return data
 
 
 @app.get('/api/panel.csv')
-def panel_csv(chi_so: str = Query('sol_ntl'),
+def panel_csv(chi_so: str = Query('sol'),
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
-              ma_tinh: str = Query(''),
+              province_code: str = Query(''),
               dang: str = Query('rong', description="'rong' một dòng một tỉnh, "
                                                     "'dai' một dòng một tỉnh-năm")):
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
     if dang not in ('rong', 'dai'):
         raise HTTPException(400, "dang phải là 'rong' hoặc 'dai'")
-    data = store.panel(chi_so, nam_tu, nam_den, ma_tinh.split(',') if ma_tinh else None)
+    data = store.panel(chi_so, nam_tu, nam_den, province_code.split(',') if province_code else None)
     if data is None:
         raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}')
     payload = export.panel_csv(data, dang)
@@ -137,7 +137,7 @@ def panel_csv(chi_so: str = Query('sol_ntl'),
 
 
 @app.get('/api/choropleth')
-def get_choropleth(chi_so: str = Query('sol_ntl'),
+def get_choropleth(chi_so: str = Query('sol'),
                    nam: int = Query(YEAR_MAX, ge=1990, le=2100)):
     """Một chỉ số, một năm, mọi tỉnh — để tô màu bản đồ toàn quốc."""
     data = store.choropleth(chi_so, nam)
@@ -161,7 +161,7 @@ def basemap(buoc: str = Query('nam', description="'nam' hoặc 'thang'")):
     # TiTiler 0.19 có {tileMatrixSetId} trong đường dẫn; thiếu đoạn này là 404 mọi ô bản đồ.
     return {'buoc': buoc,
             'co_san': store.cac_buoc_thoi_gian('NTL'),
-            'nam': sorted({m['nam'] for m in muc}),
+            'nam': sorted({m['year'] for m in muc}),
             'chi_tiet': muc,
             'tiles': TILE_URL if _titiler_ready() else None,
             'ghi_chu_thang': 'Ảnh theo tháng chỉ có từ 2014: DMSP (2004–2013) là sản phẩm '
@@ -181,7 +181,7 @@ def thong_tin_ranh_gioi():
     if not path.exists():
         raise HTTPException(404, f'Chưa có {path}')
     fc = json.loads(path.read_text(encoding='utf-8'))
-    ma_danh_muc = {t['ma_tinh'] for t in store.provinces()}
+    ma_danh_muc = {t['province_code'] for t in store.provinces()}
     ket_qua, tong_dinh = [], 0
     for feature in fc.get('features', []):
         hinh = feature.get('geometry') or {}
@@ -189,11 +189,11 @@ def thong_tin_ranh_gioi():
         vong = toa_do if hinh.get('type') == 'Polygon' else [r for p in toa_do for r in p]
         dinh = sum(len(r) for r in vong)
         tong_dinh += dinh
-        ket_qua.append({'ma_tinh': feature.get('properties', {}).get('ma_tinh'),
+        ket_qua.append({'province_code': feature.get('properties', {}).get('province_code'),
                         'loai_hinh': hinh.get('type'), 'so_vong': len(vong), 'so_dinh': dinh})
-    ma_file = {str(r['ma_tinh']) for r in ket_qua}
+    ma_file = {str(r['province_code']) for r in ket_qua}
     nang = sorted(ket_qua, key=lambda r: -r['so_dinh'])[:5]
-    return {'duong_dan': str(path), 'so_tinh': len(ket_qua), 'tong_dinh': tong_dinh,
+    return {'path': str(path), 'so_tinh': len(ket_qua), 'tong_dinh': tong_dinh,
             'phuc_tap_nhat': nang,
             'ma_khong_khop_danh_muc': sorted(ma_file - ma_danh_muc)[:10],
             'ma_danh_muc_thieu_trong_file': sorted(ma_danh_muc - ma_file)[:10]}
@@ -203,13 +203,13 @@ def thong_tin_ranh_gioi():
 def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100),
                 thang: int = Query(0, ge=0, le=12, description='0 = ảnh cả năm')):
     """Tải ảnh đêm (COG) của một mốc thời gian. Mục đích chính của màn hình này."""
-    duong_dan = store.cog_path('NTL', nam, thang)
+    path = store.cog_path('NTL', nam, thang)
     moc = f'{nam}-{thang:02}' if thang else str(nam)
-    if not duong_dan:
+    if not path:
         lenh = ('python -m app.data.build_monthly_cogs' if thang
                 else 'python -m app.data.build_cogs --kinds VIIRS DMSP')
         raise HTTPException(404, f'Chưa có ảnh đêm {moc}. Chạy: {lenh}')
-    path = Path(duong_dan)
+    path = Path(path)
     if not path.is_file():
         raise HTTPException(410, f'Sổ có ghi ảnh {moc} nhưng file không còn ở {path}.')
     return FileResponse(path, media_type='image/tiff', filename=f'VN_NTL_{moc}.tif')
@@ -218,22 +218,22 @@ def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100),
 @app.get('/api/originals')
 def list_originals():
     """Ảnh gốc ở tầng lạnh (ổ E / NAS) — chỉ liệt kê, không phục vụ qua đám mây."""
-    return {'anh_goc': store.originals(),
-            'ghi_chu': 'Ảnh gốc không lưu trên đám mây để tránh chi phí egress. '
+    return {'source_image': store.originals(),
+            'note': 'Ảnh gốc không lưu trên đám mây để tránh chi phí egress. '
                        'Liên hệ nhóm dữ liệu để lấy liên kết tải từ tầng lạnh.'}
 
 
 @app.get('/api/export.zip')
-def export_zip(ma_tinh: str = Query(...),
+def export_zip(province_code: str = Query(...),
                nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
                nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
                kem_anh: bool = Query(True, description='Kèm ảnh đêm GeoTIFF')):
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    built = export.build(_code(ma_tinh), nam_tu, nam_den, kem_anh,
+    built = export.build(_code(province_code), nam_tu, nam_den, kem_anh,
                          datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))
     if built is None:
-        raise HTTPException(404, f'Không có tỉnh với mã {ma_tinh}')
+        raise HTTPException(404, f'Không có tỉnh với mã {province_code}')
     name, payload = built
     return StreamingResponse(
         io.BytesIO(payload), media_type='application/zip',

@@ -40,7 +40,7 @@ LIT_THRESHOLD={'VIIRS':LIT_THRESHOLD_VIIRS,'DMSP':LIT_THRESHOLD_DMSP}
 #   DMSP  0 — sản phẩm stable_lights của NOAA đã loại nền sẵn; trừ thêm lần nữa là trừ hai lần.
 BACKGROUND={'VIIRS':0.5,'DMSP':0.0}
 # Đổi công thức trong ntl_stats/day_stats thì tăng số này, nếu không Cache sẽ trả kết quả cũ.
-STATS_VERSION=4
+STATS_VERSION=5
 ROWS=512
 SENSOR={'LANDSAT':'LANDSAT','SENTINEL2':'SENTINEL2'}
 
@@ -195,6 +195,10 @@ def viirs_filtered(raw,province,root):
         try:
             first=sources[0];profile=zstd_profile(first.profile,1,'float32')
             blocks={m:[] for m,_ in months};spikes=0
+            # Số lượt quan sát sạch mây trung bình của từng tháng. Băng cf_cvg chỉ có ở
+            # ảnh thô và bị bỏ khi ghi ảnh đã lọc, nên phải thu ở đây; nó là trường chất
+            # lượng: tháng mùa mưa ít lượt quan sát hơn nên con số dựa trên ít dữ liệu hơn.
+            cf={m:[0.0,0] for m,_ in months}
             for w in windows(first.height,first.width):
                 rad=np.stack([s.read(1,window=w) for s in sources]).astype('float64')
                 cov=np.stack([s.read(2,window=w) for s in sources]).astype('float64')
@@ -210,11 +214,13 @@ def viirs_filtered(raw,province,root):
                 for i,(m,_) in enumerate(months):
                     data=np.where(valid[i],rad[i],NODATA).astype('float32')[None]
                     blocks[m].append((w,data,valid[i]))
+                    cf[m][0]+=float(cov[i][valid[i]].sum());cf[m][1]+=int(valid[i].sum())
             for m,path in months:
                 write(targets[m],profile,['avg_rad_filtered'],blocks[m],
                       dict(SOURCE='VIIRS_MONTHLY',PERIOD=f'{year}-{m:02}',UNIT='nW/cm2/sr',HARMONIZATION='PENDING',
                            FILTER='cf_cvg=0->NoData; negative->0; value>max(3*annual median, median+5)->annual median',
-                           SPIKES_CAPPED_IN_YEAR=str(spikes)),inputs)
+                           SPIKES_CAPPED_IN_YEAR=str(spikes),
+                           CF_CVG_MEAN=('' if not cf[m][1] else str(round(cf[m][0]/cf[m][1],4)))),inputs)
                 out[f'{year}-{m:02}']=targets[m]
         finally:
             for s in sources:s.close()
@@ -244,9 +250,16 @@ def viirs_annual(raw,filtered,province,root):
                         rad=np.nanmedian(stack,axis=0)
                     valid=~np.isnan(rad)
                     yield w,np.where(valid,rad,NODATA).astype('float32')[None],valid
+            cf=[]
+            for src in sources:
+                v=src.tags().get('CF_CVG_MEAN')
+                if v:
+                    try:cf.append(float(v))
+                    except ValueError:pass
             write(target,profile,['avg_rad_annual'],blocks(),
                   dict(SOURCE='MEDIAN_OF_FILTERED_VIIRS_MONTHS',YEAR=year,UNIT='nW/cm2/sr',
-                       HARMONIZATION='PENDING',MONTHS_USED=str(len(inputs))),inputs)
+                       HARMONIZATION='PENDING',MONTHS_USED=str(len(inputs)),
+                       CF_CVG_MEAN=('' if not cf else str(round(sum(cf)/len(cf),4)))),inputs)
         finally:
             for s in sources:s.close()
         out[year]=target
@@ -294,8 +307,8 @@ def day_stats(path):
             for k,x in v.items():
                 x=x[np.isfinite(x)];acc[k][0]+=x.sum();acc[k][1]+=(x*x).sum()
             n+=int(valid.sum());area+=float((np.broadcast_to(pixel_area_km2(ds.transform,w,ds.crs),valid.shape)[valid]).sum())
-    row=dict(so_pixel_hop_le=n,dt_hop_le_km2=round(area,3),cua_so_ngay=tags.get('WINDOW_DAYS',''),
-             bo_suu_tap=tags.get('COLLECTIONS',''))
+    row=dict(valid_pixels=n,valid_area_km2=round(area,3),window_days=tags.get('WINDOW_DAYS',''),
+             collections=tags.get('COLLECTIONS',''))
     for k,(s,s2) in acc.items():
         mean=s/n if n else None
         row[k+'_mean']=round(mean,6) if mean is not None else None
@@ -304,18 +317,23 @@ def day_stats(path):
 
 
 def ntl_stats(path,threshold=None,background=0.0):
-    """Thống kê một ảnh đêm trong một lượt đọc.
+    """Thống kê một ảnh đêm trong một lượt đọc. Tên khoá = tên cột trong bảng xuất ra.
 
     background: ngưỡng nền. Pixel dưới ngưỡng vẫn là pixel hợp lệ (vẫn tính vào diện tích
-    và vào mean/std) nhưng đóng góp 0 vào sol_ntl — đó là nghĩa của "trừ ánh sáng nền".
-    sol_ntl_tho giữ tổng chưa trừ nền để đo được bước này lấy đi bao nhiêu.
+    và vào rad_mean/rad_std) nhưng đóng góp 0 vào sol — đó là nghĩa của "trừ ánh sáng nền".
+    sol_raw giữ tổng chưa trừ nền để đo được bước này lấy đi bao nhiêu.
 
     threshold=None thì bỏ qua mọi chỉ số vùng sáng (trả None), không coi mọi pixel là sáng.
+
+    cloud_free_obs đọc từ thẻ CF_CVG_MEAN do viirs_filtered ghi; ảnh DMSP không có thẻ này
+    nên trả None. Đây là trường chất lượng: tháng mùa mưa ít lượt quan sát sạch mây hơn,
+    con số của tháng đó dựa trên ít dữ liệu hơn.
     """
     import numpy as np
     import rasterio
     total=0.0;tho=0.0;sq=0.0;n=0;nen=0;lit=0;lit_total=0.0;lit_area=0.0;mx=None;mn=None
     with rasterio.open(path) as ds:
+        cov=ds.tags().get('CF_CVG_MEAN')
         for w in windows(ds.height,ds.width):
             a=ds.read(1,window=w).astype('float64')
             valid=a!=NODATA
@@ -334,22 +352,31 @@ def ntl_stats(path,threshold=None,background=0.0):
                     lit+=int(sang.sum());lit_total+=float(a[sang].sum())
                     lit_area+=float(np.broadcast_to(
                         pixel_area_km2(ds.transform,w,ds.crs),sang.shape)[sang].sum())
+    try:
+        cov=round(float(cov),4) if cov is not None else None
+    except ValueError:
+        cov=None
     if not n:
-        return dict(sol_ntl=None,sol_ntl_tho=None,so_pixel_hop_le=0,so_pixel_nen=None,
-                    max_ntl=None,min_ntl=None,mean_ntl=None,std_ntl=None,cv_ntl=None,
-                    so_pixel_sang=None,sol_vung_sang=None,dt_sang_km2=None,nguong_nen=background)
+        return dict(sol=None,sol_raw=None,valid_pixels=0,background_pixels=None,
+                    rad_max=None,rad_min=None,rad_mean=None,rad_std=None,rad_cv=None,
+                    lit_pixels=None,lit_sol=None,lit_area_km2=None,lit_pixel_pct=None,
+                    background_threshold=background,cloud_free_obs=cov)
     mean=tho/n
     std=math.sqrt(max(sq/n-mean*mean,0))
     co_nguong=threshold is not None
-    return dict(sol_ntl=round(total,4),sol_ntl_tho=round(tho,4),
-                so_pixel_hop_le=n,so_pixel_nen=nen,nguong_nen=background,
-                max_ntl=round(float(mx),4),min_ntl=round(float(mn),4),
-                mean_ntl=round(mean,6),std_ntl=round(std,6),
+    return dict(sol=round(total,4),sol_raw=round(tho,4),
+                valid_pixels=n,background_pixels=nen,background_threshold=background,
+                rad_max=round(float(mx),4),rad_min=round(float(mn),4),
+                rad_mean=round(mean,6),rad_std=round(std,6),
                 # Hệ số biến thiên: mức chênh lệch sáng-tối bên trong tỉnh.
-                cv_ntl=round(std/mean,4) if mean>0 else None,
-                so_pixel_sang=lit if co_nguong else None,
-                sol_vung_sang=round(lit_total,4) if co_nguong else None,
-                dt_sang_km2=round(lit_area,4) if co_nguong else None)
+                rad_cv=round(std/mean,4) if mean>0 else None,
+                lit_pixels=lit if co_nguong else None,
+                lit_sol=round(lit_total,4) if co_nguong else None,
+                lit_area_km2=round(lit_area,4) if co_nguong else None,
+                # Tỷ lệ SỐ PIXEL sáng (notebook gốc gọi là electrification ratio), khác
+                # lit_area_pct vốn chia cho diện tích tự nhiên của tỉnh.
+                lit_pixel_pct=round(100*lit/n,4) if co_nguong else None,
+                cloud_free_obs=cov)
 
 
 def pct(cur,prev):
@@ -377,9 +404,13 @@ class Cache:
 
 
 def base(p,nam,thang,nguon,area):
-    row=dict(ma_tinh=p['ma_tinh'],ten_tinh=p['ten_tinh'],nam=int(nam))
-    if thang is not None:row['thang']=int(thang)
-    row.update(nguon_anh=nguon,dt_tu_nhien_km2=round(area,3))
+    """Khung chung của một dòng. province dict giữ khoá tiếng Việt (khoá nội bộ của
+    luồng tải ảnh); từ đây trở đi tên khoá chính là TÊN CỘT trong bảng xuất ra."""
+    row=dict(province_code=p['ma_tinh'],province_name=p['ten_tinh'],year=int(nam))
+    row['month']=int(thang) if thang is not None else 0
+    row['period']=f'{int(nam)}-{int(thang):02}' if thang is not None else f'{int(nam)}'
+    row['frequency']='monthly' if thang is not None else 'annual'
+    row.update(source=nguon,area_km2=round(area,3))
     return row
 
 
@@ -390,32 +421,55 @@ def day_rows(province,status,raw,area,cache):
         if product not in SENSOR:continue
         row=base(province,period[:4],period[5:],'Landsat' if product=='LANDSAT' else 'Sentinel-2',area)
         collection='TOA' if product=='SENTINEL2' and int(period[:4])<2019 else 'SR'
-        row['loai_phan_xa']=collection
+        row['reflectance_type']=collection
         if (product,period) in raw:
             row.update(cache.get(raw[(product,period)],day_stats))
-            row['ty_le_hop_le_pct']=round(100*row['dt_hop_le_km2']/area,2) if area else None
-            row['trang_thai']='OK'+('_TOA' if collection=='TOA' else '')
+            row['valid_area_pct']=round(100*row['valid_area_km2']/area,2) if area else None
+            row['status']='OK'+('_TOA' if collection=='TOA' else '')
         else:
-            row['trang_thai']=state or 'CHUA_CO_ANH'
+            row['status']=state or 'CHUA_CO_ANH'
         rows.append(row)
     return rows
+
+
+def _dan_xuat(row,area):
+    """Các cột suy ra từ thống kê ảnh và diện tích tỉnh. Dùng chung cho năm và tháng."""
+    row['sol_density']=round(row['sol']/area,6) if row['sol'] is not None and area else None
+    row['lit_area_pct']=(round(100*row['lit_area_km2']/area,4)
+                         if row.get('lit_area_km2') is not None and area else None)
+    return row
 
 
 def ntl_monthly_rows(province,filtered,area,cache):
     rows=[];by={}
     for period,path in sorted(filtered.items()):
         row=base(province,period[:4],period[5:],'VIIRS',area)
-        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'],BACKGROUND['VIIRS'])))
-        row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
-        row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
-                               if row.get('dt_sang_km2') is not None and area else None)
-        row['nguong_sang']=LIT_THRESHOLD['VIIRS']
+        row.update(cache.get(path,lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'],BACKGROUND['VIIRS']),
+                             nhan=('VIIRS',)))
+        _dan_xuat(row,area)
+        row['lit_threshold']=LIT_THRESHOLD['VIIRS']
         by[period]=row;rows.append(row)
-    for period,row in by.items():
-        prev=by.get(f'{int(period[:4])-1}-{period[5:]}')
-        row['thay_doi_ntl_yoy_pct']=pct(row['sol_ntl'],prev['sol_ntl']) if prev else None
-        row['hieu_chinh']='PENDING'
+    thu_tu=sorted(by)
+    for i,period in enumerate(thu_tu):
+        row=by[period]
+        cung_ky=by.get(f'{int(period[:4])-1}-{period[5:]}')
+        row['sol_change_yoy_pct']=pct(row['sol'],cung_ky['sol']) if cung_ky else None
+        # So với tháng liền trước TRONG CHUỖI, chỉ khi hai tháng thật sự liền nhau:
+        # thiếu một tháng ở giữa thì để trống chứ không so vượt qua lỗ hổng.
+        truoc=by[thu_tu[i-1]] if i else None
+        lien_ke=truoc is not None and _lien_ke(thu_tu[i-1],period)
+        row['sol_change_mom_pct']=pct(row['sol'],truoc['sol']) if lien_ke else None
+        cua_so=[by[k]['sol'] for k in thu_tu[max(0,i-2):i+1] if by[k]['sol'] is not None]
+        row['sol_ma3']=round(sum(cua_so)/len(cua_so),4) if cua_so else None
+        row['calibration']='PENDING'
+        row['status']='OK' if row['sol'] is not None else 'CHUA_CO_ANH'
     return rows
+
+
+def _lien_ke(truoc,sau):
+    """'2016-12' và '2017-01' là liền kề; '2016-10' và '2016-12' thì không."""
+    a=int(truoc[:4])*12+int(truoc[5:]);b=int(sau[:4])*12+int(sau[5:])
+    return b-a==1
 
 
 def ntl_annual_rows(province,dmsp,viirs,area,cache):
@@ -428,40 +482,52 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
         row=base(province,year,None,src,area)
         nguong=LIT_THRESHOLD.get(src);nen=BACKGROUND.get(src,0.0)
         if path:
-            row.update(cache.get(path,lambda x:ntl_stats(x,nguong,nen)))
-            row['mat_do_ntl']=round(row['sol_ntl']/area,6) if row['sol_ntl'] is not None and area else None
-            row['ty_le_sang_pct']=(round(100*row['dt_sang_km2']/area,4)
-                                   if row.get('dt_sang_km2') is not None and area else None)
+            row.update(cache.get(path,lambda x:ntl_stats(x,nguong,nen),nhan=(src,)))
+            _dan_xuat(row,area)
         else:
-            row.update(sol_ntl=None,mat_do_ntl=None,ty_le_sang_pct=None)
-        same=prev is not None and prev['nguon_anh']==src
-        # Tên biến theo codebook (metadata/codebook_ntl.md), không phải thay_doi_ntl_pct.
-        row['thay_doi_ntl']=pct(row['sol_ntl'],prev['sol_ntl']) if same else None
-        row['ghi_chu']='' if same or prev is None else 'DOI_NGUON_ANH_CHUA_HIEU_CHINH'
-        row['nguong_sang']=nguong
-        row['hieu_chinh']='PENDING';row['trang_thai']='OK' if path else 'CHUA_CO_ANH'
+            row.update(sol=None,sol_density=None,lit_area_pct=None)
+        same=prev is not None and prev['source']==src
+        row['sol_change_pct']=pct(row['sol'],prev['sol']) if same else None
+        row['note']='' if same or prev is None else 'DOI_NGUON_ANH_CHUA_HIEU_CHINH'
+        row['lit_threshold']=nguong
+        row['calibration']='PENDING';row['status']='OK' if path else 'CHUA_CO_ANH'
         rows.append(row);prev=row
     if '2013' in dmsp and '2013' in viirs:
-        # Phải dùng ĐÚNG ngưỡng nền của cột sol_ntl. Gọi ntl_stats trần (background=0)
-        # thì sol_viirs gồm cả nhiễu nền dưới 0,5 — một lượng tỷ lệ với diện tích tỉnh
-        # chứ không với kinh tế — và mô hình sẽ khớp trên đại lượng khác với đại lượng
-        # nó được áp lên. Đã xảy ra thật: R² tụt còn 0,57 và b < 1 (sai chiều vật lý).
+        # Phải dùng ĐÚNG ngưỡng nền của cột sol. Gọi ntl_stats trần (background=0) thì
+        # sol_viirs gồm cả nhiễu nền dưới 0,5 — một lượng tỷ lệ với diện tích tỉnh chứ
+        # không với kinh tế — và mô hình sẽ khớp trên đại lượng khác với đại lượng nó
+        # được áp lên. Đã xảy ra thật: R² tụt còn 0,57 và b < 1 (sai chiều vật lý).
         d=cache.get(dmsp['2013'],lambda x:ntl_stats(x,LIT_THRESHOLD['DMSP'],BACKGROUND['DMSP']),
                     nhan=('DMSP',))
         v=cache.get(viirs['2013'],lambda x:ntl_stats(x,LIT_THRESHOLD['VIIRS'],BACKGROUND['VIIRS']),
                     nhan=('VIIRS',))
-        overlap=dict(ma_tinh=province['ma_tinh'],ten_tinh=province['ten_tinh'],nam=2013,
-                     sol_dmsp=d['sol_ntl'],sol_viirs=v['sol_ntl'],dt_tu_nhien_km2=round(area,3))
+        overlap=dict(province_code=province['ma_tinh'],province_name=province['ten_tinh'],
+                     year=2013,sol_dmsp=d['sol'],sol_viirs=v['sol'],area_km2=round(area,3))
     return rows,overlap
+
+
+def ntl_panel_rows(annual,monthly):
+    """MỘT bộ dữ liệu duy nhất: DMSP theo NĂM đến 2013, VIIRS theo THÁNG từ 2014.
+
+    Hai nửa có tần suất khác nhau nên cột frequency nói rõ từng dòng là năm hay tháng,
+    và một vài cột chỉ có nghĩa ở một nửa (sol_change_pct cho nửa năm; sol_change_mom_pct,
+    sol_ma3, cloud_free_obs cho nửa tháng). Trả về bản sao để không chia sẻ dict với
+    ntl_annual/ntl_monthly — sửa bảng này không được đụng vào bảng kia.
+    """
+    out=[dict(r) for r in annual if int(r['year'])<=2013 and r.get('source')=='DMSP']
+    out+=[dict(r) for r in monthly if int(r['year'])>=2014]
+    return sorted(out,key=lambda r:(int(r['year']),int(r.get('month') or 0)))
 
 
 TABLES={
     'day_indices_monthly':DAY_PACKAGE,
     'ntl_monthly':NTL_PACKAGE,
     'ntl_annual':NTL_PACKAGE,
+    # Bộ dữ liệu gộp để dùng và để nộp: DMSP theo năm 2004-2013 + VIIRS theo tháng 2014-2025.
+    'ntl_panel':NTL_PACKAGE,
     'ntl_overlap_2013':NTL_PACKAGE,
 }
-KEYS=('ma_tinh','nam','thang','nguon_anh')
+KEYS=('province_code','year','month','source')
 
 
 def write_part(control,name,rows):
@@ -480,7 +546,10 @@ def merge(root):
         for name,package in TABLES.items():
             parts=sorted(root.glob(f'{CONTROL}/*/tables/{name}.csv'))
             if not parts:continue
-            frames=[pd.read_csv(p,dtype={'ma_tinh':str},encoding='utf-8-sig') for p in parts if p.stat().st_size]
+            # province_code phải đọc là CHUỖI: để pandas đoán thì '01' thành số 1 và mọi
+            # phép nối theo mã tỉnh về sau đều trượt.
+            frames=[pd.read_csv(p,dtype={'province_code':str},encoding='utf-8-sig')
+                    for p in parts if p.stat().st_size]
             if not frames:continue
             frame=pd.concat(frames,ignore_index=True)
             keys=[k for k in KEYS if k in frame.columns]
@@ -505,7 +574,13 @@ Bộ dữ liệu ánh sáng ban đêm cấp tỉnh, 63 tỉnh, thành phố (tr�
 - raw_data/NTL/DMSP/: DMSP-OLS stable_lights tổng hợp năm 2004–2013 (Earth Engine, NOAA/NCEI), cắt theo tỉnh.
 - raw_data/NTL/VIIRS/: VIIRS DNB tháng (VCMSLCFG, thiếu tháng dùng VCMCFG) 2013–2025; ảnh năm VIIRS tổng hợp từ ảnh tháng (data_intermediate).
 - data_intermediate/: ảnh đã lọc nhiễu, cắt ranh giới (DMSP/, VIIRS_MONTHLY/, VIIRS_ANNUAL/). Hiệu chỉnh liên kết DMSP–VIIRS: PENDING.
-- data_processed/: ntl_annual, ntl_monthly, ntl_overlap_2013 (.csv/.xlsx/.dta), khóa ma_tinh + nam (+ thang).
+- data_processed/: khóa province_code + year + month (month = 0 với dòng theo năm).
+  - ntl_panel: BỘ DỮ LIỆU CHÍNH — DMSP theo năm 2004–2013 + VIIRS theo tháng 2014–2025.
+  - ntl_annual: chuỗi theo năm 2004–2025 (VIIRS năm = trung vị các tháng), cho so sánh năm
+    và cho bước hiệu chỉnh liên vệ tinh.
+  - ntl_monthly: mọi tháng VIIRS có ảnh, kể cả 2013 (năm chồng lấn, không vào ntl_panel).
+  - ntl_overlap_2013: cặp DMSP–VIIRS của năm 2013 để khớp mô hình hiệu chỉnh.
+  Mỗi bảng có .csv/.xlsx/.dta.
 - metadata/: Codebook. logs/: nhật ký cập nhật. Mã nguồn: repository vietnam_satelline_final (task_pipeline/).
 Môi trường: Python 3.11, rasterio, numpy, pandas, earthengine-api (xem task_pipeline/HUONG_DAN_CHAY_LOCAL.md).
 """,
@@ -519,41 +594,67 @@ Bộ dữ liệu ảnh vệ tinh ban ngày cấp tỉnh, 63 tỉnh, thành phố
   Dùng 20 m thay cho 10 m để vừa dung lượng lưu trữ; kênh SWIR gốc chỉ có 20 m.
 - data_intermediate/annual_composite/: ảnh tổng hợp năm mùa khô (median các ảnh tháng), kèm kênh OBS_MONTHS.
 - data_intermediate/ bản đồ phân loại 5 lớp: chờ bộ điểm mẫu trong samples/.
-- data_processed/: day_indices_monthly (.csv/.xlsx/.dta), khóa ma_tinh + nam + thang.
+- data_processed/: day_indices_monthly (.csv/.xlsx/.dta), khóa province_code + year + month.
 - metadata/: Codebook. logs/: nhật ký cập nhật. Mã nguồn: repository vietnam_satelline_final (task_pipeline/).
 """,
 }
 
 CODEBOOK=[
- ('ma_tinh','Mã tỉnh, thành phố theo Cục Thống kê (63 tỉnh trước sáp nhập)','String',''),
- ('ten_tinh','Tên tỉnh, thành phố','String',''),
- ('nam','Năm','Numeric',''),('thang','Tháng','Numeric',''),
- ('nguon_anh','DMSP, VIIRS, Landsat hoặc Sentinel-2','String',''),
- ('dt_tu_nhien_km2','Diện tích tự nhiên của tỉnh (polygon GADM 4.1, EPSG:6933)','Numeric','km²'),
- ('sol_ntl','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ SAU khi trừ nền','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
- ('sol_ntl_tho','Tổng giá trị trước khi trừ nền, để đo tác động của bước lọc nền','Numeric','DN / nW/cm²/sr'),
- ('nguong_nen','Ngưỡng nền đã dùng (VIIRS 0,5; DMSP 0 vì stable_lights đã loại nền)','Numeric','nW/cm²/sr hoặc DN'),
- ('so_pixel_nen','Số pixel nằm dưới ngưỡng nền, đóng góp 0 vào sol_ntl','Numeric','pixel'),
- ('mat_do_ntl','Mật độ: sol_ntl / dt_tu_nhien_km2','Numeric','đơn vị bức xạ/km²'),
- ('thay_doi_ntl','Mức độ thay đổi so với năm trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
- ('thay_doi_ntl_yoy_pct','Thay đổi so với cùng tháng năm trước (VIIRS)','Numeric','%'),
- ('mean_ntl','Bức xạ trung bình trên pixel hợp lệ','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
- ('std_ntl','Độ lệch chuẩn bức xạ trong tỉnh','Numeric','DN / nW/cm²/sr'),
- ('min_ntl','Giá trị nhỏ nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
- ('max_ntl','Giá trị lớn nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
- ('cv_ntl','Hệ số biến thiên std_ntl/mean_ntl: mức chênh lệch sáng–tối trong tỉnh','Numeric','không thứ nguyên'),
- ('hieu_chinh','Trạng thái hiệu chỉnh liên kết DMSP–VIIRS','String',''),
- ('so_pixel_hop_le','Số pixel có dữ liệu trong ranh giới tỉnh','Numeric','pixel'),
- ('so_pixel_sang','Số pixel vượt ngưỡng sáng (VIIRS ≥ 1,5 nW/cm²/sr; DMSP ≥ DN 5)','Numeric','pixel'),
- ('dt_sang_km2','Diện tích các pixel vượt ngưỡng sáng','Numeric','km²'),
- ('ty_le_sang_pct','dt_sang_km2 / dt_tu_nhien_km2: tỷ lệ diện tích được chiếu sáng','Numeric','%'),
- ('sol_vung_sang','Tổng bức xạ chỉ trên các pixel vượt ngưỡng','Numeric','DN / nW/cm²/sr'),
- ('nguong_sang','Ngưỡng đã dùng để xác định pixel sáng (VIIRS 1,5 nW/cm²/sr; DMSP DN 5)','Numeric','nW/cm²/sr hoặc DN'),
- ('ghi_chu','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS','String',''),
- ('loai_phan_xa','SR (phản xạ bề mặt) hoặc TOA (Sentinel-2 2015–2018)','String',''),
- ('<KÊNH>_mean / _std','Trung bình / độ lệch chuẩn của phản xạ kênh (BLUE..SWIR2) và chỉ số NDVI, NDBI, MNDWI, BSI trên pixel hợp lệ','Numeric','phản xạ (0–1) / không thứ nguyên'),
- ('ty_le_hop_le_pct','Diện tích pixel hợp lệ / diện tích tự nhiên','Numeric','%'),
- ('trang_thai','OK, OK_TOA, MISSING_SOURCE (không có ảnh), INSUFFICIENT_QUALITY, CHUA_CO_ANH','String',''),
+ # --- Định danh và thời gian ---
+ ('province_code','Mã tỉnh, thành phố theo Cục Thống kê (63 tỉnh trước sáp nhập)','String',''),
+ ('province_name','Tên tỉnh, thành phố','String',''),
+ ('year','Năm','Numeric',''),
+ ('month','Tháng; 0 với dòng ghi theo năm','Numeric',''),
+ ('period','"2010" (theo năm) hoặc "2016-03" (theo tháng)','String',''),
+ ('frequency','annual hoặc monthly — tần suất của chính dòng đó','String',''),
+ ('source','DMSP, VIIRS, Landsat hoặc Sentinel-2','String',''),
+ ('area_km2','Diện tích tự nhiên của tỉnh (polygon GADM 4.1, EPSG:6933)','Numeric','km²'),
+ # --- Ba chỉ số kế hoạch quản lý dữ liệu bắt buộc ---
+ ('sol','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ SAU khi trừ nền','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
+ ('sol_density','Mật độ kinh tế đêm: sol / area_km2','Numeric','đơn vị bức xạ/km²'),
+ ('sol_change_pct','Thay đổi so với NĂM trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
+ # --- Biến động theo tháng (chỉ nửa VIIRS) ---
+ ('sol_change_yoy_pct','Thay đổi so với CÙNG THÁNG năm trước','Numeric','%'),
+ ('sol_change_mom_pct','Thay đổi so với THÁNG LIỀN TRƯỚC; trống nếu tháng trước thiếu','Numeric','%'),
+ ('sol_ma3','Trung bình trượt 3 tháng của sol, làm mượt dao động mùa','Numeric','nW/cm²/sr'),
+ # --- Trừ ánh sáng nền ---
+ ('sol_raw','Tổng giá trị TRƯỚC khi trừ nền, để đo tác động của bước lọc nền','Numeric','DN / nW/cm²/sr'),
+ ('background_threshold','Ngưỡng nền đã dùng (VIIRS 0,5; DMSP 0 vì stable_lights đã loại nền)','Numeric','nW/cm²/sr hoặc DN'),
+ ('background_pixels','Số pixel dưới ngưỡng nền, đóng góp 0 vào sol','Numeric','pixel'),
+ # --- Phân bố bức xạ trong tỉnh ---
+ ('rad_mean','Bức xạ trung bình trên pixel hợp lệ','Numeric','DN / nW/cm²/sr'),
+ ('rad_std','Độ lệch chuẩn bức xạ trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('rad_min','Giá trị nhỏ nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('rad_max','Giá trị lớn nhất trong tỉnh','Numeric','DN / nW/cm²/sr'),
+ ('rad_cv','Hệ số biến thiên rad_std/rad_mean: chênh lệch sáng–tối trong tỉnh','Numeric','không thứ nguyên'),
+ # --- Vùng có ánh sáng ---
+ ('lit_pixels','Số pixel vượt ngưỡng sáng','Numeric','pixel'),
+ ('lit_area_km2','Diện tích các pixel vượt ngưỡng sáng','Numeric','km²'),
+ ('lit_area_pct','lit_area_km2 / area_km2: tỷ lệ diện tích tỉnh được chiếu sáng','Numeric','%'),
+ ('lit_pixel_pct','lit_pixels / valid_pixels: tỷ lệ số pixel sáng trên số pixel có dữ liệu','Numeric','%'),
+ ('lit_sol','Tổng bức xạ CHỈ trên các pixel vượt ngưỡng','Numeric','DN / nW/cm²/sr'),
+ ('lit_threshold','Ngưỡng xác định pixel sáng (VIIRS 1,5 nW/cm²/sr; DMSP DN 5)','Numeric','nW/cm²/sr hoặc DN'),
+ # --- Chất lượng ---
+ ('valid_pixels','Số pixel có dữ liệu trong ranh giới tỉnh','Numeric','pixel'),
+ ('cloud_free_obs','Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP','Numeric','lượt'),
+ ('status','OK, OK_TOA, CHUA_CO_ANH, MISSING_SOURCE, INSUFFICIENT_QUALITY','String',''),
+ ('note','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS','String',''),
+ # --- Hiệu chỉnh liên vệ tinh DMSP→VIIRS (chỉ bảng theo năm) ---
+ ('sol_cal','sol sau khi quy DMSP về thang VIIRS; dòng VIIRS giữ nguyên','Numeric','nW/cm²/sr'),
+ ('sol_density_cal','sol_cal / area_km2','Numeric','nW/cm²/sr trên km²'),
+ ('sol_change_cal_pct','Thay đổi trên chuỗi đã hiệu chỉnh; CÓ giá trị tại mốc 2013→2014','Numeric','%'),
+ ('calibration','Tên phương pháp hiệu chỉnh, hoặc PENDING','String',''),
+ # --- Bảng năm chồng lấn ntl_overlap_2013 ---
+ ('sol_dmsp','sol của ảnh DMSP 2013, dùng để khớp mô hình hiệu chỉnh','Numeric','DN'),
+ ('sol_viirs','sol của ảnh VIIRS 2013, cùng ngưỡng nền với cột sol','Numeric','nW/cm²/sr'),
+ # --- Bảng ảnh ngày ---
+ ('reflectance_type','SR (phản xạ bề mặt) hoặc TOA (Sentinel-2 2015–2018)','String',''),
+ ('<KÊNH>_mean / _std','Trung bình / độ lệch chuẩn phản xạ kênh (BLUE..SWIR2) và chỉ số NDVI, NDBI, MNDWI, BSI','Numeric','phản xạ (0–1) / không thứ nguyên'),
+ ('valid_area_km2','Diện tích pixel hợp lệ ở mọi kênh','Numeric','km²'),
+ ('valid_area_pct','valid_area_km2 / area_km2','Numeric','%'),
+ ('window_days','Cửa sổ ngày của ảnh tổng hợp','String',''),
+ ('collections','Bộ sưu tập ảnh đã dùng','String',''),
+ ('months_used','Số tháng đã gộp lên dòng năm','Numeric','tháng'),
 ]
 
 
