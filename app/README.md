@@ -25,9 +25,13 @@ python3 -m app.data.build_boundaries --tai-gadm
 python3 -m app.data.build_boundaries                      # các lần sau
 python3 -m app.data.build_boundaries --config <đường dẫn> # nếu máy khác đã có sẵn
 
-# 3. Ảnh COG cho tab Ảnh đêm. Ảnh đêm đổi được bằng rasterio nếu máy không có
-#    gdal_translate; ảnh ngày thì vẫn cần gdal-bin.
+# 3a. Ảnh nền theo NĂM. Ảnh đêm đổi được bằng rasterio nếu máy không có gdal_translate.
 python3 -m app.data.build_cogs --root /data/SatelliteData --kinds VIIRS DMSP
+
+# 3b. Ảnh nền theo THÁNG: ghép 63 ảnh tỉnh của mỗi tháng thành một ảnh toàn quốc.
+#     Không gọi Earth Engine. Xem trước khối lượng bằng --kiem-ke.
+python3 -m app.data.build_monthly_cogs --root /data/SatelliteData --kiem-ke
+python3 -m app.data.build_monthly_cogs --root /data/SatelliteData
 
 # 4. Chạy
 uvicorn app.api.main:app --reload      # http://localhost:8000
@@ -50,7 +54,8 @@ Số giả lập có `status='GIA_LAP'`; chạy lại `build_indices.py` là b�
 | `GET /api/provinces` | 63 tỉnh, kèm số năm đã có dữ liệu từng loại |
 | `GET /api/indices?ma_tinh=01&nam_tu=2004&nam_den=2025` | chuỗi đêm, ngày, kinh tế + cảnh báo phương pháp |
 | `GET /api/coverage` | năm nào đã có dữ liệu gì (dùng cho báo cáo tiến độ) |
-| `GET /api/basemap` | các năm có ảnh nền đêm |
+| `GET /api/basemap?buoc=nam\|thang` | các mốc thời gian có ảnh nền đêm |
+| `GET /api/anh-dem.tif?nam=2024&thang=7` | tải ảnh đêm của một mốc (thang=0 là ảnh cả năm) |
 | `GET /api/originals` | ảnh gốc ở tầng lạnh (chỉ liệt kê) |
 | `GET /api/export.zip?ma_tinh=01` | gói 4 phần: ảnh đêm + chỉ số ngày + chỉ số đêm + chỉ số kinh tế |
 | `GET /api/indicators` | danh mục chỉ số, kèm số tỉnh và khoảng năm thực có |

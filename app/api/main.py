@@ -153,12 +153,19 @@ def get_coverage():
 
 
 @app.get('/api/basemap')
-def basemap():
-    """Danh sách năm có ảnh nền đêm, cho thanh trượt năm trên bản đồ."""
-    years = store.cog_years('NTL')
+def basemap(buoc: str = Query('nam', description="'nam' hoặc 'thang'")):
+    """Danh sách mốc thời gian có ảnh nền đêm, cho thanh trượt trên bản đồ."""
+    if buoc not in ('nam', 'thang'):
+        raise HTTPException(400, "buoc phải là 'nam' hoặc 'thang'")
+    muc = store.cog_years('NTL', buoc)
     # TiTiler 0.19 có {tileMatrixSetId} trong đường dẫn; thiếu đoạn này là 404 mọi ô bản đồ.
-    return {'nam': [entry['nam'] for entry in years], 'chi_tiet': years,
-            'tiles': TILE_URL if _titiler_ready() else None}
+    return {'buoc': buoc,
+            'co_san': store.cac_buoc_thoi_gian('NTL'),
+            'nam': sorted({m['nam'] for m in muc}),
+            'chi_tiet': muc,
+            'tiles': TILE_URL if _titiler_ready() else None,
+            'ghi_chu_thang': 'Ảnh theo tháng chỉ có từ 2014: DMSP (2004–2013) là sản phẩm '
+                             'tổng hợp năm, NOAA không phát hành theo tháng.'}
 
 
 @app.get('/api/boundaries-info')
@@ -193,18 +200,19 @@ def thong_tin_ranh_gioi():
 
 
 @app.get('/api/anh-dem.tif')
-def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100)):
-    """Tải ảnh đêm (COG) của một năm. Đây là mục đích chính của tab Ảnh đêm."""
-    duong_dan = store.cog_path('NTL', nam)
+def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100),
+                thang: int = Query(0, ge=0, le=12, description='0 = ảnh cả năm')):
+    """Tải ảnh đêm (COG) của một mốc thời gian. Mục đích chính của màn hình này."""
+    duong_dan = store.cog_path('NTL', nam, thang)
+    moc = f'{nam}-{thang:02}' if thang else str(nam)
     if not duong_dan:
-        raise HTTPException(404, f'Chưa có ảnh đêm năm {nam}. '
-                                 f'Chạy: python -m app.data.build_cogs --kinds VIIRS DMSP')
+        lenh = ('python -m app.data.build_monthly_cogs' if thang
+                else 'python -m app.data.build_cogs --kinds VIIRS DMSP')
+        raise HTTPException(404, f'Chưa có ảnh đêm {moc}. Chạy: {lenh}')
     path = Path(duong_dan)
     if not path.is_file():
-        raise HTTPException(410, f'Sổ có ghi ảnh năm {nam} nhưng file không còn ở {path}. '
-                                 f'Chạy lại build_cogs.')
-    return FileResponse(path, media_type='image/tiff',
-                        filename=f'VN_NTL_{nam}.tif')
+        raise HTTPException(410, f'Sổ có ghi ảnh {moc} nhưng file không còn ở {path}.')
+    return FileResponse(path, media_type='image/tiff', filename=f'VN_NTL_{moc}.tif')
 
 
 @app.get('/api/originals')

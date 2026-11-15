@@ -98,20 +98,36 @@ def indices(code, year_from=2004, year_to=2025):
             'canh_bao': warnings}
 
 
-def cog_years(kind='NTL'):
+COG_FIELDS = 'nam,thang,duong_dan,nguon_anh,dung_luong_byte,tay,nam_do,dong,bac'
+
+
+def cog_years(kind='NTL', buoc='nam'):
+    """Danh sách ảnh nền. buoc='nam' lấy ảnh tổng hợp năm (thang=0), 'thang' lấy ảnh tháng."""
+    dieu_kien = 'thang=0' if buoc == 'nam' else 'thang BETWEEN 1 AND 12'
     with connect() as connection:
         rows = connection.execute(
-            'SELECT nam,duong_dan,nguon_anh,dung_luong_byte,tay,nam_do,dong,bac '
-            'FROM anh_cog WHERE loai=? ORDER BY nam',
-            (kind,)).fetchall()
+            f'SELECT {COG_FIELDS} FROM anh_cog WHERE loai=? AND {dieu_kien} '
+            f'ORDER BY nam,thang', (kind,)).fetchall()
     return [dict(row) for row in rows]
 
 
-def cog_path(kind, year):
+def cog_path(kind, year, month=0):
     with connect() as connection:
-        row = connection.execute('SELECT duong_dan FROM anh_cog WHERE loai=? AND nam=?',
-                                 (kind, year)).fetchone()
+        row = connection.execute(
+            'SELECT duong_dan FROM anh_cog WHERE loai=? AND nam=? AND thang=?',
+            (kind, year, month)).fetchone()
     return row['duong_dan'] if row else None
+
+
+def cac_buoc_thoi_gian(kind='NTL'):
+    """Những bước thời gian thật sự có ảnh, để giao diện chỉ hiện lựa chọn dùng được."""
+    with connect() as connection:
+        nam = connection.execute(
+            'SELECT COUNT(*) FROM anh_cog WHERE loai=? AND thang=0', (kind,)).fetchone()[0]
+        thang = connection.execute(
+            'SELECT COUNT(*) FROM anh_cog WHERE loai=? AND thang BETWEEN 1 AND 12',
+            (kind,)).fetchone()[0]
+    return {'nam': nam, 'thang': thang}
 
 
 def originals():

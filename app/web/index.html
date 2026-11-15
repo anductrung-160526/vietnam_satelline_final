@@ -22,9 +22,13 @@
     <select id="chon-tinh"></select>
     <button id="nut-toan-quoc" class="nho">↩ Xem toàn quốc</button>
 
-    <label for="chon-nam">Thời điểm</label>
+    <label>Thời điểm</label>
+    <div class="nhom-chon" id="chon-buoc">
+      <button class="buoc dang-chon" data-buoc="nam">Theo năm</button>
+      <button class="buoc" data-buoc="thang">Theo tháng</button>
+    </div>
     <select id="chon-nam"></select>
-    <input type="range" id="nam-truot" min="2004" max="2025" step="1">
+    <input type="range" id="nam-truot" min="0" max="0" step="1">
 
     <div id="thong-tin-anh" class="thong-tin"></div>
 

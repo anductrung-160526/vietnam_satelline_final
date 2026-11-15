@@ -100,13 +100,19 @@ def pham_vi(path):
         return tuple(round(v, 6) for v in transform_bounds(ds.crs, 'EPSG:4326', *ds.bounds))
 
 
-def record(db, table, rows):
+def record(db, table, rows, theo_thang=False):
+    """theo_thang=True thì mỗi dòng có thêm cột thang ngay sau nam."""
     from .build_indices import mo
     connection = mo(db)
-    if table == 'anh_cog':
+    if table == 'anh_cog' and theo_thang:
         connection.executemany(
-            'INSERT OR REPLACE INTO anh_cog(loai,nam,duong_dan,nguon_anh,dung_luong_byte,'
-            'tay,nam_do,dong,bac) VALUES(?,?,?,?,?,?,?,?,?)', rows)
+            'INSERT OR REPLACE INTO anh_cog(loai,nam,thang,duong_dan,nguon_anh,'
+            'dung_luong_byte,tay,nam_do,dong,bac) VALUES(?,?,?,?,?,?,?,?,?,?)', rows)
+    elif table == 'anh_cog':
+        # thang=0 nghĩa là ảnh tổng hợp cả năm.
+        connection.executemany(
+            'INSERT OR REPLACE INTO anh_cog(loai,nam,thang,duong_dan,nguon_anh,'
+            'dung_luong_byte,tay,nam_do,dong,bac) VALUES(?,?,0,?,?,?,?,?,?,?)', rows)
     else:
         connection.executemany(
             'INSERT OR REPLACE INTO anh_goc(loai,nam,duong_dan,dung_luong_byte,ghi_chu) '

@@ -65,13 +65,16 @@ CREATE TABLE IF NOT EXISTS kinh_te(
 CREATE TABLE IF NOT EXISTS anh_cog(
   loai TEXT NOT NULL,          -- 'NTL' hoặc 'DAY'
   nam INTEGER NOT NULL,
+  -- 0 = ảnh tổng hợp cả năm; 1..12 = ảnh của tháng đó. Dùng 0 chứ không phải NULL vì
+  -- NULL trong khoá chính của SQLite không coi là trùng nhau, sẽ sinh ra dòng lặp.
+  thang INTEGER NOT NULL DEFAULT 0,
   duong_dan TEXT NOT NULL,     -- đường dẫn cục bộ hoặc gs:// cho TiTiler
   nguon_anh TEXT,
   dung_luong_byte INTEGER,
   -- Phạm vi ảnh (WGS84). Thiếu nó thì bản đồ xin ô khắp thế giới và TiTiler trả 500
   -- cho mọi ô nằm ngoài ảnh.
   tay REAL, nam_do REAL, dong REAL, bac REAL,
-  PRIMARY KEY(loai,nam)
+  PRIMARY KEY(loai,nam,thang)
 );
 
 -- Ảnh gốc ở tầng lạnh (ổ E / NAS). Chỉ ghi nhận, không phục vụ qua đám mây.

@@ -30,6 +30,16 @@ header h1{margin:0;font-size:1.2rem;letter-spacing:.14em;font-weight:600}
 select,button{font:inherit;color:var(--chu);background:#0d1322;
   border:1px solid var(--vien);border-radius:6px;padding:8px 10px}
 input[type=range]{accent-color:var(--nhan);padding:0;margin-top:8px;background:none;border:0;width:100%}
+/* Nút chuyển bước thời gian: hai nửa dính nhau, nửa đang chọn sáng lên. */
+.nhom-chon{display:flex;gap:0;margin-bottom:8px}
+.nhom-chon .buoc{flex:1;padding:7px 8px;font-size:.82rem;cursor:pointer;
+  border:1px solid var(--vien);background:#0d1322;color:var(--chu-mo)}
+.nhom-chon .buoc:first-child{border-radius:6px 0 0 6px;border-right:0}
+.nhom-chon .buoc:last-child{border-radius:0 6px 6px 0}
+.nhom-chon .buoc.dang-chon{background:var(--nhan);color:#18120a;font-weight:600;
+  border-color:var(--nhan)}
+.nhom-chon .buoc:disabled{opacity:.45;cursor:not-allowed}
+
 button.nho{margin-top:8px;padding:6px 10px;font-size:.82rem;cursor:pointer;color:var(--chu-mo)}
 button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
 #nut-tai-anh{margin-top:18px;background:var(--nhan);color:#18120a;border:0;font-weight:600;

@@ -6,9 +6,13 @@ const $ = id => document.getElementById(id);
 
 let danhSachTinh = [];
 let ranhGioi = null;
-let thongTinNen = null;      // /api/basemap
+let thongTinNen = null;      // /api/basemap của bước đang chọn
 let maDangXem = null;        // null = toàn quốc
 let banDo = null;
+let buoc = 'nam';            // 'nam' hoặc 'thang'
+let cacMoc = [];             // các mốc thời gian có ảnh, theo thứ tự
+const THANG_VN = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+const tenMoc = m => m.thang ? `${THANG_VN[m.thang - 1]}/${m.nam}` : String(m.nam);
 
 async function layJSON(duongDan){
   const r = await fetch(duongDan);
@@ -165,12 +169,12 @@ function themCanhBao(loai, chu){
 }
 
 /* ===================== ảnh đêm ===================== */
-function doiAnhNen(nam){
+function doiAnhNen(chiSo){
   if(!banDo) return;
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
   if(banDo.getSource('anh-dem')) banDo.removeSource('anh-dem');
-  const muc = (thongTinNen?.chi_tiet || []).find(c => c.nam === nam);
-  if(!muc || !thongTinNen.tiles){ veThongTin(null); return; }
+  const muc = cacMoc[chiSo];
+  if(!muc || !thongTinNen?.tiles){ veThongTin(null); return; }
   const nguon = {type:'raster', tileSize:256,
     tiles:[`${thongTinNen.tiles}${encodeURIComponent(muc.duong_dan)}`
            + `&rescale=0,60&colormap_name=inferno&nodata=-9999`]};
@@ -199,12 +203,12 @@ function veThongTin(muc){
   const donVi = muc.nguon_anh === 'DMSP' ? 'DN 0–63' : 'nW/cm²/sr';
   o.innerHTML =
     `<div><span>Nguồn</span><span>${muc.nguon_anh || '—'}</span></div>` +
-    `<div><span>Năm</span><span>${muc.nam}</span></div>` +
+    `<div><span>${muc.thang ? 'Tháng' : 'Năm'}</span><span>${tenMoc(muc)}</span></div>` +
     `<div><span>Độ phân giải</span><span>${muc.nguon_anh === 'DMSP' ? '1 km' : '500 m'}</span></div>` +
     `<div><span>Đơn vị</span><span>${donVi}</span></div>` +
     `<div><span>Dung lượng</span><span>${mb}</span></div>`;
   $('nut-tai-anh').disabled = false;
-  $('ghi-chu-tai').textContent = 'GeoTIFF toàn quốc của năm đang chọn, mở được bằng QGIS.';
+  $('ghi-chu-tai').textContent = 'GeoTIFF toàn quốc của mốc đang chọn, mở được bằng QGIS.';
   $('thang-mau').style.display = '';
   $('thang-mau').innerHTML =
     `<b>0</b><span class="dai" style="background:linear-gradient(90deg,`
@@ -230,8 +234,49 @@ function chonPhamVi(ma){
 
 $('nut-toan-quoc').onclick = () => { $('chon-tinh').value = ''; chonPhamVi(null); };
 $('nut-tai-anh').onclick = () => {
-  window.location = `/api/anh-dem.tif?nam=${$('chon-nam').value}`;
+  const muc = cacMoc[Number($('chon-nam').value)];
+  if(muc) window.location = `/api/anh-dem.tif?nam=${muc.nam}&thang=${muc.thang || 0}`;
 };
+
+async function napMoc(buocMoi){
+  buoc = buocMoi;
+  document.querySelectorAll('.buoc').forEach(b =>
+    b.classList.toggle('dang-chon', b.dataset.buoc === buoc));
+  try{ thongTinNen = await layJSON(`/api/basemap?buoc=${buoc}`); }
+  catch{ thongTinNen = null; }
+  cacMoc = thongTinNen?.chi_tiet || [];
+
+  const chon = $('chon-nam'), truot = $('nam-truot');
+  nhacThoiGian(null);
+  if(!cacMoc.length){
+    chon.innerHTML = '<option>— chưa có ảnh —</option>';
+    chon.disabled = truot.disabled = true;
+    veThongTin(null);
+    nhacThoiGian(buoc === 'thang'
+      ? 'Chưa có ảnh theo tháng. Trên máy có dữ liệu, chạy:'
+        + '<code>python -m app.data.build_monthly_cogs --root E:\\SatelliteData</code>'
+      : 'Chưa có ảnh theo năm. Chạy:'
+        + '<code>python -m app.data.build_cogs --root E:\\SatelliteData --kinds VIIRS DMSP</code>');
+    return;
+  }
+  chon.disabled = truot.disabled = false;
+  /* Giá trị của ô chọn và thanh trượt là CHỈ SỐ trong mảng mốc, không phải năm:
+     ở chế độ tháng các mốc cách nhau một tháng, không đều theo năm. */
+  chon.innerHTML = cacMoc.map((m, i) => `<option value="${i}">${tenMoc(m)}</option>`)
+    .reverse().join('');
+  truot.min = 0; truot.max = cacMoc.length - 1; truot.value = cacMoc.length - 1;
+  chon.value = truot.value;
+  doiAnhNen(cacMoc.length - 1);
+  if(buoc === 'thang' && thongTinNen.ghi_chu_thang) nhacThoiGian(thongTinNen.ghi_chu_thang);
+}
+
+function nhacThoiGian(chu){
+  const cu = document.getElementById('nhac-thoi-gian');
+  if(cu) cu.remove();
+  if(!chu) return;
+  $('canh-bao').insertAdjacentHTML('beforeend',
+    `<div class="canh" id="nhac-thoi-gian">${chu}</div>`);
+}
 
 /* ===================== khởi động ===================== */
 (async function khoiDong(){
@@ -250,27 +295,21 @@ $('nut-tai-anh').onclick = () => {
     + danhSachTinh.map(t => `<option value="${t.ma_tinh}">${t.ten_tinh}</option>`).join('');
   $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
 
-  try{ thongTinNen = await layJSON('/api/basemap'); }catch{ thongTinNen = null; }
-  const nam = thongTinNen?.nam || [];
   const chon = $('chon-nam'), truot = $('nam-truot');
-  if(nam.length){
-    chon.innerHTML = nam.slice().reverse().map(n => `<option value="${n}">${n}</option>`).join('');
-    truot.min = Math.min(...nam); truot.max = Math.max(...nam); truot.value = truot.max;
-    chon.value = truot.max;
-    chon.onchange = () => { truot.value = chon.value; doiAnhNen(Number(chon.value)); };
-    truot.oninput  = () => { chon.value = truot.value; doiAnhNen(Number(truot.value)); };
-  }else{
-    chon.innerHTML = '<option>— chưa có ảnh —</option>';
-    chon.disabled = truot.disabled = true;
-    themCanhBao('thieu', 'Chưa có ảnh đêm dạng COG. Trên máy có dữ liệu, chạy:<br>'
-      + '<code>python -m app.data.build_cogs --root E:\\SatelliteData --kinds VIIRS DMSP</code>');
-  }
-  if(!thongTinNen?.tiles && nam.length){
-    themCanhBao('thieu', 'Có ảnh nhưng chưa cài TiTiler nên chưa phục vụ được ô bản đồ: '
-      + '<code>pip install -r app/requirements.txt</code>');
-  }
+  chon.onchange = () => { truot.value = chon.value; doiAnhNen(Number(chon.value)); };
+  truot.oninput  = () => { chon.value = truot.value; doiAnhNen(Number(truot.value)); };
+  document.querySelectorAll('.buoc').forEach(b => {
+    b.onclick = () => { if(b.dataset.buoc !== buoc) napMoc(b.dataset.buoc); };
+  });
 
   await dungBanDo();
   chonPhamVi(null);
-  if(nam.length) doiAnhNen(Number(chon.value)); else veThongTin(null);
+  await napMoc('nam');
+  const co = thongTinNen?.co_san || {};
+  document.querySelectorAll('.buoc').forEach(b => { b.disabled = !co[b.dataset.buoc]; });
+  if(!co.nam && co.thang) await napMoc('thang');
+  if(!thongTinNen?.tiles && (co.nam || co.thang)){
+    themCanhBao('thieu', 'Có ảnh nhưng chưa cài TiTiler nên chưa phục vụ được ô bản đồ: '
+      + '<code>pip install -r app/requirements.txt</code>');
+  }
 })();
