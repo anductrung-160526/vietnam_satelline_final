@@ -5,7 +5,11 @@
   không lấy Sentinel-2 trước 2015. Mỗi năm chỉ có một nguồn ảnh ngày.
 - Landsat tính ở 30 m, Sentinel-2 ở 10 m (theo kế hoạch quản lý dữ liệu).
 - **Ảnh đêm: DMSP 2004–2013 (theo năm, 1 km); VIIRS 2014–2025 (theo tháng, 500 m).**
-  Không lấy VIIRS 2013.
+- **VIIRS 2013 CÓ tải, nhưng KHÔNG vào chuỗi chỉ số năm.** Năm 2013 trong `ntl_annual` luôn
+  lấy từ DMSP (`derive.ntl_annual_rows`: VIIRS chỉ dùng từ `year>=2014`). VIIRS 2013 tồn tại
+  duy nhất để làm **năm chồng lấn** cho bước hiệu chỉnh DMSP→VIIRS: `harmonize.py` khớp mô
+  hình trên các tỉnh có cả hai nguồn ở 2013, và từ chối chạy nếu dưới 30 tỉnh.
+  Thiếu VIIRS 2013 thì chuỗi 2004–2025 không bao giờ so sánh được xuyên mốc đổi vệ tinh.
 - Chỉ số tính theo tháng (DMSP theo năm), cấp tỉnh, 63 tỉnh trước sáp nhập.
 
 ## Quyết định đã chốt

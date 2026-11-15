@@ -181,3 +181,36 @@ class EndToEndTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OverlapDataRequirementTest(unittest.TestCase):
+    """VIIRS 2013 không vào chuỗi chỉ số, nhưng thiếu nó là không hiệu chỉnh được.
+
+    Hai điều này nghe như mâu thuẫn nên dễ bị hiểu nhầm thành "không cần tải VIIRS 2013".
+    Test giữ lại cả hai vế.
+    """
+
+    def test_the_annual_series_never_takes_viirs_for_2013(self):
+        from task_pipeline import derive
+        nguon = Path(derive.__file__).read_text(encoding='utf-8').replace(' ', '')
+        self.assertIn('elifyear>=2014andyinviirs', nguon)
+        # Và nhánh DMSP phủ trọn 2013.
+        self.assertIn('ifyear<=2013andyindmsp', nguon)
+
+    def test_the_pipeline_still_downloads_viirs_2013(self):
+        from task_pipeline import raw
+        self.assertIn(2013, list(raw.VIIRS_YEARS))
+        self.assertNotIn(2012, list(raw.VIIRS_YEARS))
+
+    def test_harmonising_needs_at_least_thirty_provinces_of_overlap(self):
+        """9 tỉnh có VIIRS 2013 là không đủ: mô hình phải từ chối thay vì khớp bừa."""
+        import random
+        random.seed(3)
+        cap = [(random.uniform(5, 800), random.uniform(50, 9000)) for _ in range(29)]
+        self.assertIsNone(harmonize.fit(cap))
+        self.assertEqual(harmonize.MIN_PROVINCES, 30)
+
+    def test_the_project_rules_explain_why_viirs_2013_is_downloaded(self):
+        quy_tac = (Path(__file__).resolve().parent.parent / 'CLAUDE.md').read_text(encoding='utf-8')
+        self.assertIn('VIIRS 2013', quy_tac)
+        self.assertIn('chồng lấn', quy_tac)
