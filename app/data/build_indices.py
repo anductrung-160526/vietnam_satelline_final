@@ -170,6 +170,18 @@ def load_table(connection, root, table, candidates, monthly):
         header, records = read_csv(path)
         batch = rows_of(records, want, monthly if monthly and monthly in header else None)
         if not batch:
+            # Tệp CÓ dòng nhưng không dòng nào vào được bảng: gần như luôn là lệch tên
+            # khoá (bảng cũ còn mang tên cột tiếng Việt). Báo "chưa có dữ liệu" ở đây là
+            # nói sai, và người dùng sẽ đi tìm tệp thay vì chạy lại bước tính chỉ số.
+            if records:
+                thieu = [c for c in ('province_code', 'year') if c not in header]
+                return {'rows': 0, 'source': str(path), 'cot_khop': [],
+                        'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': [],
+                        'khong_doc_duoc': (
+                            f'{len(records)} dòng nhưng KHÔNG dòng nào vào được bảng.'
+                            + (f' Thiếu cột khoá: {", ".join(thieu)}.' if thieu else '')
+                            + f' Cột đang có: {", ".join(header[:8])}'
+                            + (' …' if len(header) > 8 else ''))}
             continue
         names = sorted({k for row in batch for k in row})
         connection.executemany(
@@ -181,7 +193,7 @@ def load_table(connection, root, table, candidates, monthly):
                 'cot_bang_thieu_trong_csv': sorted(set(want) - set(header) - {'months_used'}),
                 'cot_csv_khong_dung': sorted(set(header) - set(want))}
     return {'rows': 0, 'source': None, 'cot_khop': [],
-            'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': []}
+            'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': [], 'khong_doc_duoc': None}
 
 
 def build(root, db):
@@ -209,7 +221,13 @@ def main():
         info = report[table]
         print(f"\n{table}: {info['rows']} dòng")
         if not info['rows']:
-            print(f'  CHƯA CÓ DỮ LIỆU — app sẽ báo "chưa có số liệu" cho phần này.')
+            if info.get('khong_doc_duoc'):
+                print(f"  nguồn: {info['source']}")
+                print(f"  ĐỌC KHÔNG ĐƯỢC: {info['khong_doc_duoc']}")
+                print('  Bảng này sinh ra từ phiên bản cũ. Chạy lại bước tính chỉ số:')
+                print('    scripts\\windows\\chi_so_dem.ps1')
+            else:
+                print('  CHƯA CÓ DỮ LIỆU — app sẽ báo "chưa có số liệu" cho phần này.')
             continue
         print(f"  nguồn: {info['source']}")
         print(f"  {len(info['cot_khop'])} cột khớp"

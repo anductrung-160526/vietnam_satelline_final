@@ -526,6 +526,46 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class AnOldTableIsNotReportedAsMissingData(unittest.TestCase):
+    """Bảng cũ còn tên cột tiếng Việt thì phải nói là ĐỌC KHÔNG ĐƯỢC, không phải 'chưa có'.
+
+    Hai câu đó dẫn người dùng đi hai hướng khác hẳn nhau: một bên đi tìm tệp, một bên
+    chạy lại bước tính chỉ số. Nói sai ở đây làm mất cả buổi.
+    """
+
+    def _nap(self, header, dong):
+        import csv
+        from app.data import build_indices
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'VN_NTL_Panel_2004_2025' / 'data_processed'
+            out.mkdir(parents=True)
+            with (out / 'ntl_annual.csv').open('w', encoding='utf-8-sig', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=header)
+                writer.writeheader()
+                writer.writerows(dong)
+            return build_indices.build(tmp, Path(tmp) / 'x.db')['ntl_annual']
+
+    def test_vietnamese_column_names_are_reported_as_unreadable(self):
+        info = self._nap(['ma_tinh', 'nam', 'sol_ntl'],
+                         [{'ma_tinh': '01', 'nam': 2014, 'sol_ntl': 1.0}])
+        self.assertEqual(info['rows'], 0)
+        self.assertIn('province_code', info['khong_doc_duoc'])
+        self.assertIn('1 dòng', info['khong_doc_duoc'])
+
+    def test_a_genuinely_absent_file_is_still_reported_as_absent(self):
+        from app.data import build_indices
+        with tempfile.TemporaryDirectory() as tmp:
+            info = build_indices.build(tmp, Path(tmp) / 'x.db')['ntl_annual']
+        self.assertEqual(info['rows'], 0)
+        self.assertIsNone(info['khong_doc_duoc'])
+
+    def test_a_current_table_still_loads(self):
+        info = self._nap(['province_code', 'year', 'sol'],
+                         [{'province_code': '01', 'year': 2014, 'sol': 1.0}])
+        self.assertEqual(info['rows'], 1)
+        self.assertIsNone(info.get('khong_doc_duoc'))
+
+
 class TheFieldTableInClaudeMdMatchesTheCodebook(unittest.TestCase):
     """CLAUDE.md là nơi người ta tra tên cột. Lệch với mã nguồn là tra ra số sai."""
 
