@@ -37,9 +37,9 @@ SOURCES = {
     # schema này nên không nhận nữa: nạp nó vào chỉ tạo ra một bảng toàn cột rỗng.
     'ntl_annual': ([f'{NTL_PACKAGE}/data_processed/ntl_annual.csv'], None),
     # derive ghi chỉ số ngày theo THÁNG; app hiển thị theo năm nên gộp trung bình các tháng.
+    # day_indices_monthly_ee.csv cũng là di sản Earth Engine, cùng lý do.
     'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
-                    f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv',
-                    f'{DAY_PACKAGE}/data_processed/day_indices_monthly_ee.csv'], 'month'),
+                    f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv'], 'month'),
     'economy': (['data_processed/economy.csv', 'app/data/economy.csv'], None),
 }
 

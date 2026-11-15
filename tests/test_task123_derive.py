@@ -450,3 +450,59 @@ class OldIntermediatesAreRebuiltWhenANewTagIsNeeded(unittest.TestCase):
                                   np.ones((4, 4), dtype=bool))],
                          dict(CF_CVG_MEAN='12.5'), [nguon])
             self.assertTrue(derive.up_to_date(dich, [nguon], can_co=('CF_CVG_MEAN',)))
+
+
+class StalePartsFromAnOlderSchemaNeverCollapseTheTable(unittest.TestCase):
+    """Phần bảng của phiên bản cũ thiếu cột khoá hiện tại.
+
+    Gộp thẳng vào thì mọi dòng cũ mang khoá rỗng, và drop_duplicates coi các ô rỗng là
+    GIỐNG NHAU nên hàng nghìn dòng co lại còn một — mất dữ liệu mà không báo gì.
+    Đã xảy ra thật trên ổ E: 1144 dòng cũ còn 1.
+    """
+
+    def _gop(self, moi, cu):
+        import pandas as pd
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            derive.write_part(root / '_control/001_011', 'ntl_annual', moi)
+            derive.write_part(root / '_control/012_022', 'ntl_annual', cu)
+            derive.merge(root)
+            return pd.read_csv(root / 'VN_NTL_Panel_2004_2025/data_processed/ntl_annual.csv',
+                               dtype={'province_code': str})
+
+    def test_an_old_part_is_skipped_instead_of_collapsing_the_new_rows(self):
+        moi = [dict(province_code='01', province_name='Hà Nội', year=y, month=0,
+                    source='VIIRS', sol=float(y)) for y in range(2014, 2026)]
+        cu = [dict(ma_tinh='12', ten_tinh='Lai Châu', nam=y, nguon_anh='VIIRS',
+                   sol_ntl=float(y), ghi_chu=None) for y in range(2014, 2026)]
+        frame = self._gop(moi, cu)
+        self.assertEqual(len(frame), len(moi),
+                         'dòng mới bị dòng cũ khoá-rỗng nuốt mất')
+        self.assertEqual(set(frame['province_code']), {'01'})
+
+    def test_a_column_that_is_empty_everywhere_does_not_kill_the_stata_export(self):
+        """to_stata từ chối cả bảng vì một cột chữ toàn ô trống."""
+        moi = [dict(province_code='01', province_name='Hà Nội', year=y, month=0,
+                    source='VIIRS', sol=float(y), note=None) for y in range(2014, 2026)]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            derive.write_part(root / '_control/001_011', 'ntl_annual', moi)
+            viet = derive.merge(root)
+        duoi = {p.suffix for p in viet}
+        self.assertIn('.dta', duoi, 'mất tệp .dta vì một cột phụ toàn ô trống')
+        self.assertIn('.csv', duoi)
+
+    def test_the_skipped_group_is_named_so_it_can_be_recomputed(self):
+        import io
+        import contextlib
+        cu = [dict(ma_tinh='12', nam=2014, sol_ntl=1.0)]
+        moi = [dict(province_code='01', year=2014, month=0, source='VIIRS', sol=1.0)]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            derive.write_part(root / '_control/001_011', 'ntl_annual', moi)
+            derive.write_part(root / '_control/012_022', 'ntl_annual', cu)
+            loi = io.StringIO()
+            with contextlib.redirect_stderr(loi):
+                derive.merge(root)
+        self.assertIn('012_022', loi.getvalue())
+        self.assertIn('province_code', loi.getvalue())

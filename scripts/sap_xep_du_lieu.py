@@ -12,7 +12,7 @@ Mỗi bảng có ba tệp .csv/.xlsx/.dta sinh ra từ cùng một nguồn. Gi�
 import argparse
 from pathlib import Path
 
-NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
+GOI = ('VN_NTL_Panel_2004_2025', 'VN_LandCover_Panel_2004_2025')
 DUOI = ('.csv', '.xlsx', '.dta')
 
 # tên bảng -> (giữ lại?, vì sao)
@@ -23,18 +23,28 @@ BANG = {
     'ntl_overlap_2013': (True, 'cặp DMSP–VIIRS năm 2013, mô hình hiệu chỉnh khớp trên bảng này'),
     'ntl_indices_ee': (False, 'DI SẢN luồng Earth Engine cũ. Tên cột không còn khớp schema '
                               'hiện tại nên nạp vào chỉ tạo ra bảng toàn cột rỗng.'),
+    'day_indices_monthly_ee': (False, 'DI SẢN luồng Earth Engine cũ, cùng lý do.'),
+    'day_indices_monthly': (True, 'chỉ số ảnh ngày theo tháng'),
+    'day_indices_annual': (True, 'chỉ số ảnh ngày theo năm'),
 }
 
 
 def kiem_ke(root):
-    thu_muc = Path(root) / NTL_PACKAGE / 'data_processed'
-    if not thu_muc.is_dir():
-        raise SystemExit(f'Không thấy {thu_muc}.')
-    co = {}
-    for path in sorted(thu_muc.iterdir()):
-        if path.suffix in DUOI:
-            co.setdefault(path.stem, []).append(path)
-    return thu_muc, co
+    """{thư mục: {tên bảng: [tệp]}} cho cả gói ảnh đêm lẫn gói ảnh ngày."""
+    out = {}
+    for goi in GOI:
+        thu_muc = Path(root) / goi / 'data_processed'
+        if not thu_muc.is_dir():
+            continue
+        co = {}
+        for path in sorted(thu_muc.iterdir()):
+            if path.suffix in DUOI:
+                co.setdefault(path.stem, []).append(path)
+        if co:
+            out[thu_muc] = co
+    if not out:
+        raise SystemExit(f'Không thấy thư mục data_processed nào dưới {root}.')
+    return out
 
 
 def main():
@@ -43,22 +53,26 @@ def main():
     parser.add_argument('--xoa', action='store_true',
                         help='Xoá thật các tệp di sản (mặc định chỉ liệt kê)')
     arguments = parser.parse_args()
-    thu_muc, co = kiem_ke(arguments.root)
-    print(f'{thu_muc}\n')
+    theo_thu_muc = kiem_ke(arguments.root)
 
     bo_di = []
-    for ten, paths in sorted(co.items()):
-        giu, vi_sao = BANG.get(ten, (True, 'chưa rõ — KHÔNG đụng tới'))
-        tong = sum(p.stat().st_size for p in paths) / 1048576
-        thieu = [d for d in DUOI if not any(p.suffix == d for p in paths)]
-        print(f"{'GIỮ   ' if giu else 'BỎ ĐI '} {ten:<20} {tong:>7.1f} MB  "
-              f"{len(paths)} tệp{'  (thiếu ' + ', '.join(thieu) + ')' if thieu else ''}")
-        print(f'       {vi_sao}')
-        if not giu:
-            bo_di += paths
+    co_panel = False
+    for thu_muc, co in theo_thu_muc.items():
+        print(f'{thu_muc}')
+        co_panel = co_panel or 'ntl_panel' in co
+        for ten, paths in sorted(co.items()):
+            giu, vi_sao = BANG.get(ten, (True, 'chưa rõ — KHÔNG đụng tới'))
+            tong = sum(p.stat().st_size for p in paths) / 1048576
+            thieu = [d for d in DUOI if not any(p.suffix == d for p in paths)]
+            print(f"  {'GIỮ   ' if giu else 'BỎ ĐI '} {ten:<24} {tong:>7.1f} MB  "
+                  f"{len(paths)} tệp{'  (thiếu ' + ', '.join(thieu) + ')' if thieu else ''}")
+            print(f'         {vi_sao}')
+            if not giu:
+                bo_di += paths
+        print()
 
-    if 'ntl_panel' not in co:
-        print('\nCHƯA CÓ ntl_panel — bộ dữ liệu gộp chưa được sinh ra.')
+    if not co_panel:
+        print('CHƯA CÓ ntl_panel — bộ dữ liệu gộp chưa được sinh ra.')
         print('Chạy lại bước tính chỉ số: scripts\\windows\\chi_so_dem.ps1')
 
     if not bo_di:

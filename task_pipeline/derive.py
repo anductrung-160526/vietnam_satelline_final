@@ -19,6 +19,7 @@ parts into the shared data_processed files under a file lock.
 """
 import json
 import math
+import sys
 from pathlib import Path
 from province_pipeline.common import atomic_json
 from province_pipeline.sources import NTL_PACKAGE,DAY_PACKAGE
@@ -545,18 +546,40 @@ def write_part(control,name,rows):
     return path
 
 
+def stata_safe(frame):
+    """Cột chữ toàn ô trống làm to_stata từ chối ghi cả bảng. Đổi ô trống thành ''.
+
+    Xảy ra khi một bảng gộp từ nhiều nguồn mà chỉ vài nguồn có cột đó. Để nguyên thì
+    mất luôn tệp .dta của cả bảng vì một cột phụ.
+    """
+    out=frame.copy()
+    for col in out.columns:
+        if out[col].dtype==object:
+            out[col]=out[col].where(out[col].notna(),'')
+    return out
+
+
 def merge(root):
     """Combine every branch's table parts into the shared data_processed files (.csv/.xlsx/.dta)."""
     import pandas as pd
-    root=Path(root);written=[]
+    root=Path(root);written=[];bo_qua=[]
     with file_lock(root/CONTROL/'.tables.lock'):
         for name,package in TABLES.items():
             parts=sorted(root.glob(f'{CONTROL}/*/tables/{name}.csv'))
             if not parts:continue
             # province_code phải đọc là CHUỖI: để pandas đoán thì '01' thành số 1 và mọi
             # phép nối theo mã tỉnh về sau đều trượt.
-            frames=[pd.read_csv(p,dtype={'province_code':str},encoding='utf-8-sig')
-                    for p in parts if p.stat().st_size]
+            frames=[]
+            for p in parts:
+                if not p.stat().st_size:continue
+                f=pd.read_csv(p,dtype={'province_code':str},encoding='utf-8-sig')
+                # Phần bảng của phiên bản cũ KHÔNG có cột khoá hiện tại. Gộp vào thì mọi
+                # dòng cũ mang khoá rỗng, và drop_duplicates coi các ô rỗng là GIỐNG NHAU
+                # nên hàng nghìn dòng co lại còn một. Đã xảy ra thật: 1144 dòng còn 1.
+                # Bỏ qua và nói ra, để nhóm tỉnh đó được tính lại chứ không âm thầm mất.
+                if 'province_code' not in f.columns:
+                    bo_qua.append(p);continue
+                frames.append(f)
             if not frames:continue
             frame=pd.concat(frames,ignore_index=True)
             keys=[k for k in KEYS if k in frame.columns]
@@ -564,12 +587,18 @@ def merge(root):
             dest=root/package/'data_processed';dest.mkdir(parents=True,exist_ok=True)
             for suffix,save in (('.csv',lambda f,p:f.to_csv(p,index=False,encoding='utf-8-sig')),
                                 ('.xlsx',lambda f,p:f.to_excel(p,index=False)),
-                                ('.dta',lambda f,p:f.to_stata(p,write_index=False,version=118))):
+                                ('.dta',lambda f,p:stata_safe(f).to_stata(p,write_index=False,version=118))):
                 target=dest/(name+suffix);tmp=target.with_name(target.stem+'.part'+suffix)
                 try:
                     save(frame,tmp);tmp.replace(target);written.append(target)
                 except ImportError:
                     tmp.unlink(missing_ok=True)   # optional writer (openpyxl) not installed
+    if bo_qua:
+        nhom=sorted({p.parent.parent.name for p in bo_qua})
+        print(f'BỎ QUA {len(bo_qua)} phần bảng của phiên bản cũ (thiếu cột province_code), '
+              f'thuộc nhóm: {", ".join(nhom)}',file=sys.stderr)
+        print('  Những nhóm tỉnh đó chưa vào bảng gộp. Chạy lại chỉ số cho chúng.',
+              file=sys.stderr)
     return written
 
 
