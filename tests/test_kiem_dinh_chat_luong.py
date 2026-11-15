@@ -54,9 +54,64 @@ class ItDoesNotCryWolf(unittest.TestCase):
     def test_the_legitimately_empty_columns_are_not_counted_as_faults(self):
         """sol_change_pct trống ở năm đầu và cloud_free_obs trống với DMSP là ĐÚNG."""
         code, out = chay(bang())
-        self.assertIn('dự kiến: năm đầu chuỗi', out)
+        self.assertIn('năm đầu chuỗi', out)
         self.assertIn('dự kiến: ảnh DMSP không có băng cf_cvg', out)
         self.assertEqual(code, 0)
+
+
+class ARowWithNoImageIsNotFifteenSeparateFaults(unittest.TestCase):
+    """Tháng cả tỉnh không có lượt quan sát sạch mây nào thì MỌI cột thống kê đều trống.
+
+    Đó là một trạng thái hợp lệ, không phải mười lăm lỗi. Đếm nó ở từng cột làm báo cáo
+    đầy màu đỏ và người đọc sẽ bỏ qua cả những lỗi thật.
+    """
+
+    def _co_thang_rong(self):
+        def sua(row):
+            if row['year'] == 2011:
+                row['valid_pixels'] = 0
+                row['status'] = 'CHUA_CO_ANH'
+                for c in ('sol', 'sol_density', 'rad_cv', 'lit_pixels', 'lit_area_pct'):
+                    row[c] = ''
+        return bang(sua)
+
+    def test_those_rows_are_counted_once_and_named(self):
+        code, out = chay(self._co_thang_rong())
+        self.assertIn('DÒNG KHÔNG CÓ ẢNH', out)
+        self.assertIn('63 dòng', out)
+        self.assertEqual(code, 0, f'dòng không có ảnh bị tính là lỗi:\n{out}')
+
+    def test_their_empty_cells_do_not_show_up_as_unexpected(self):
+        _, out = chay(self._co_thang_rong())
+        self.assertNotIn('KHÔNG dự kiến trống', out)
+
+    def test_zero_valid_pixels_is_in_range(self):
+        _, out = chay(self._co_thang_rong())
+        self.assertNotIn('valid_pixels:', out)
+
+
+class ThePixelGridArtefactIsNotReportedAsCorruption(unittest.TestCase):
+    """lit_area_km2 cộng TRỌN mọi pixel chạm ranh giới, area_km2 là diện tích đa giác.
+
+    Tỉnh sáng kín ở DMSP 1 km vì thế ra 101-112%. Là tạo tác của lưới pixel, không phải
+    hỏng dữ liệu — nhưng vượt xa mức đó thì vẫn phải kêu.
+    """
+
+    def test_slightly_over_one_hundred_is_labelled_known(self):
+        def sua(row):
+            if row['year'] == 2008:
+                row['lit_area_pct'] = 108.4
+        code, out = chay(bang(sua))
+        self.assertIn('[ĐÃ BIẾT]', out)
+        self.assertEqual(code, 0, out)
+
+    def test_far_over_one_hundred_is_still_a_fault(self):
+        def sua(row):
+            if row['year'] == 2008:
+                row['lit_area_pct'] = 260.0
+        code, out = chay(bang(sua))
+        self.assertEqual(code, 1, out)
+        self.assertIn('lit_area_pct:', out)
 
 
 class ItCatchesRealProblems(unittest.TestCase):
