@@ -492,3 +492,46 @@ class BuildCogsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EconomyIndicatorDocTest(unittest.TestCase):
+    """Tài liệu chỉ số kinh tế đêm phải khớp với danh mục thật trong app.
+
+    Tài liệu này được dùng cho báo cáo, nên một tên cột sai ở đây sẽ đi thẳng vào bài viết.
+    """
+
+    DOC = REPO / 'docs' / 'CHI_SO_KINH_TE_DEM.md'
+
+    # Tên nhóm B là ĐỀ XUẤT, chưa tồn tại trong app; liệt kê để test không báo nhầm.
+    DE_XUAT = {'sol_bq_dau_nguoi', 'do_co_gian_sol_gdp', 'gdp_du_bao_tu_anh',
+               'chenh_lech_gdp_anh', 'sol_tren_gdp', 'cuong_do_vung_sang',
+               'ty_trong_sol_quoc_gia', 'gdp_du_bao'}
+
+    def test_the_three_mandated_indicators_are_documented_and_real(self):
+        from app.api import store
+        text = self.DOC.read_text(encoding='utf-8')
+        for ma in ('sol_ntl', 'mat_do_ntl', 'thay_doi_ntl'):
+            with self.subTest(chi_so=ma):
+                self.assertIn(f'`{ma}`', text)
+                self.assertIn(ma, store.NIGHT_FIELDS)
+
+    def test_every_group_a_column_named_in_the_doc_exists_in_the_app(self):
+        import re
+        from app.api import store
+        text = self.DOC.read_text(encoding='utf-8')
+        thuc = set(store.NIGHT_FIELDS) | {i['ma'] for i in store.INDICATORS}
+        bo_qua = self.DE_XUAT | {
+            'ma_tinh', 'nam', 'kinh_te', 'dan_so', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
+            'stable_lights', 'data_processed', 'metadata', 'task_pipeline', 'app', 'derive',
+            'ntl_annual', '_hc'}
+        ten = {t for t in re.findall(r'`([a-z0-9_]+)`', text)
+               if '.' not in t and '/' not in t}
+        thieu = sorted(t for t in ten - thuc - bo_qua)
+        self.assertEqual(thieu, [], f'Tài liệu nhắc cột không có thật: {thieu}')
+
+    def test_it_states_the_three_method_constraints(self):
+        """Ba ràng buộc này là chỗ dễ làm hỏng toàn bộ phân tích nếu bỏ qua."""
+        text = self.DOC.read_text(encoding='utf-8')
+        self.assertIn('giá so sánh', text)        # khử lạm phát trước khi tính độ co giãn
+        self.assertIn('_hc', text)                # bắc qua 2013 phải dùng chuỗi đã hiệu chỉnh
+        self.assertIn('Gibson', text)             # DMSP kém tin cậy ở tỉnh nhỏ
