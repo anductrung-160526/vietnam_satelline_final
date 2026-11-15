@@ -90,13 +90,20 @@ def stamp(paths):
     return [[str(p),Path(p).stat().st_size,Path(p).stat().st_mtime_ns] for p in paths]
 
 
-def up_to_date(target,inputs):
-    """True when target exists and was built from exactly these inputs."""
+def up_to_date(target,inputs,can_co=()):
+    """True when target exists and was built from exactly these inputs.
+
+    can_co: những thẻ mà bản dựng HIỆN TẠI phải có. Thêm một thẻ mới vào sản phẩm
+    trung gian mà không khai ở đây thì ảnh cũ vẫn được coi là còn mới, thẻ không bao
+    giờ được ghi, và cột đọc từ thẻ đó rỗng vĩnh viễn mà không có gì báo lỗi.
+    """
     import rasterio
     if not Path(target).exists():return False
     try:
         with rasterio.open(target) as ds:
-            return json.loads(ds.tags().get('INPUT_STAMP','null'))==stamp(inputs)
+            tags=ds.tags()
+            if any(k not in tags for k in can_co):return False
+            return json.loads(tags.get('INPUT_STAMP','null'))==stamp(inputs)
     except Exception:
         return False
 
@@ -189,7 +196,7 @@ def viirs_filtered(raw,province,root):
         months=[(m,raw[('VIIRS_MONTHLY',f'{year}-{m:02}')]) for m in range(1,13) if ('VIIRS_MONTHLY',f'{year}-{m:02}') in raw]
         inputs=[path for _,path in months]
         targets={m:Path(root)/NTL_PACKAGE/'data_intermediate'/'VIIRS_MONTHLY'/name/f'{name}_VIIRS_{year}-{m:02}_filtered.tif' for m,_ in months}
-        if all(up_to_date(t,inputs) for t in targets.values()):
+        if all(up_to_date(t,inputs,can_co=('CF_CVG_MEAN',)) for t in targets.values()):
             out.update({f'{year}-{m:02}':t for m,t in targets.items()});continue
         sources=[rasterio.open(x) for x in inputs]
         try:
@@ -235,7 +242,7 @@ def viirs_annual(raw,filtered,province,root):
     for year in sorted({period[:4] for period in filtered}):
         target=Path(root)/NTL_PACKAGE/'data_intermediate'/'VIIRS_ANNUAL'/name/f'{name}_VIIRS_{year}_annual.tif'
         inputs=[filtered[k] for k in sorted(filtered) if k[:4]==year]
-        if up_to_date(target,inputs):
+        if up_to_date(target,inputs,can_co=('CF_CVG_MEAN',)):
             out[year]=target;continue
         sources=[rasterio.open(x) for x in inputs]
         try:

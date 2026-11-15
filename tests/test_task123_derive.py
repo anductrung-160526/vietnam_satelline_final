@@ -412,3 +412,41 @@ class TheFieldsTheOriginalNotebookHadAreAllPresent(unittest.TestCase):
         self.assertAlmostEqual(row['lit_pixel_pct'],
                                100 * row['lit_pixels'] / row['valid_pixels'], places=4)
         self.assertNotEqual(row['lit_pixel_pct'], row['lit_area_pct'])
+
+
+class OldIntermediatesAreRebuiltWhenANewTagIsNeeded(unittest.TestCase):
+    """Ảnh trung gian cũ thiếu thẻ mới thì phải dựng lại, không được coi là còn mới.
+
+    Nếu không, thẻ không bao giờ được ghi và cột đọc từ thẻ đó rỗng vĩnh viễn mà
+    không có gì báo lỗi — đúng kiểu hỏng âm thầm mà STATS_VERSION sinh ra để tránh.
+    """
+
+    def test_a_file_without_the_required_tag_counts_as_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nguon = tif(root / 'in.tif', np.ones((1, 4, 4), dtype='float32'), 'float32')
+            dich = root / 'out.tif'
+            derive.write(dich, dict(driver='GTiff', width=4, height=4, count=1,
+                                    dtype='float32', crs='EPSG:4326', transform=T,
+                                    nodata=-9999),
+                         ['x'], [((slice(0, 4), slice(0, 4)),
+                                  np.ones((1, 4, 4), dtype='float32'),
+                                  np.ones((4, 4), dtype=bool))],
+                         dict(SOURCE='TEST'), [nguon])
+            self.assertTrue(derive.up_to_date(dich, [nguon]))
+            self.assertFalse(derive.up_to_date(dich, [nguon], can_co=('CF_CVG_MEAN',)),
+                             'thiếu thẻ mà vẫn báo còn mới')
+
+    def test_a_file_with_the_tag_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nguon = tif(root / 'in.tif', np.ones((1, 4, 4), dtype='float32'), 'float32')
+            dich = root / 'out.tif'
+            derive.write(dich, dict(driver='GTiff', width=4, height=4, count=1,
+                                    dtype='float32', crs='EPSG:4326', transform=T,
+                                    nodata=-9999),
+                         ['x'], [((slice(0, 4), slice(0, 4)),
+                                  np.ones((1, 4, 4), dtype='float32'),
+                                  np.ones((4, 4), dtype=bool))],
+                         dict(CF_CVG_MEAN='12.5'), [nguon])
+            self.assertTrue(derive.up_to_date(dich, [nguon], can_co=('CF_CVG_MEAN',)))
