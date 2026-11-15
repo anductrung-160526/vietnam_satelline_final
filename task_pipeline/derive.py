@@ -648,11 +648,16 @@ CODEBOOK=[
  # --- Ba chỉ số kế hoạch quản lý dữ liệu bắt buộc ---
  ('sol','Quy mô kinh tế đêm: tổng giá trị pixel hợp lệ SAU khi trừ nền','Numeric','DN (DMSP) / nW/cm²/sr (VIIRS)'),
  ('sol_density','Mật độ kinh tế đêm: sol / area_km2','Numeric','đơn vị bức xạ/km²'),
- ('sol_change_pct','Thay đổi so với NĂM trước, chỉ khi cùng nguồn ảnh','Numeric','%'),
+ ('sol_change_pct','Thay đổi so với NĂM trước, chỉ khi cùng nguồn ảnh. Chỉ có ở dòng '
+  'theo năm, nên trống ở toàn bộ nửa VIIRS theo tháng của ntl_panel','Numeric','%'),
  # --- Biến động theo tháng (chỉ nửa VIIRS) ---
- ('sol_change_yoy_pct','Thay đổi so với CÙNG THÁNG năm trước','Numeric','%'),
- ('sol_change_mom_pct','Thay đổi so với THÁNG LIỀN TRƯỚC; trống nếu tháng trước thiếu','Numeric','%'),
- ('sol_ma3','Trung bình trượt 3 tháng của sol, làm mượt dao động mùa','Numeric','nW/cm²/sr'),
+ ('sol_change_yoy_pct','Thay đổi so với CÙNG THÁNG năm trước. Chỉ có ở dòng theo tháng. '
+  'Dòng 2014 lấy mốc so sánh từ VIIRS 2013 — cùng cảm biến nên hợp lệ, nhưng các tháng '
+  '2013 nằm ở ntl_monthly chứ không ở ntl_panel','Numeric','%'),
+ ('sol_change_mom_pct','Thay đổi so với THÁNG LIỀN TRƯỚC; trống nếu tháng trước thiếu. '
+  'Chỉ có ở dòng theo tháng; tháng 01/2014 so với 12/2013','Numeric','%'),
+ ('sol_ma3','Trung bình trượt 3 tháng của sol, làm mượt dao động mùa. Chỉ có ở dòng '
+  'theo tháng; cửa sổ của đầu 2014 với tới các tháng 2013','Numeric','nW/cm²/sr'),
  # --- Trừ ánh sáng nền ---
  ('sol_raw','Tổng giá trị TRƯỚC khi trừ nền, để đo tác động của bước lọc nền','Numeric','DN / nW/cm²/sr'),
  ('background_threshold','Ngưỡng nền đã dùng (VIIRS 0,5; DMSP 0 vì stable_lights đã loại nền)','Numeric','nW/cm²/sr hoặc DN'),
@@ -672,9 +677,11 @@ CODEBOOK=[
  ('lit_threshold','Ngưỡng xác định pixel sáng (VIIRS 1,5 nW/cm²/sr; DMSP DN 5)','Numeric','nW/cm²/sr hoặc DN'),
  # --- Chất lượng ---
  ('valid_pixels','Số pixel có dữ liệu trong ranh giới tỉnh','Numeric','pixel'),
- ('cloud_free_obs','Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP','Numeric','lượt'),
+ ('cloud_free_obs','Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP vì '
+  'sản phẩm stable_lights của NOAA không có băng này','Numeric','lượt'),
  ('status','OK, OK_TOA, CHUA_CO_ANH, MISSING_SOURCE, INSUFFICIENT_QUALITY','String',''),
- ('note','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS','String',''),
+ ('note','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS; rỗng ở mọi '
+  'dòng khác, nên trong ntl_panel (hai nửa không giáp nhau) luôn rỗng','String',''),
  # --- Hiệu chỉnh liên vệ tinh DMSP→VIIRS (chỉ bảng theo năm) ---
  ('sol_cal','sol sau khi quy DMSP về thang VIIRS; dòng VIIRS giữ nguyên','Numeric','nW/cm²/sr'),
  ('sol_density_cal','sol_cal / area_km2','Numeric','nW/cm²/sr trên km²'),
