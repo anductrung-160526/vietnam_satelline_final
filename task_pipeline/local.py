@@ -294,8 +294,15 @@ def local_stages(config,root,control,state,boundaries,metadata,job_source,only='
     return 0
 
 
-def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=None,job_source=None,local=None,start='night'):
-    """Earth Engine requests and local filesystem writes only. No Drive, no remote deletion."""
+def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=None,job_source=None,local=None,start='night',only='all'):
+    """Earth Engine requests and local filesystem writes only. No Drive, no remote deletion.
+
+    only='night' dừng hẳn ở ảnh đêm. Mặc định 'all' chạy tiếp sang ảnh ngày theo tỉnh theo
+    tháng: 63 tỉnh x 22 năm x 12 tháng, đủ để đốt hết hạn mức Earth Engine. Khi chỉ cần bù
+    vài tháng ảnh đêm thì phải truyền only='night', nếu không nó âm thầm làm tiếp việc kia.
+    """
+    if only not in ('all','night','day'):
+        raise ValueError("only must be 'all', 'night' or 'day'")
     if inventory is None:
         def inventory(job):
             import ee
@@ -313,7 +320,9 @@ def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=N
         verify_volume(config);atomic_json(state_path,state)
     exit_code=0
     with single_receiver(control):
-        kinds=(raw_jobs.NIGHT,raw_jobs.DAY) if start=='night' else (raw_jobs.DAY,)
+        if only=='night':kinds=(raw_jobs.NIGHT,)
+        elif only=='day':kinds=(raw_jobs.DAY,)
+        else:kinds=(raw_jobs.NIGHT,raw_jobs.DAY) if start=='night' else (raw_jobs.DAY,)
         for kind in kinds:
             audit('local_stage_started',stage=kind+'_raw',province_codes=config['province_codes'])
             exit_code=raw_stage(config,root,control,state,save,boundaries,metadata,kind,inventory,exporter,job_source)
@@ -321,7 +330,7 @@ def run(config,root,boundaries,metadata,inventory=None,exporter=export,control=N
             if exit_code:break
         if not exit_code:
             audit('local_stage_started',stage='intermediate+processed',province_codes=config['province_codes'])
-            exit_code=local(config,root,control,state,boundaries,metadata,job_source)
+            exit_code=local(config,root,control,state,boundaries,metadata,job_source,only)
         state['local_exit_code']=exit_code
         state['summary']=dict(Counter(j['status'] for j in state['jobs'].values() if j['province']['ma_tinh'] in config['province_codes']))
         if exit_code==0:state['current_stage']='complete'
@@ -383,6 +392,6 @@ def main():
         raise SystemExit(code)
     from province_pipeline.earth_engine import initialize
     initialize(c,credentials(args.ee_key))
-    raise SystemExit(run(c,root,boundaries,metadata,control=control,start=args.start))
+    raise SystemExit(run(c,root,boundaries,metadata,control=control,start=args.start,only=args.only))
 
 if __name__=='__main__':main()

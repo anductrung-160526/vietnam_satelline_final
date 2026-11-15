@@ -98,5 +98,36 @@ class NativeCommandErrorTest(unittest.TestCase):
         self.assertIn('CLOUDSDK_STORAGE_SLICED_OBJECT_DOWNLOAD_MAX_COMPONENTS', text)
 
 
+class Viirs2013ScriptTest(unittest.TestCase):
+    """Script tải bù VIIRS 2013 phải luôn kèm --only night.
+
+    Thiếu cờ đó thì task_pipeline.local run chạy tiếp sang ảnh ngày theo tỉnh theo tháng:
+    63 tỉnh × 22 năm × 12 tháng, đủ để đốt hết hạn mức Earth Engine.
+    """
+
+    SCRIPT = (Path(__file__).resolve().parent.parent
+              / 'scripts' / 'windows' / 'tai_viirs_2013.ps1')
+
+    def test_every_download_call_stops_at_night(self):
+        text = self.SCRIPT.read_text(encoding='ascii')
+        for dong in text.splitlines():
+            if 'task_pipeline.local run' in dong:
+                with self.subTest(dong=dong.strip()[:70]):
+                    self.assertIn('--only night', dong)
+
+    def test_all_six_province_groups_are_covered(self):
+        text = self.SCRIPT.read_text(encoding='ascii')
+        for nhom in ('1-11', '12-22', '23-33', '34-43', '44-53', '54-63'):
+            self.assertIn(nhom, text)
+
+    def test_each_group_carries_the_project_from_the_project_rules(self):
+        """Mỗi nhóm tỉnh một project Earth Engine; lấy đúng theo bảng trong CLAUDE.md."""
+        from task_pipeline.local import RANGE_PROJECTS
+        text = self.SCRIPT.read_text(encoding='ascii')
+        for project in RANGE_PROJECTS.values():
+            with self.subTest(project=project):
+                self.assertIn(project, text)
+
+
 if __name__ == '__main__':
     unittest.main()

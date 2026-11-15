@@ -369,3 +369,40 @@ class BranchLockTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as thoat:
                 local.main()
         self.assertIn('tiến trình khác', str(thoat.exception.code))
+
+
+class RunOnlyNightTest(unittest.TestCase):
+    """run --only night phải dừng ở ảnh đêm.
+
+    Mặc định run chạy tiếp sang ảnh ngày theo tỉnh theo tháng: 63 tỉnh x 22 năm x 12 tháng.
+    Khi chỉ cần bù vài tháng ảnh đêm mà quên cờ này thì nó âm thầm khởi động lượt tải đó và
+    đốt hết hạn mức Earth Engine.
+    """
+
+    def _kinds(self, **kw):
+        from unittest.mock import patch
+        from task_pipeline import local, raw as raw_jobs
+        thay = []
+        def ghi(config, root, control, state, save, boundaries, metadata, kind, *a):
+            thay.append(kind); return 0
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(local, 'raw_stage', ghi), \
+                 patch.object(local, 'verify_volume', return_value=root), \
+                 patch.object(local, 'single_receiver', __import__('contextlib').nullcontext), \
+                 patch.object(local, 'atomic_json', lambda *a, **k: None):
+                local.run(config(), root, {}, META, inventory=lambda j: {},
+                          control=root / 'c', local=lambda *a, **k: 0, **kw)
+        return thay
+
+    def test_only_night_never_starts_the_day_download(self):
+        from task_pipeline import raw as raw_jobs
+        self.assertEqual(self._kinds(only='night'), [raw_jobs.NIGHT])
+
+    def test_the_default_still_does_both(self):
+        from task_pipeline import raw as raw_jobs
+        self.assertEqual(self._kinds(), [raw_jobs.NIGHT, raw_jobs.DAY])
+
+    def test_an_unknown_half_is_refused(self):
+        with self.assertRaises(ValueError):
+            self._kinds(only='ntl')
