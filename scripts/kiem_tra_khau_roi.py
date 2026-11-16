@@ -31,7 +31,13 @@ def cac_state(root):
 
 
 def quet_state(root, moc):
-    """Trạng thái của mọi job có chứa mốc này, gom theo nhánh."""
+    """Trạng thái của mọi job VIIRS của mốc này, gom theo nhánh.
+
+    job_id là mã băm 32 ký tự (province_pipeline/jobs.py: digest(job)[:32]) nên KHÔNG
+    chứa mốc hay tên sản phẩm — dò theo tên khoá là chắc chắn trượt. Nhưng local.py
+    lưu cả job vào state (`state['jobs'][jid]=dict(job,status=...)`), nên product và
+    period nằm ngay trong giá trị. Đọc ở đó.
+    """
     ra = {}
     for path in cac_state(root):
         nhanh = path.parent.parent.name
@@ -41,9 +47,17 @@ def quet_state(root, moc):
             ra[nhanh] = {'loi': str(loi)}
             continue
         jobs = state.get('jobs') or {}
-        khop = {jid: (e or {}).get('status') for jid, e in jobs.items()
-                if moc in jid and 'VIIRS' in jid.upper()}
-        ra[nhanh] = {'tong_job': len(jobs), 'khop': khop}
+        khop = {}
+        for jid, e in jobs.items():
+            e = e or {}
+            if e.get('product') == 'VIIRS_MONTHLY' and e.get('period') == moc:
+                ma = (e.get('province') or {}).get('ma_tinh') or e.get('ma_tinh') or '??'
+                khop[jid] = (e.get('status'), ma, e.get('error_type'))
+        # Kho tồn EE nằm riêng: inventory_key khác job_id, và chính nó quyết định job
+        # có bị đánh dấu MISSING_SOURCE vĩnh viễn hay không.
+        kho = {k: (v or {}).get('status') for k, v in (state.get('inventory') or {}).items()
+               if moc in str(k) and 'VIIRS' in str(k).upper()}
+        ra[nhanh] = {'tong_job': len(jobs), 'khop': khop, 'kho': kho}
     return ra
 
 
@@ -85,6 +99,10 @@ def main():
     p.add_argument('--moc', nargs='+', required=True, help='Mốc tháng, ví dụ 2022-07')
     p.add_argument('--chi-tiet', action='store_true', dest='chi_tiet',
                    help='In từng job_id thay vì chỉ đếm')
+    p.add_argument('--so-sanh', default=None, dest='so_sanh',
+                   help='Mốc chạy được để so tên tệp, ví dụ 2022-06. '
+                        'prior() chỉ nhận ảnh nằm ĐÚNG đường dẫn mong đợi, nên khác tên '
+                        'là đủ để ảnh có trên đĩa mà vẫn không vào bảng.')
     a = p.parse_args()
 
     if not Path(a.root).is_dir():
@@ -102,21 +120,32 @@ def main():
 
         print('\n1. TRẠNG THÁI JOB trong state.json')
         tong = Counter()
+        hong_theo_tinh = defaultdict(list)
         for nhanh, info in quet_state(a.root, moc).items():
             if 'loi' in info:
                 print(f'   {nhanh}: ĐỌC KHÔNG ĐƯỢC — {info["loi"]}')
                 continue
-            dem = Counter(info['khop'].values())
+            dem = Counter(st for st, _ma, _e in info['khop'].values())
             tong.update(dem)
             mo_ta = ', '.join(f'{k or "(trống)"}={v}' for k, v in sorted(
                 dem.items(), key=lambda x: str(x[0]))) or 'không job nào khớp'
             print(f'   {nhanh}: {mo_ta}   (tổng {info["tong_job"]} job trong tệp)')
-            if a.chi_tiet:
-                for jid, st in sorted(info['khop'].items()):
-                    print(f'      {st or "(trống)":<16} {jid}')
+            if info['kho']:
+                print('      kho tồn EE: ' + ', '.join(
+                    f'{v}={n}' for v, n in Counter(info['kho'].values()).items()))
+            for jid, (st, ma, loi) in info['khop'].items():
+                if st != 'DONE_LOCAL':
+                    hong_theo_tinh[st or '(trống)'].append((ma, loi))
+                if a.chi_tiet:
+                    print(f'      {st or "(trống)":<18} {ma}  {loi or ""}  {jid}')
         if tong:
             print('   Cộng lại: ' + ', '.join(f'{k or "(trống)"}={v}'
                                               for k, v in sorted(tong.items(), key=lambda x: str(x[0]))))
+        for st, ds in hong_theo_tinh.items():
+            loi = Counter(e for _m, e in ds if e)
+            print(f'   {st}: {len(ds)} tỉnh — ' + ', '.join(m for m, _e in ds[:10])
+                  + (' …' if len(ds) > 10 else '')
+                  + (f'   lỗi: {dict(loi)}' if loi else ''))
 
         bn = quet_bien_nhan(a.root, moc)
         so_bn = sum(len(v) for v in bn.values())
@@ -132,6 +161,19 @@ def main():
             if rong:
                 print(f'   {len(rong)} tệp nhỏ bất thường (<1 KB) — nhiều khả năng hỏng.')
 
+        if a.so_sanh:
+            print(f'\n3b. SO TÊN TỆP với mốc {a.so_sanh} (mốc chạy được)')
+            tot = quet_tep(a.root, a.so_sanh) or []
+            theo_tinh_xau = {t.parent.name: t for t in (tep or [])}
+            theo_tinh_tot = {t.parent.name: t for t in tot}
+            chung = sorted(set(theo_tinh_xau) & set(theo_tinh_tot))[:4]
+            for thu_muc in chung:
+                print(f'   {thu_muc}')
+                print(f'     {a.so_sanh}: {theo_tinh_tot[thu_muc].name}')
+                print(f'     {moc}: {theo_tinh_xau[thu_muc].name}')
+            if not chung:
+                print('   Không có thư mục tỉnh nào có cả hai mốc để so.')
+
         bang = quet_bang(a.root, moc)
         if bang is None:
             print('\n4. BẢNG: chưa có ntl_monthly.csv')
@@ -145,9 +187,16 @@ def main():
         so_done = tong.get('DONE_LOCAL', 0)
         so_khop = sum(tong.values())
         co_bang = len(bang[0]) if bang else 0
-        if not so_khop:
-            print('   Không job nào của mốc này có trong state.json. Luồng tải chưa từng')
-            print('   chạy tới đây trên máy này, hoặc state nằm ở máy khác.')
+        so_tep = len(tep) if tep else 0
+        if not so_khop and so_tep:
+            print(f'   state.json không có job nào của mốc này, nhưng trên đĩa có {so_tep} tệp.')
+            print('   => Ảnh đã tải xong ở nơi khác (máy ảo, hoặc nhánh đã xoá state), rồi')
+            print('      chép sang đây. Không có biên nhận thì prior() chỉ nhận ảnh nằm ĐÚNG')
+            print('      đường dẫn mong đợi; tên khác một ký tự là ảnh bị bỏ qua.')
+            print('      Chạy lại kèm --so-sanh <mốc chạy được> để xem tên có khớp không.')
+        elif not so_khop:
+            print('   Không job nào của mốc này có trong state.json và cũng không có tệp.')
+            print('   Luồng tải chưa từng chạy tới đây trên máy này.')
         elif so_done < so_khop:
             hong = {k: v for k, v in tong.items() if k != 'DONE_LOCAL'}
             print(f'   {so_khop - so_done}/{so_khop} job KHÔNG ở trạng thái DONE_LOCAL: '
