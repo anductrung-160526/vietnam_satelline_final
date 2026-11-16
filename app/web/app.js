@@ -6,6 +6,18 @@ const $ = id => document.getElementById(id);
 
 let danhSachTinh = [];
 let ranhGioi = null;
+
+// File provinces.geojson dựng trước đợt đổi tên cột còn mang khoá tiếng Việt
+// (ma_tinh / ten_tinh). Đổi tên tại chỗ khi nạp để bản cũ trên máy vẫn dùng được,
+// khỏi phải tải lại GADM 50 MB. Bản dựng mới đã ghi thẳng province_code.
+function chuanHoaRanhGioi(fc){
+  (fc.features || []).forEach(f => {
+    const p = f.properties || (f.properties = {});
+    if(p.province_code == null && p.ma_tinh != null) p.province_code = p.ma_tinh;
+    if(p.province_name == null && p.ten_tinh != null) p.province_name = p.ten_tinh;
+    if(p.province_code != null) p.province_code = String(p.province_code).padStart(2,'0');
+  });
+}
 let thongTinNen = null;      // /api/basemap của bước đang chọn
 let maDangXem = null;        // null = toàn quốc
 let banDo = null;
@@ -152,6 +164,7 @@ async function dungBanDo(){
       + '<code>python -m app.data.build_boundaries --tai-gadm</code>');
   }
   if(!ranhGioi) return;
+  chuanHoaRanhGioi(ranhGioi);
 
   banDo.addSource('tinh', {type:'geojson', data:ranhGioi, promoteId:'province_code'});
   banDo.addSource('mat-na', {type:'geojson', data:{type:'FeatureCollection', features:[]}});

@@ -222,7 +222,8 @@ def thong_tin_ranh_gioi():
         vong = toa_do if hinh.get('type') == 'Polygon' else [r for p in toa_do for r in p]
         dinh = sum(len(r) for r in vong)
         tong_dinh += dinh
-        ket_qua.append({'province_code': feature.get('properties', {}).get('province_code'),
+        ma_hinh = feature.get('properties', {})
+        ket_qua.append({'province_code': ma_hinh.get('province_code') or ma_hinh.get('ma_tinh'),
                         'loai_hinh': hinh.get('type'), 'so_vong': len(vong), 'so_dinh': dinh})
     ma_file = {str(r['province_code']) for r in ket_qua}
     nang = sorted(ket_qua, key=lambda r: -r['so_dinh'])[:5]
@@ -243,7 +244,10 @@ def _hinh_tinh(province_code):
     if not path.is_file():
         return None
     for f in json.loads(path.read_text(encoding='utf-8'))['features']:
-        if str(f['properties'].get('province_code', '')).zfill(2) == province_code:
+        thuoc_tinh = f['properties']
+        # Tệp dựng trước đợt đổi tên cột còn mang khoá ma_tinh; đọc cả hai.
+        ma = thuoc_tinh.get('province_code') or thuoc_tinh.get('ma_tinh') or ''
+        if str(ma).zfill(2) == province_code:
             return f
     return None
 

@@ -1068,3 +1068,33 @@ class TheNightEconomyScreen(unittest.TestCase):
         self.assertTrue(cot <= that, f'cột thừa trong tệp mẫu: {cot - that}')
         for bat_buoc in ('province_code', 'year', 'population', 'grdp', 'grdp_price_basis'):
             self.assertIn(bat_buoc, cot)
+
+
+def test_ranh_gioi_doc_duoc_ca_khoa_cu(tmp_path, monkeypatch):
+    """GeoJSON dựng trước đợt đổi tên cột mang khoá ma_tinh — vẫn phải cắt được.
+
+    Lỗi đã gặp: build_boundaries ghi 'ma_tinh' còn giao diện đọc 'province_code',
+    nên chọn Hà Nội thì bản đồ không cắt theo ranh giới mà không báo lỗi gì rõ ràng.
+    """
+    from app.api import main as api
+    o = {'type': 'Polygon', 'coordinates': [[[105., 20.], [106., 20.], [106., 21.], [105., 20.]]]}
+    cu = tmp_path / 'cu.geojson'
+    cu.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {'ma_tinh': '01', 'ten_tinh': 'Hà Nội'},
+         'geometry': o}]}), encoding='utf-8')
+    monkeypatch.setenv('VNGIS_BOUNDARIES', str(cu))
+    assert api._hinh_tinh('01') is not None, 'không đọc được khoá ma_tinh cũ'
+
+    moi = tmp_path / 'moi.geojson'
+    moi.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
+        {'type': 'Feature', 'properties': {'province_code': '01', 'province_name': 'Hà Nội'},
+         'geometry': o}]}), encoding='utf-8')
+    monkeypatch.setenv('VNGIS_BOUNDARIES', str(moi))
+    assert api._hinh_tinh('01') is not None
+
+
+def test_build_boundaries_ghi_khoa_tieng_anh():
+    """Bản dựng mới phải ghi đúng tên khoá mà app/web/app.js đang đọc."""
+    nguon = Path('app/data/build_boundaries.py').read_text(encoding='utf-8')
+    assert "'province_code': code" in nguon
+    assert "'ma_tinh': code" not in nguon

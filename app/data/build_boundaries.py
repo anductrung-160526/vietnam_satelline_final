@@ -51,8 +51,8 @@ def build(config_path=None, out=OUT, tolerance=0.001, download=False):
             geometry = shape(feature['geometry'])
         properties = feature.get('properties', {})
         features.append({'type': 'Feature',
-                         'properties': {'ma_tinh': code,
-                                        'ten_tinh': properties.get('ten_tinh'),
+                         'properties': {'province_code': code,
+                                        'province_name': properties.get('ten_tinh'),
                                         'gid_1': properties.get('gid_1')},
                          'geometry': mapping(geometry)})
     collection = {'type': 'FeatureCollection',
