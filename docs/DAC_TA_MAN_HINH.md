@@ -107,14 +107,15 @@ và **số đã chọn**, như DataBank:
 │ ▾ Chỉ số        Có 14 · Chọn 1 │
 │   [tìm chỉ số…           🔍]   │
 │   ☑ Tổng độ sáng — SOL         │
-│     (nW/cm²/sr · DN)           │
-│   ☐ Mật độ độ sáng             │
-│     (nW/cm²/sr trên km²)       │
+│       (nW/cm²/sr · DN)         │
+│   ☐ Tổng độ sáng, mật độ       │
+│       (nW/cm²/sr trên km²)     │
 │ ▾ Thời gian    Có 286 · Chọn 8 │
 │   Khoảng có sẵn: 2004–2025     │
 │   XEM GẦN ĐÂY  5  10  15  20   │
-│   ☐ 2025 ▸ tháng               │
-│   ☐ 2024 ▸ tháng               │
+│   ☐ 2025 ▸                     │
+│   ☐ 2024 ▾                     │
+│       ☐01 ☐02 ☐03 ☐04         │
 │   ☐ 2013                       │
 │ ▸ Hàm thời gian                │
 └────────────────────────────────┘
@@ -130,6 +131,7 @@ và **số đã chọn**, như DataBank:
 | Nhãn hiển thị | Cột |
 |---|---|
 | Tổng độ sáng — SOL (nW/cm²/sr · DN) | `sol` |
+| *Đơn vị in cùng dòng với tên, cỡ chữ nhỏ hơn và màu mờ — không xuống dòng.* | |
 | Tổng độ sáng, mật độ (nW/cm²/sr trên km²) | `sol_density` |
 | Tổng độ sáng, bình quân đầu người (nW/cm²/sr trên người) | `sol_per_capita` |
 | Tổng độ sáng **o/w** vùng sáng (nW/cm²/sr · DN) | `lit_sol` |
@@ -153,7 +155,8 @@ và **số đã chọn**, như DataBank:
 - Danh sách năm 2004–2025, xếp mới nhất trước, ô tick, chia cột như DataBank.
 - `Khoảng có sẵn: 2004–2025` ở đầu nhóm.
 - `XEM GẦN ĐÂY  5 · 10 · 15 · 20` — bấm là tick nhanh N năm gần nhất.
-- **Năm từ 2014 trở đi có mũi tên mở ra 12 tháng.** Tick năm = tick cả 12 tháng;
+- **Năm từ 2014 trở đi có mũi tên `▸` mở ra 12 tháng.** Chỉ mũi tên, không kèm chữ.
+  Tick năm = tick cả 12 tháng;
   tick vài tháng thì ô của năm thành trạng thái nửa chọn (`indeterminate`).
 - Năm 2004–2013 **không** có mũi tên: DMSP là ảnh tổng hợp năm, NOAA không phát hành
   theo tháng. Không bày ra rồi báo lỗi.
@@ -313,8 +316,9 @@ cột lọc                   bảng
 - Cột = mốc thời gian đã tick, cộng một cột cho mỗi **hàm thời gian** đã thêm.
 - Tick **nhiều chỉ số** thì bảng thêm một cột `Chỉ số` và mỗi tỉnh chiếm nhiều hàng.
 - Ô không có số để **trống**, không tô 0, kèm chữ nhỏ trên cao là **cờ trạng thái**.
-- Chú giải cờ nằm ngay dưới bảng, không bắt người đọc đi tìm.
-- Cột `source` hiện ở chân bảng, không chen vào từng ô.
+- Nghĩa của cờ nằm ở **tooltip** khi rê chuột, không in thành chú giải dưới bảng.
+  Chú giải đầy đủ đi kèm tệp tải xuống trong `ghi_chu_phuong_phap.md`.
+- Dưới bảng **chỉ có nút Tải CSV**, không có dòng ghi chú nào.
 - Chọn một tỉnh ở cột lọc → bảng vẫn hiện đủ 63 tỉnh nhưng **tô sáng hàng của tỉnh đó**.
   Cô cần so sánh giữa các tỉnh, lọc còn một hàng là mất mục đích.
 
