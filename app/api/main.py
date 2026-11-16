@@ -100,36 +100,44 @@ def list_indicators():
 
 
 @app.get('/api/panel')
-def get_panel(chi_so: str = Query('sol', description='Mã chỉ số, xem /api/indicators'),
+def get_panel(chi_so: str = Query('sol', description='Một hoặc nhiều mã, ngăn bằng dấu phẩy'),
+              moc: str = Query('', description="Mốc đã chọn: '2010' hoặc '2024-07', "
+                                               'ngăn bằng dấu phẩy. Trống thì lấy cả khoảng năm'),
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
-              province_code: str = Query('', description='Danh sách mã tỉnh ngăn bằng dấu phẩy; '
-                                                   'để trống là tất cả')):
-    """Bảng rộng: mỗi dòng một tỉnh, mỗi cột một năm — như World Development Indicators."""
+              province_code: str = Query('', description='Mã tỉnh ngăn bằng dấu phẩy; '
+                                                         'để trống là tất cả')):
+    """Bảng rộng: mỗi dòng một tỉnh × chỉ số, mỗi cột một mốc thời gian."""
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    data = store.panel(chi_so, nam_tu, nam_den, province_code.split(',') if province_code else None)
+    data = store.panel(chi_so.split(','), moc.split(',') if moc else None,
+                       province_code.split(',') if province_code else None, nam_tu, nam_den)
     if data is None:
-        raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}. Xem /api/indicators')
+        raise HTTPException(400, f'Mã chỉ số hoặc mốc không hợp lệ: chi_so={chi_so} moc={moc}. '
+                                 'Xem /api/indicators')
     return data
 
 
 @app.get('/api/panel.csv')
 def panel_csv(chi_so: str = Query('sol'),
+              moc: str = Query(''),
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
               province_code: str = Query(''),
-              dang: str = Query('rong', description="'rong' một dòng một tỉnh, "
-                                                    "'dai' một dòng một tỉnh-năm")):
+              dang: str = Query('rong', description="'rong' một dòng một tỉnh-chỉ số, "
+                                                    "'dai' một dòng một tỉnh-chỉ số-mốc")):
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
     if dang not in ('rong', 'dai'):
         raise HTTPException(400, "dang phải là 'rong' hoặc 'dai'")
-    data = store.panel(chi_so, nam_tu, nam_den, province_code.split(',') if province_code else None)
+    data = store.panel(chi_so.split(','), moc.split(',') if moc else None,
+                       province_code.split(',') if province_code else None, nam_tu, nam_den)
     if data is None:
-        raise HTTPException(404, f'Không có chỉ số nào mã {chi_so}')
+        raise HTTPException(400, f'Mã chỉ số hoặc mốc không hợp lệ: chi_so={chi_so} moc={moc}')
     payload = export.panel_csv(data, dang)
-    name = f"vngisdash_{chi_so}_{nam_tu}_{nam_den}_{dang}.csv"
+    # Tên tệp chỉ dùng ASCII: tên có dấu làm hỏng header HTTP.
+    goi = chi_so.replace(',', '-')[:40]
+    name = f"vngisdash_{goi}_{nam_tu}_{nam_den}_{dang}.csv"
     return StreamingResponse(
         io.BytesIO(payload), media_type='text/csv; charset=utf-8',
         headers={'Content-Disposition': f'attachment; filename="{name}"',

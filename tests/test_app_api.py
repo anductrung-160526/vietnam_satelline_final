@@ -121,7 +121,7 @@ class ApiTest(unittest.TestCase):
         body = self.client.get('/api/panel', params={'chi_so': 'sol',
                                                      'nam_tu': 2020, 'nam_den': 2025}).json()
         self.assertEqual(len(body['dong']), 63)
-        self.assertEqual(body['nam'], [2020, 2021, 2022, 2023, 2024, 2025])
+        self.assertEqual(body['moc'], ['2020', '2021', '2022', '2023', '2024', '2025'])
         self.assertTrue(all(len(r['gia_tri']) == 6 for r in body['dong']))
         trong = [r for r in body['dong'] if all(v is None for v in r['gia_tri'])]
         self.assertEqual(len(trong) + body['so_tinh_co_du_lieu'], 63)
@@ -157,7 +157,7 @@ class ApiTest(unittest.TestCase):
     def test_an_indicator_code_can_never_reach_the_sql(self):
         """Mã chỉ số do người dùng gửi: chỉ nhận mã có trong danh mục, không ghép vào SQL."""
         for bad in ('sol; DROP TABLE tinh', '"', 'khong_co_that', '*'):
-            self.assertEqual(self.client.get('/api/panel', params={'chi_so': bad}).status_code, 404)
+            self.assertEqual(self.client.get('/api/panel', params={'chi_so': bad}).status_code, 400)
             self.assertEqual(self.client.get('/api/choropleth',
                                              params={'chi_so': bad}).status_code, 404)
         self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
@@ -170,7 +170,7 @@ class ApiTest(unittest.TestCase):
         self.assertIn('01,Hà Nội', wide)
         long = self.client.get('/api/panel.csv', params={'chi_so': 'sol', 'dang': 'dai'}
                                ).content.decode('utf-8-sig')
-        self.assertIn('province_code,province_name,year,chi_so,don_vi,gia_tri,source', long)
+        self.assertIn('province_code,province_name,period,chi_so,don_vi,gia_tri,source', long)
         self.assertEqual(self.client.get('/api/panel.csv',
                                          params={'chi_so': 'sol', 'dang': 'xxx'}).status_code, 400)
 
@@ -739,3 +739,76 @@ class MonthlyIndicesLoadIntoTheDatabase(unittest.TestCase):
         for ten in ('sol_ma3', 'sol_change_mom_pct', 'sol_change_yoy_pct', 'cloud_free_obs'):
             with self.subTest(cot=ten):
                 self.assertIn(ten, cot)
+
+
+class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
+    """Màn 2 cần tick nhiều tỉnh, nhiều chỉ số, nhiều mốc — kể cả mốc tháng."""
+
+    def setUp(self):
+        import sqlite3
+        self.db, self.client, _ = fresh_database(self)
+        with sqlite3.connect(self.db) as con:
+            con.executemany(
+                'INSERT OR REPLACE INTO ntl_annual(province_code,year,source,sol,rad_cv) '
+                'VALUES(?,?,?,?,?)',
+                [('01', y, 'VIIRS', 100.0 + y, 1.5) for y in (2023, 2024)])
+            con.executemany(
+                'INSERT OR REPLACE INTO ntl_monthly'
+                '(province_code,year,month,source,sol,sol_ma3,cloud_free_obs) '
+                'VALUES(?,?,?,?,?,?,?)',
+                [('01', 2024, m, 'VIIRS', 10.0 + m, 9.0 + m, 7.5) for m in (1, 2, 3)])
+
+    def test_two_indicators_give_two_rows_per_province(self):
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol,rad_cv', 'moc': '2024', 'province_code': '01'}).json()
+        self.assertEqual([d['chi_so'] for d in body['dong']], ['sol', 'rad_cv'])
+        self.assertEqual(body['dong'][0]['gia_tri'], [2124.0])
+        self.assertEqual(body['dong'][1]['gia_tri'], [1.5])
+
+    def test_a_monthly_period_reads_the_monthly_table(self):
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol', 'moc': '2024-01,2024-02,2024-03',
+            'province_code': '01'}).json()
+        self.assertEqual(body['moc'], ['2024-01', '2024-02', '2024-03'])
+        self.assertEqual(body['dong'][0]['gia_tri'], [11.0, 12.0, 13.0])
+        self.assertTrue(body['co_thang'])
+
+    def test_years_and_months_can_be_mixed_and_come_out_in_order(self):
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol', 'moc': '2024-02,2023,2024-01', 'province_code': '01'}).json()
+        self.assertEqual(body['moc'], ['2023', '2024-01', '2024-02'])
+        self.assertEqual(body['dong'][0]['gia_tri'], [2123.0, 11.0, 12.0])
+
+    def test_a_monthly_only_indicator_is_empty_on_a_yearly_period(self):
+        """sol_ma3 chỉ có theo tháng; hỏi theo năm thì trống chứ không nổ."""
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol_ma3', 'moc': '2024,2024-02', 'province_code': '01'}).json()
+        self.assertEqual(body['dong'][0]['gia_tri'], [None, 11.0])
+
+    def test_an_indicator_without_a_monthly_table_is_empty_on_a_monthly_period(self):
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol_cal', 'moc': '2024-02', 'province_code': '01'}).json()
+        self.assertEqual(body['dong'][0]['gia_tri'], [None])
+
+    def test_a_malformed_period_is_rejected_not_guessed(self):
+        for xau in ('2024-13', '24-01', 'abc', "2024'; DROP TABLE province;--"):
+            with self.subTest(moc=xau):
+                self.assertEqual(self.client.get('/api/panel', params={
+                    'chi_so': 'sol', 'moc': xau}).status_code, 400)
+        self.assertEqual(len(self.client.get('/api/provinces').json()['tinh']), 63)
+
+    def test_the_csv_column_headers_are_the_periods(self):
+        csv_text = self.client.get('/api/panel.csv', params={
+            'chi_so': 'sol', 'moc': '2024-01,2024-02',
+            'province_code': '01'}).content.decode('utf-8-sig')
+        self.assertIn('province_code,province_name,chi_so,don_vi,source,2024-01,2024-02', csv_text)
+
+    def test_every_monthly_indicator_is_a_real_column_of_the_monthly_table(self):
+        import sqlite3
+        from app.api import store
+        with sqlite3.connect(self.db) as con:
+            cot = {r[1] for r in con.execute('PRAGMA table_info(ntl_monthly)')}
+        for entry in store.INDICATORS:
+            if entry.get('bang_thang'):
+                with self.subTest(chi_so=entry['ma']):
+                    self.assertIn(entry['ma'], cot)

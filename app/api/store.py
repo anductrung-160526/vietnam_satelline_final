@@ -1,5 +1,6 @@
 """Truy cập SQLite chỉ-đọc. Mọi truy vấn của API đi qua đây."""
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -169,10 +170,10 @@ def coverage():
 INDICATORS = (
     dict(ma='sol', ten='Tổng độ sáng ban đêm (SOL)', don_vi='nW/cm²/sr',
          bang='ntl_annual', chu_so=2,
-         mo_ta='Tổng bức xạ ban đêm trong ranh giới tỉnh.'),
+         mo_ta='Tổng bức xạ ban đêm trong ranh giới tỉnh.', bang_thang='ntl_monthly'),
     dict(ma='sol_density', ten='Mật độ sáng ban đêm', don_vi='nW/cm²/sr trên km²',
          bang='ntl_annual', chu_so=4,
-         mo_ta='Tổng độ sáng chia cho diện tích tỉnh.'),
+         mo_ta='Tổng độ sáng chia cho diện tích tỉnh.', bang_thang='ntl_monthly'),
     dict(ma='sol_change_pct', ten='Biến động độ sáng so với năm trước', don_vi='%',
          bang='ntl_annual', chu_so=2,
          mo_ta='Chỉ so trong cùng một nguồn; bỏ trống tại mốc DMSP→VIIRS năm 2013.'),
@@ -187,32 +188,48 @@ INDICATORS = (
          mo_ta='Tính trên chuỗi đã hiệu chỉnh nên có giá trị cả ở mốc 2013→2014.'),
     dict(ma='sol_raw', ten='Tổng độ sáng trước khi trừ nền', don_vi='nW/cm²/sr',
          bang='ntl_annual', chu_so=2,
-         mo_ta='Để đo bước lọc nền lấy đi bao nhiêu; không dùng cho phân tích.'),
+         mo_ta='Để đo bước lọc nền lấy đi bao nhiêu; không dùng cho phân tích.', bang_thang='ntl_monthly'),
     dict(ma='rad_mean', ten='Độ sáng trung bình mỗi điểm ảnh', don_vi='nW/cm²/sr',
-         bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh hợp lệ.'),
+         bang='ntl_annual', chu_so=4, mo_ta='Giá trị trung bình trên mọi điểm ảnh hợp lệ.', bang_thang='ntl_monthly'),
     dict(ma='rad_max', ten='Điểm sáng nhất tỉnh', don_vi='nW/cm²/sr',
-         bang='ntl_annual', chu_so=2, mo_ta='Giá trị lớn nhất trong ranh giới tỉnh.'),
+         bang='ntl_annual', chu_so=2, mo_ta='Giá trị lớn nhất trong ranh giới tỉnh.', bang_thang='ntl_monthly'),
     dict(ma='rad_std', ten='Độ lệch chuẩn bức xạ', don_vi='nW/cm²/sr',
-         bang='ntl_annual', chu_so=4, mo_ta='Mức phân tán độ sáng giữa các điểm ảnh.'),
+         bang='ntl_annual', chu_so=4, mo_ta='Mức phân tán độ sáng giữa các điểm ảnh.', bang_thang='ntl_monthly'),
     dict(ma='rad_cv', ten='Hệ số biến thiên ánh sáng', don_vi='không thứ nguyên',
          bang='ntl_annual', chu_so=4,
-         mo_ta='std/mean — chênh lệch sáng–tối trong tỉnh; cao nghĩa là tập trung vào vài điểm.'),
+         mo_ta='std/mean — chênh lệch sáng–tối trong tỉnh; cao nghĩa là tập trung vào vài điểm.', bang_thang='ntl_monthly'),
     dict(ma='lit_pixels', ten='Số điểm ảnh sáng', don_vi='điểm ảnh',
          bang='ntl_annual', chu_so=0,
-         mo_ta='Vượt ngưỡng sáng: VIIRS ≥ 1,5 nW/cm²/sr, DMSP ≥ DN 5. Hai thang đo khác nhau.'),
+         mo_ta='Vượt ngưỡng sáng: VIIRS ≥ 1,5 nW/cm²/sr, DMSP ≥ DN 5. Hai thang đo khác nhau.', bang_thang='ntl_monthly'),
     dict(ma='lit_area_km2', ten='Diện tích được chiếu sáng', don_vi='km²',
-         bang='ntl_annual', chu_so=2, mo_ta='Tổng diện tích các điểm ảnh vượt ngưỡng sáng.'),
+         bang='ntl_annual', chu_so=2, mo_ta='Tổng diện tích các điểm ảnh vượt ngưỡng sáng.', bang_thang='ntl_monthly'),
     dict(ma='lit_area_pct', ten='Tỷ lệ diện tích được chiếu sáng', don_vi='%',
          bang='ntl_annual', chu_so=2,
-         mo_ta='lit_area_km2 chia diện tích tỉnh — thay cho "tỷ lệ thắp sáng" của luồng cũ.'),
+         mo_ta='lit_area_km2 chia diện tích tỉnh — thay cho "tỷ lệ thắp sáng" của luồng cũ.', bang_thang='ntl_monthly'),
     dict(ma='lit_sol', ten='Độ sáng của vùng sáng', don_vi='nW/cm²/sr',
          bang='ntl_annual', chu_so=2,
-         mo_ta='Tổng bức xạ chỉ trên vùng vượt ngưỡng; loại nhiễu nền của vùng tối.'),
+         mo_ta='Tổng bức xạ chỉ trên vùng vượt ngưỡng; loại nhiễu nền của vùng tối.', bang_thang='ntl_monthly'),
     dict(ma='valid_pixels', ten='Số điểm ảnh có dữ liệu', don_vi='điểm ảnh',
          bang='ntl_annual', chu_so=0,
-         mo_ta='Dùng để kiểm tra độ phủ; DMSP 1 km nên ít điểm hơn VIIRS 500 m rất nhiều.'),
+         mo_ta='Dùng để kiểm tra độ phủ; DMSP 1 km nên ít điểm hơn VIIRS 500 m rất nhiều.', bang_thang='ntl_monthly'),
     dict(ma='area_km2', ten='Diện tích tự nhiên', don_vi='km²',
-         bang='ntl_annual', chu_so=1, mo_ta='Diện tích trong ranh giới GADM 4.1.'),
+         bang='ntl_annual', chu_so=1, mo_ta='Diện tích trong ranh giới GADM 4.1.', bang_thang='ntl_monthly'),
+    # Năm chỉ số dưới đây CHỈ có theo tháng: DMSP là ảnh tổng hợp năm nên không có.
+    dict(ma='sol_ma3', ten='Tổng độ sáng, trung bình trượt 3 tháng', don_vi='nW/cm²/sr',
+         bang='ntl_monthly', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='Làm mượt dao động mùa. Dùng cái này khi vẽ chuỗi tháng; số thô là răng cưa do mây.'),
+    dict(ma='sol_change_mom_pct', ten='Biến động so với tháng liền trước', don_vi='%',
+         bang='ntl_monthly', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='Trống nếu tháng liền trước thiếu ảnh — không so vượt qua lỗ hổng.'),
+    dict(ma='sol_change_yoy_pct', ten='Biến động so với cùng tháng năm trước', don_vi='%',
+         bang='ntl_monthly', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='Triệt tiêu mùa vụ nên đọc xu thế tốt hơn biến động theo tháng liền trước.'),
+    dict(ma='lit_pixel_pct', ten='Tỷ lệ điểm ảnh sáng', don_vi='%',
+         bang='ntl_annual', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='lit_pixels chia valid_pixels. Khác lit_area_pct vốn chia diện tích tỉnh.'),
+    dict(ma='cloud_free_obs', ten='Số lượt quan sát sạch mây', don_vi='lượt',
+         bang='ntl_annual', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='Trường chất lượng. Dưới 2 lượt thì con số của tháng đó kém tin cậy.'),
     dict(ma='NDVI_mean', ten='NDVI trung bình', don_vi='chỉ số -1…1',
          bang='day_annual', chu_so=4, mo_ta='Chỉ số thực vật.'),
     dict(ma='NDBI_mean', ten='NDBI trung bình', don_vi='chỉ số −1…1',
@@ -241,42 +258,99 @@ def indicators():
     return out
 
 
-def panel(code, year_from=2004, year_to=2025, codes=None):
-    """Bảng rộng kiểu WDI: mỗi dòng một tỉnh, mỗi cột một năm.
+def doc_moc(text):
+    """'2010' -> ('nam', 2010, 0); '2024-07' -> ('thang', 2024, 7). Sai định dạng -> None.
 
-    Trả về None nếu mã chỉ số không có trong danh mục — không bao giờ ghép chuỗi mã
-    người dùng gửi vào câu SQL.
+    Không bao giờ ghép chuỗi người dùng gửi vào câu SQL: mốc chỉ đi vào tham số truy vấn
+    sau khi đã qua int().
     """
-    entry = BY_CODE.get(code)
-    if entry is None:
+    text = str(text or '').strip()
+    if re.fullmatch(r'\d{4}', text):
+        return ('nam', int(text), 0)
+    khop = re.fullmatch(r'(\d{4})-(\d{2})', text)
+    if khop and 1 <= int(khop.group(2)) <= 12:
+        return ('thang', int(khop.group(1)), int(khop.group(2)))
+    return None
+
+
+def ten_moc(loai, year, month):
+    return f'{year}-{month:02}' if loai == 'thang' else str(year)
+
+
+def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
+    """Bảng rộng kiểu WDI: mỗi dòng một (tỉnh × chỉ số), mỗi cột một mốc thời gian.
+
+    codes: danh sách mã chỉ số. Mã lạ -> None, không bao giờ ghép vào câu SQL.
+    moc:   danh sách '2010' (năm) hoặc '2024-07' (tháng), trộn được. Bỏ trống thì
+           lấy mọi năm trong [year_from, year_to].
+    tinh:  danh sách mã tỉnh; bỏ trống thì lấy cả 63.
+    """
+    muc = [BY_CODE.get(c.strip()) for c in codes if str(c).strip()]
+    if not muc or any(m is None for m in muc):
         return None
-    wanted = [c.strip().zfill(2) for c in codes if c.strip()] if codes else None
-    years = list(range(year_from, year_to + 1))
+    if moc:
+        doc = [doc_moc(x) for x in moc]
+        if any(d is None for d in doc):
+            return None
+        cac_moc = sorted(set(doc), key=lambda d: (d[1], d[2]))
+    else:
+        cac_moc = [('nam', y, 0) for y in range(year_from, year_to + 1)]
+    co_thang = any(d[0] == 'thang' for d in cac_moc)
+    nam_nam = [d[1] for d in cac_moc if d[0] == 'nam']
+    muon = [c.strip().zfill(2) for c in tinh if str(c).strip()] if tinh else None
+
     with connect() as connection:
-        provinces_rows = connection.execute(
+        tinh_rows = connection.execute(
             'SELECT province_code,province_name,number FROM province ORDER BY number').fetchall()
-        values = connection.execute(
-            f'SELECT province_code,year,"{entry["ma"]}" FROM {entry["bang"]} '
-            f'WHERE year BETWEEN ? AND ? AND "{entry["ma"]}" IS NOT NULL',
-            (year_from, year_to)).fetchall()
-        sources = {row[0]: row[1] for row in connection.execute(
-            f'SELECT province_code,GROUP_CONCAT(DISTINCT source) FROM {entry["bang"]} '
-            f'WHERE year BETWEEN ? AND ? GROUP BY province_code', (year_from, year_to))
-        } if entry['bang'] != 'economy' else {}
-    grid = {}
-    for code_, year, value in values:
-        grid.setdefault(code_, {})[year] = value
-    rows = []
-    for province in provinces_rows:
-        if wanted is not None and province['province_code'] not in wanted:
+        o = {}          # (mã chỉ số, mã tỉnh, tên mốc) -> giá trị
+        nguon = {}
+        for entry in muc:
+            for loai, year, month in cac_moc:
+                # Chỉ số không có bảng theo tháng thì ô để trống, không nổ.
+                bang = entry.get('bang_thang') if loai == 'thang' else entry.get('bang')
+                if not bang:
+                    continue
+                if loai == 'thang':
+                    cau = (f'SELECT province_code,"{entry["ma"]}",source FROM {bang} '
+                           f'WHERE year=? AND month=?')
+                    tham = (year, month)
+                else:
+                    cau = (f'SELECT province_code,"{entry["ma"]}",source FROM {bang} '
+                           f'WHERE year=?' + ('' if bang != 'ntl_monthly' else ' AND month=0'))
+                    tham = (year,)
+                for ma_tinh, gia_tri, src in connection.execute(cau, tham):
+                    o[(entry['ma'], ma_tinh, ten_moc(loai, year, month))] = gia_tri
+                    if src:
+                        nguon.setdefault(ma_tinh, set()).add(src)
+
+    nhan_moc = [ten_moc(*d) for d in cac_moc]
+    dong = []
+    for tinh_row in tinh_rows:
+        ma_tinh = tinh_row['province_code']
+        if muon is not None and ma_tinh not in muon:
             continue
-        series = grid.get(province['province_code'], {})
-        rows.append({'province_code': province['province_code'], 'province_name': province['province_name'],
-                     'source': sources.get(province['province_code']),
-                     'gia_tri': [series.get(year) for year in years]})
-    return {'chi_so': dict(entry), 'nam': years, 'dong': rows,
-            'so_tinh_co_du_lieu': sum(1 for r in rows if any(v is not None for v in r['gia_tri'])),
-            'canh_bao': _panel_warnings(entry, years)}
+        for entry in muc:
+            dong.append({
+                'province_code': ma_tinh, 'province_name': tinh_row['province_name'],
+                'chi_so': entry['ma'], 'ten': entry['ten'], 'don_vi': entry['don_vi'],
+                'chu_so': entry['chu_so'],
+                'source': '/'.join(sorted(nguon.get(ma_tinh, ()))) or None,
+                'gia_tri': [o.get((entry['ma'], ma_tinh, m)) for m in nhan_moc]})
+    co_so = {d['province_code'] for d in dong if any(v is not None for v in d['gia_tri'])}
+    return {'chi_so': [dict(e) for e in muc], 'moc': nhan_moc, 'dong': dong,
+            'co_thang': co_thang,
+            'so_tinh_co_du_lieu': len(co_so),
+            'canh_bao': _canh_bao_bang(muc, nam_nam, cac_moc)}
+
+
+def _canh_bao_bang(muc, years, cac_moc):
+    """Cảnh báo cho một bảng nhiều chỉ số: gộp cảnh báo của từng chỉ số, không lặp."""
+    ra = []
+    for entry in muc:
+        for c in _panel_warnings(entry, years or [d[1] for d in cac_moc]):
+            if c not in ra:
+                ra.append(c)
+    return ra
 
 
 def _panel_warnings(entry, years):

@@ -89,26 +89,29 @@ def build(code, year_from, year_to, include_images=True, timestamp=''):
 #   'rong' — mỗi dòng một tỉnh, mỗi cột một năm. Dễ đọc, dễ dán vào Excel.
 #   'dai'  — mỗi dòng một cặp tỉnh-năm. Dạng Stata/R/pandas hay dùng để hồi quy.
 def panel_csv(data, shape='rong'):
-    entry, years = data['chi_so'], data['nam']
+    """Bảng nhiều chỉ số × nhiều mốc. Cột mốc là '2010' hoặc '2024-07'."""
+    moc = data['moc']
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow([f"# {entry['ten']} ({entry['don_vi']})"])
-    writer.writerow([f"# Mã chỉ số: {entry['ma']} · nguồn bảng: {entry['bang']}"])
-    writer.writerow([f"# {entry['mo_ta']}"])
+    for entry in data['chi_so']:
+        writer.writerow([f"# {entry['ten']} ({entry['don_vi']}) · mã {entry['ma']}"])
+        writer.writerow([f"# {entry['mo_ta']}"])
     for warning in data.get('canh_bao', []):
         writer.writerow([f'# LƯU Ý: {warning}'])
     writer.writerow([])
     if shape == 'rong':
-        writer.writerow(['province_code', 'province_name', 'chi_so', 'don_vi', 'source', *years])
+        writer.writerow(['province_code', 'province_name', 'chi_so', 'don_vi', 'source', *moc])
         for row in data['dong']:
-            writer.writerow([row['province_code'], row['province_name'], entry['ma'], entry['don_vi'],
-                             row['source'] or '', *['' if v is None else v for v in row['gia_tri']]])
+            writer.writerow([row['province_code'], row['province_name'], row['chi_so'],
+                             row['don_vi'], row['source'] or '',
+                             *['' if v is None else v for v in row['gia_tri']]])
     else:
-        writer.writerow(['province_code', 'province_name', 'year', 'chi_so', 'don_vi', 'gia_tri', 'source'])
+        writer.writerow(['province_code', 'province_name', 'period', 'chi_so', 'don_vi',
+                         'gia_tri', 'source'])
         for row in data['dong']:
-            for year, value in zip(years, row['gia_tri']):
+            for ky, value in zip(moc, row['gia_tri']):
                 if value is None:
                     continue
-                writer.writerow([row['province_code'], row['province_name'], year, entry['ma'],
-                                 entry['don_vi'], value, row['source'] or ''])
+                writer.writerow([row['province_code'], row['province_name'], ky,
+                                 row['chi_so'], row['don_vi'], value, row['source'] or ''])
     return buffer.getvalue().encode('utf-8-sig')
