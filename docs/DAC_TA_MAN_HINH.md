@@ -609,6 +609,32 @@ răng cưa do mây, không đọc được gì.
 
 **Ô thiếu số tạo khoảng đứt**, không nối qua. `connectNulls: false`.
 
+### 8.4. Biểu đồ chi tiết đến tháng
+
+Có. Dữ liệu đã sẵn: `ntl_monthly` là 63 tỉnh × 156 tháng. Biểu đồ **đi theo đúng những mốc
+đã tick** trong nhóm Thời gian, không cần điều khiển riêng — tick 12 tháng của 2024 thì
+trục x có 12 điểm của 2024.
+
+Bốn ràng buộc:
+
+**1. Chỉ từ 2014.** DMSP là ảnh tổng hợp năm, NOAA không phát hành theo tháng. Khi biểu đồ
+ở chế độ tháng, phần 2004–2013 **không vẽ**, kèm một dòng nói rõ vì sao. Không vẽ một điểm
+năm lẫn vào giữa các điểm tháng: trục category sẽ đặt nó sai chỗ và người đọc không nhận ra.
+
+**2. Mặc định vẽ `sol_ma3`.** Chuỗi tháng số thô là một hàng răng cưa do mây mùa mưa —
+tháng 6 và tháng 9 tụt sâu không phải vì kinh tế. Số thô để ở tuỳ chọn, cho ai cần nhìn
+đúng từng tháng.
+
+**3. Quá 36 điểm thì bỏ chấm, chỉ còn đường.** 144 tháng × 5 tỉnh là 720 chấm chồng nhau.
+Riêng điểm mang cờ `U` vẫn giữ chấm rỗng ruột: đó là thứ người đọc cần thấy.
+
+**4. Nhãn trục chỉ in tháng 01 của mỗi năm.** 144 nhãn thì không đọc được nhãn nào.
+
+> **Biểu đồ mùa vụ là công cụ đúng hơn cho câu hỏi về tháng.** Muốn trả lời "tháng nào trong
+> năm sáng nhất", chuỗi 144 tháng kéo dài không bằng **12 tháng trên trục x, mỗi năm một
+> đường chồng lên nhau**. Chu kỳ mùa mưa và Tết hiện ra ngay. Đây là biểu đồ thứ ba nên làm,
+> sau hai biểu đồ ở mục 8.2.
+
 ### 8.4. Giới hạn số đường
 
 Tick cả 63 tỉnh rồi bấm Biểu đồ sẽ ra 63 đường chồng nhau, vô dụng. Quá **8 tỉnh** thì chỉ
