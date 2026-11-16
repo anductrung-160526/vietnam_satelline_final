@@ -18,8 +18,11 @@
 
 <main id="khung-chinh">
   <aside id="cot-loc">
-    <label for="chon-tinh">Phạm vi — tỉnh / thành phố</label>
+    <label for="tim-tinh">Phạm vi — tỉnh / thành phố</label>
+    <input id="tim-tinh" type="search" placeholder="Gõ tên tỉnh, có dấu hoặc không…"
+           autocomplete="off" aria-controls="chon-tinh">
     <select id="chon-tinh"></select>
+    <p id="khong-thay-tinh" class="nho an">Không có tỉnh nào khớp.</p>
     <button id="nut-toan-quoc" class="nho">↩ Xem toàn quốc</button>
 
     <label>Thời điểm</label>

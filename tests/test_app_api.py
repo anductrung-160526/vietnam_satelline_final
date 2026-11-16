@@ -526,6 +526,34 @@ if __name__ == '__main__':
     unittest.main()
 
 
+class TheProvincePickerIsSortedAndSearchable(unittest.TestCase):
+    """Cô dặn: danh sách tỉnh xếp A-Z và gõ tìm được tên tỉnh."""
+
+    def setUp(self):
+        self.js = (REPO / 'app' / 'web' / 'app.js').read_text(encoding='utf-8')
+        self.html = (REPO / 'app' / 'web' / 'index.html').read_text(encoding='utf-8')
+
+    def test_the_list_is_sorted_with_vietnamese_collation(self):
+        """localeCompare('vi') mới xếp đúng a < ă < â; sort() trần thì Bắc đứng trước Bạc."""
+        self.assertIn("localeCompare", self.js)
+        self.assertIn("'vi'", self.js)
+
+    def test_there_is_a_search_box_wired_to_the_list(self):
+        self.assertIn('id="tim-tinh"', self.html)
+        self.assertIn("$('tim-tinh').oninput", self.js)
+
+    def test_typing_without_diacritics_still_matches(self):
+        """Người dùng hiếm khi gõ đủ dấu: 'ba ria' phải ra 'Bà Rịa - Vũng Tàu'."""
+        self.assertIn('normalize', self.js)
+        self.assertIn('u0300-\\u036f', self.js)
+        self.assertIn("replace(/đ/g, 'd')", self.js)
+
+    def test_the_api_keeps_the_official_order(self):
+        """Sắp xếp là việc của giao diện. API giữ thứ tự mã thống kê vì nơi khác dựa vào."""
+        store_src = (REPO / 'app' / 'api' / 'store.py').read_text(encoding='utf-8')
+        self.assertIn('ORDER BY t.number', store_src)
+
+
 class AnOldTableIsNotReportedAsMissingData(unittest.TestCase):
     """Bảng cũ còn tên cột tiếng Việt thì phải nói là ĐỌC KHÔNG ĐƯỢC, không phải 'chưa có'.
 

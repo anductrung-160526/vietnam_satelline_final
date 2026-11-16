@@ -155,6 +155,7 @@ async function dungBanDo(){
       paint:{'line-color':'#ffd87a','line-width':2.4}});
     banDo.on('click','tinh-bat', e => {
       const ma = String(e.features[0].properties.province_code).padStart(2,'0');
+      xoaBoLoc();
       $('chon-tinh').value = ma; chonPhamVi(ma);
     });
     banDo.on('mouseenter','tinh-bat',()=>banDo.getCanvas().style.cursor='pointer');
@@ -232,7 +233,39 @@ function chonPhamVi(ma){
                   {padding: f ? 60 : 30, duration:600, maxZoom:10});
 }
 
-$('nut-toan-quoc').onclick = () => { $('chon-tinh').value = ''; chonPhamVi(null); };
+/* Bỏ dấu để gõ "ba ria" cũng ra "Bà Rịa - Vũng Tàu": người dùng hiếm khi gõ đủ dấu. */
+const khongDau = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
+
+function dungDanhSachTinh(ds){
+  $('chon-tinh').innerHTML = '<option value="">Toàn quốc</option>'
+    + ds.map(t => `<option value="${t.province_code}">${t.province_name}</option>`).join('');
+}
+
+/* Bộ lọc đang bật mà chọn tỉnh từ bản đồ thì ô chọn hiện trống vì option bị ẩn. */
+function xoaBoLoc(){
+  const o = $('tim-tinh');
+  if (o) o.value = '';
+  locTinh('');
+}
+
+function locTinh(tu){
+  const tim = khongDau(tu);
+  let con = 0;
+  for (const o of $('chon-tinh').options){
+    const hop = !o.value || !tim || khongDau(o.textContent).includes(tim);
+    o.hidden = !hop;
+    if (hop && o.value) con++;
+  }
+  $('khong-thay-tinh').classList.toggle('an', con > 0 || !tim);
+  // Còn đúng một tỉnh thì chọn luôn: đó là điều người gõ đang muốn.
+  if (con === 1){
+    const mot = [...$('chon-tinh').options].find(o => !o.hidden && o.value);
+    if ($('chon-tinh').value !== mot.value){ $('chon-tinh').value = mot.value; chonPhamVi(mot.value); }
+  }
+}
+
+$('nut-toan-quoc').onclick = () => { xoaBoLoc(); $('chon-tinh').value = ''; chonPhamVi(null); };
 $('nut-tai-anh').onclick = () => {
   const muc = cacMoc[Number($('chon-nam').value)];
   if(muc) window.location = `/api/anh-dem.tif?nam=${muc.year}&thang=${muc.month || 0}`;
@@ -291,9 +324,18 @@ function nhacThoiGian(chu){
   }
 
   danhSachTinh = (await layJSON('/api/provinces')).tinh;
-  $('chon-tinh').innerHTML = '<option value="">Toàn quốc</option>'
-    + danhSachTinh.map(t => `<option value="${t.province_code}">${t.province_name}</option>`).join('');
+  // API trả theo mã thống kê (bắc xuống nam). Cô dặn danh sách phải xếp A-Z,
+  // nên sắp lại ở đây chứ không đổi thứ tự của API — nơi khác còn dựa vào mã.
+  danhSachTinh.sort((a, b) => a.province_name.localeCompare(b.province_name, 'vi'));
+  dungDanhSachTinh(danhSachTinh);
   $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
+  $('tim-tinh').oninput = () => locTinh($('tim-tinh').value);
+  // Enter chọn luôn tỉnh đầu tiên còn lại, để gõ xong không phải với chuột.
+  $('tim-tinh').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const con = [...$('chon-tinh').options].filter(o => !o.hidden && o.value);
+    if (con.length) { $('chon-tinh').value = con[0].value; chonPhamVi(con[0].value); }
+  };
 
   const chon = $('chon-nam'), truot = $('nam-truot');
   chon.onchange = () => { truot.value = chon.value; doiAnhNen(Number(chon.value)); };
