@@ -157,46 +157,105 @@ def in_muc_3(dong):
               + (' …' if len(ten) > 6 else ''))
 
 
-def in_muc_4(dong, so_tinh_mau=3):
-    """Phép kiểm quyết định: chia sol cho độ phủ, xem dao động có xẹp không."""
-    print('\n4. PHÉP KIỂM: chia sol cho độ phủ')
-    print('   Nếu dao động của sol là do thiếu pixel thì sol/độ-phủ phải mượt hơn hẳn.')
-    theo_tinh = defaultdict(list)
-    for d in dong:
-        if d['sol'] and d['phu']:
-            theo_tinh[d['ma']].append(d)
-    if not theo_tinh:
-        print('   Không đủ dòng hợp lệ để kiểm.')
-        return
-    def bien_thien(v):
-        return statistics.pstdev(v) / statistics.fmean(v) if len(v) > 1 and statistics.fmean(v) else 0
+def _moc_chuan(dong):
+    """Với mỗi tỉnh-năm, lấy trung vị sol của các tháng ĐỦ PHỦ làm mức tham chiếu.
 
-    truoc, sau = [], []
-    for ma, ds in theo_tinh.items():
-        if len(ds) < 6:
-            continue
-        truoc.append(bien_thien([d['sol'] for d in ds]))
-        sau.append(bien_thien([d['sol'] / d['phu'] for d in ds]))
-    if not truoc:
-        print('   Không tỉnh nào đủ 6 tháng để kiểm.')
+    Phải so trong cùng một tỉnh và cùng một năm. So trên cả chuỗi 2013–2025 là trộn
+    xu thế dài hạn và chu kỳ mùa vào cùng một con số, phần do độ phủ sẽ chìm mất —
+    đó là lỗi của bản đầu tiên của phép kiểm này.
+    """
+    gom = defaultdict(list)
+    for d in dong:
+        if d['sol'] and d['phu'] and d['phu'] >= NGUONG_PHU:
+            gom[(d['ma'], d['moc'][:4])].append(d['sol'])
+    return {k: statistics.median(v) for k, v in gom.items() if len(v) >= 4}
+
+
+def in_muc_4(dong, so_tinh_mau=3):
+    """sol có co theo độ phủ không? So mỗi dòng với mức thường lệ của CHÍNH tỉnh-năm đó."""
+    import math
+    print('\n4. sol CÓ CO THEO ĐỘ PHỦ KHÔNG')
+    print('   Mỗi dòng so với trung vị các tháng đủ phủ của chính tỉnh đó, trong chính')
+    print('   năm đó. Nếu mất pixel là nguyên nhân thì tỷ lệ sol phải bằng đúng độ phủ.')
+    chuan = _moc_chuan(dong)
+    cap = [(d, chuan[(d['ma'], d['moc'][:4])]) for d in dong
+           if d['sol'] and d['phu'] and (d['ma'], d['moc'][:4]) in chuan]
+    thap = [(d, c) for d, c in cap if d['phu'] < NGUONG_PHU]
+    if len(thap) < 10:
+        print(f'   Chỉ {len(thap)} dòng phủ thấp có mức tham chiếu — không đủ để kết luận.')
         return
-    a, b = statistics.fmean(truoc), statistics.fmean(sau)
-    print(f'   Hệ số biến thiên trung bình của sol      : {a:.3f}')
-    print(f'   Hệ số biến thiên sau khi chia cho độ phủ : {b:.3f}')
-    if b < a * 0.7:
-        print(f'   => Giảm {1 - b/a:.0%}. ĐỘ PHỦ là nguyên nhân chính của dao động.')
-    elif b < a:
-        print(f'   => Chỉ giảm {1 - b/a:.0%}. Độ phủ giải thích một phần, còn nguyên nhân khác.')
-    else:
-        print('   => Không giảm. Dao động KHÔNG do độ phủ — phải soi tiếp phần tính toán.')
+    # Độ co giãn log-log: d(log sol)/d(log phủ). Bằng 1 nghĩa là mất một nửa pixel thì
+    # mất đúng một nửa sol (pixel mất đi sáng ngang mức trung bình). Dưới 1: pixel mất
+    # đi TỐI hơn trung bình. Trên 1: pixel mất đi SÁNG hơn trung bình.
+    xs = [math.log(d['phu']) for d, c in thap]
+    ys = [math.log(d['sol'] / c) for d, c in thap]
+    mx, my = statistics.fmean(xs), statistics.fmean(ys)
+    tu = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    mau = sum((x - mx) ** 2 for x in xs)
+    doc_giai = tu / mau if mau else None
+    ty_le = statistics.median(math.exp(y) for y in ys)
+    phu_tv = statistics.median(d['phu'] for d, c in thap)
+    print(f'   {len(thap)} dòng có độ phủ < {NGUONG_PHU:.0%} và có mức tham chiếu.')
+    print(f'   Độ phủ trung vị của nhóm này      : {phu_tv:.0%}')
+    print(f'   sol còn lại so với mức thường lệ  : {ty_le:.0%}')
+    if doc_giai is not None:
+        print(f'   Độ co giãn sol theo độ phủ        : {doc_giai:.2f}')
+        if doc_giai < 0.15:
+            print('   => sol gần như KHÔNG đổi theo độ phủ. Mất pixel không giải thích')
+            print('      được dao động — nguyên nhân nằm chỗ khác.')
+        elif doc_giai > 1.25:
+            print('   => sol tụt NHANH HƠN độ phủ: phần bị mây che chính là vùng sáng')
+            print('      (đô thị). Mất 1/2 pixel mất hơn 1/2 ánh sáng.')
+        elif doc_giai < 0.75:
+            print('   => sol tụt CHẬM HƠN độ phủ: phần bị mất chủ yếu là vùng tối.')
+        else:
+            print('   => sol co gần đúng theo độ phủ: pixel mất đi sáng ngang mức trung bình.')
+
+    # Dao động còn lại khi CHỈ giữ các tháng đủ phủ, so trong từng năm một.
+    du = defaultdict(list)
+    for d, c in cap:
+        if d['phu'] >= NGUONG_PHU:
+            du[(d['ma'], d['moc'][:4])].append(d['sol'])
+    cv = [statistics.pstdev(v) / statistics.fmean(v)
+          for v in du.values() if len(v) >= 6 and statistics.fmean(v)]
+    if cv:
+        print(f'\n   Dao động trong năm khi CHỈ lấy tháng đủ phủ: hệ số biến thiên trung')
+        print(f'   bình {statistics.fmean(cv):.2f} ({len(cv)} tỉnh-năm).')
+        if statistics.fmean(cv) > 0.3:
+            print('   => Ngay cả tháng đủ phủ cũng dao động mạnh. Đây mới là vấn đề chính,')
+            print('      và nó KHÔNG phải do mất pixel. Xem mục 5.')
 
     print('\n   Vài tỉnh làm ví dụ (mốc phủ thấp nhất của mỗi tỉnh):')
+    theo_tinh = defaultdict(list)
+    for d, c in cap:
+        theo_tinh[d['ma']].append((d, c))
     for ma in sorted(theo_tinh)[:so_tinh_mau]:
-        ds = sorted(theo_tinh[ma], key=lambda d: d['phu'])[:3]
-        print(f"   {ds[0]['ten']}:")
-        for d in ds:
-            print(f"     {d['moc']}  sol = {d['sol']:>12,.0f}  phủ = {d['phu']:>5.0%}"
-                  f"  -> quy về đủ phủ: {d['sol']/d['phu']:>12,.0f}")
+        ds = sorted(theo_tinh[ma], key=lambda t: t[0]['phu'])[:3]
+        print(f"   {ds[0][0]['ten']}:")
+        for d, c in ds:
+            print(f"     {d['moc']}  sol = {d['sol']:>11,.0f}  phủ = {d['phu']:>5.0%}"
+                  f"  mức thường lệ cùng năm = {c:>11,.0f}"
+                  f"  -> còn {d['sol']/c:>5.0%}")
+
+
+def in_muc_5(dong):
+    """Số lượt quan sát sạch mây: ít lượt thì giá trị tháng nào cũng nhiễu, kể cả đủ phủ."""
+    print('\n5. SỐ LƯỢT QUAN SÁT SẠCH MÂY (cf_cvg)')
+    cf = [d['cf'] for d in dong if d['cf'] is not None]
+    if not cf:
+        print('   Bảng không có cột cloud_free_obs — không kiểm được.')
+        return
+    cf.sort()
+    def pv(p):
+        return cf[min(len(cf) - 1, int(len(cf) * p))]
+    print(f'   Trung vị {statistics.median(cf):.2f} lượt · '
+          f'phân vị 10 % = {pv(.10):.2f} · phân vị 90 % = {pv(.90):.2f}')
+    it = sum(1 for x in cf if x < NGUONG_IT_OBS)
+    print(f'   {it}/{len(cf)} dòng ({it/len(cf):.0%}) dưới {NGUONG_IT_OBS} lượt.')
+    if statistics.median(cf) < 3:
+        print('   => Trung vị rất thấp. Giá trị mỗi tháng dựng trên một hai lượt quan sát,')
+        print('      nên nhiễu lớn là chuyện đương nhiên — kể cả tháng đủ phủ pixel.')
+        print('      Chuỗi theo NĂM (trung vị 12 tháng) đáng tin hơn hẳn chuỗi theo tháng.')
 
 
 def main():
@@ -224,8 +283,12 @@ def main():
     in_muc_2(dong)
     in_muc_3(dong)
     in_muc_4(dong)
-    print('\nĐỌC KẾT QUẢ: mục 3 là việc phải sửa (tải lại ảnh). Mục 1, 2, 4 là bản chất')
-    print('sản phẩm VIIRS theo tháng — cách xử lý xem docs/CHI_SO_KINH_TE_DEM.md.')
+    in_muc_5(dong)
+    print('\nĐỌC KẾT QUẢ')
+    print('  Mục 3 là việc phải sửa: tải lại, hoặc xác nhận NOAA không có ảnh tháng đó.')
+    print('  Mục 4 cho biết mất pixel có giải thích được dao động hay không.')
+    print('  Mục 5 cho biết mỗi giá trị tháng dựng trên bao nhiêu lượt quan sát; ít lượt')
+    print('  thì nhiễu lớn ngay cả khi đủ pixel, và chuỗi theo năm đáng tin hơn hẳn.')
 
 
 if __name__ == '__main__':
