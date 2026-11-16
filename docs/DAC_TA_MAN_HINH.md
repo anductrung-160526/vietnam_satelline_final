@@ -51,21 +51,26 @@ Dặn thêm trong ghi âm:
 ## 3. Cấu trúc tổng thể
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  VNGISDash                                    [63 tỉnh]      │  thanh đầu
-├──────────────────────────────────────────────────────────────┤
-│  [ Ảnh đêm ]  [ Chỉ số đêm ]  [ Chỉ số kinh tế đêm ]         │  thanh chuyển màn
-├──────────────┬───────────────────────────────────────────────┤
-│  cột lọc     │                                               │
-│  (kéo rộng   │          vùng nội dung của màn                │
-│   hẹp tuỳ ý) │                                               │
-└──────────────┴───────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│ VNGISDASH  [Ảnh đêm][Chỉ số đêm][Chỉ số kinh tế đêm]          │  thanh ứng dụng
+├──────────────┬────────────────────────────────────────────────┤
+│  cột lọc     │          vùng nội dung của màn                 │
+│  cao hết     │                                                │
+│  chiều dọc   │                                                │
+└──────────────┴────────────────────────────────────────────────┘
 ```
 
-Ba màn dùng **chung một bộ chọn phạm vi và thời gian** ở cột trái. Đổi tỉnh ở màn 1 rồi
-sang màn 2 thì màn 2 giữ nguyên tỉnh đó — không bắt chọn lại.
+**Khung ứng dụng chiếm hết màn hình.** Không có tiêu đề trang, không có dải giới thiệu
+phía trên: mở ra là thấy ngay công cụ, giống Copernicus Browser.
 
-Thanh chuyển màn là ba nút, không phải menu thả xuống: cô cần thấy ngay app có ba phần.
+**Ba nút chuyển màn nằm ngay trên thanh ứng dụng**, cạnh tên VNGISDASH — không phải một
+thanh riêng bên dưới. Ba nút chứ không phải menu thả xuống: cô cần thấy ngay app có ba phần.
+
+**Cột lọc cao hết chiều dọc** và tự cuộn bên trong khi nội dung dài, cũng như Copernicus.
+Vùng nội dung bên phải cuộn độc lập.
+
+Ba màn dùng **chung một bộ chọn phạm vi và thời gian**. Đổi tỉnh ở màn 1 rồi sang màn 2
+thì màn 2 giữ nguyên tỉnh đó — không bắt chọn lại.
 
 ---
 
@@ -215,18 +220,23 @@ cột lọc                        vùng ảnh
 │  [2024          ▾] │  │                                  │
 │  ───────●────────  │  │                                  │
 │                    │  │                                  │
-│ SỐ LIỆU            │  │                                  │
-│  SOL      63.280   │  │                                  │
-│  Diện tích  4.494  │  │                                  │
-│  Mật độ     14,09  │  │                                  │
 │                    │  │                                  │
 │ [ Tải ảnh (.tif) ] │  │                                  │
 └────────────────────┘  └──────────────────────────────────┘
+
+thẻ số liệu nằm trên ảnh:
+┌───────────────┬───────────────┬───────────────┐
+│ SOL           │ DIỆN TÍCH     │ MẬT ĐỘ        │
+│ 63 280        │ 4 494         │ 14,09         │
+│   nW/cm²/sr   │   km²         │   trên km²    │
+│ VIIRS·07/2024 │ GADM 4.1      │ SOL ÷ dt      │
+└───────────────┴───────────────┴───────────────┘
 ```
 
-### 5.3. Ba số liệu
+### 5.3. Ba thẻ số liệu
 
-Đặt trong **cột lọc**, không chồng lên ảnh: cô muốn ảnh chiếm tối đa diện tích.
+**Ba thẻ nằm ngang phía trên ảnh, bên phải cột lọc** — không nằm trong cột lọc và không
+chồng lên ảnh. Mỗi thẻ: nhãn, con số lớn, đơn vị, và một dòng nhỏ ghi nguồn hoặc công thức.
 
 | Nhãn | Cột | Đơn vị | Làm tròn |
 |---|---|---|---|
