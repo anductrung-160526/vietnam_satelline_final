@@ -667,3 +667,75 @@ class EconomyIndicatorDocTest(unittest.TestCase):
         self.assertIn('giá so sánh', text)        # khử lạm phát trước khi tính độ co giãn
         self.assertIn('_hc', text)                # bắc qua 2013 phải dùng chuỗi đã hiệu chỉnh
         self.assertIn('Gibson', text)             # DMSP kém tin cậy ở tỉnh nhỏ
+
+
+class MonthlyIndicesLoadIntoTheDatabase(unittest.TestCase):
+    """Chỉ số tháng phải vào bảng riêng, giữ nguyên từng tháng chứ không gộp lên năm."""
+
+    def _nap(self, dong, header=None):
+        import csv
+        from app.data import build_indices
+        header = header or list(dong[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'VN_NTL_Panel_2004_2025' / 'data_processed'
+            out.mkdir(parents=True)
+            with (out / 'ntl_monthly.csv').open('w', encoding='utf-8-sig', newline='') as f:
+                w = csv.DictWriter(f, fieldnames=header)
+                w.writeheader()
+                w.writerows(dong)
+            db = Path(tmp) / 'x.db'
+            bao = build_indices.build(tmp, db)['ntl_monthly']
+            import sqlite3
+            with sqlite3.connect(db) as con:
+                hang = con.execute(
+                    'SELECT province_code,year,month,sol FROM ntl_monthly '
+                    'ORDER BY province_code,year,month').fetchall()
+            return bao, hang
+
+    def _dong(self, ma, year, month, sol):
+        return dict(province_code=ma, province_name='T', year=year, month=month,
+                    period=f'{year}-{month:02}', source='VIIRS', sol=sol,
+                    sol_ma3=sol, cloud_free_obs=9.5, status='OK')
+
+    def test_each_month_stays_its_own_row(self):
+        """Gộp 12 tháng thành một dòng năm là mất đúng thứ biểu đồ tháng cần."""
+        dong = [self._dong('01', 2024, m, 100.0 + m) for m in range(1, 13)]
+        bao, hang = self._nap(dong)
+        self.assertEqual(bao['rows'], 12)
+        self.assertEqual(len(hang), 12)
+        self.assertEqual([h[2] for h in hang], list(range(1, 13)))
+        self.assertEqual(hang[0][3], 101.0)
+
+    def test_the_key_is_province_year_month(self):
+        """Hai tỉnh cùng tháng, một tỉnh hai năm — không dòng nào đè dòng nào."""
+        dong = [self._dong('01', 2024, 7, 10.0), self._dong('27', 2024, 7, 20.0),
+                self._dong('01', 2025, 7, 30.0)]
+        _, hang = self._nap(dong)
+        self.assertEqual(len(hang), 3)
+        self.assertEqual({(h[0], h[1]) for h in hang}, {('01', 2024), ('27', 2024), ('01', 2025)})
+
+    def test_a_row_without_a_real_month_is_skipped(self):
+        """Dòng theo năm lọt vào tệp tháng thì bỏ, không nhét month = 0."""
+        dong = [self._dong('01', 2024, 7, 10.0)]
+        dong.append(dict(dong[0], month=0, sol=99.0))
+        dong.append(dict(dong[0], month=13, sol=98.0))
+        bao, hang = self._nap(dong)
+        self.assertEqual(bao['rows'], 1)
+        self.assertEqual(hang[0][2], 7)
+
+    def test_the_province_code_keeps_its_leading_zero(self):
+        _, hang = self._nap([self._dong('01', 2024, 7, 10.0)])
+        self.assertEqual(hang[0][0], '01')
+
+    def test_the_monthly_columns_the_charts_need_are_in_the_schema(self):
+        """Ba cột này là lý do bảng tháng tồn tại; thiếu là biểu đồ tháng vô dụng."""
+        import sqlite3
+        from app.data import build_indices
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / 'x.db'
+            build_indices.build(tmp, db)
+            with sqlite3.connect(db) as con:
+                cot = {r[1] for r in con.execute('PRAGMA table_info(ntl_monthly)')}
+        for ten in ('sol_ma3', 'sol_change_mom_pct', 'sol_change_yoy_pct', 'cloud_free_obs'):
+            with self.subTest(cot=ten):
+                self.assertIn(ten, cot)

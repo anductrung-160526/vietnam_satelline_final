@@ -22,7 +22,7 @@ REPO = HERE.parent.parent
 # Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
 # tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
 # An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
@@ -36,6 +36,9 @@ SOURCES = {
     # ntl_indices_ee.csv là di sản của luồng Earth Engine cũ, tên cột không còn khớp
     # schema này nên không nhận nữa: nạp nó vào chỉ tạo ra một bảng toàn cột rỗng.
     'ntl_annual': ([f'{NTL_PACKAGE}/data_processed/ntl_annual.csv'], None),
+    # Bảng theo tháng giữ nguyên từng tháng, KHÔNG gộp lên năm: cả app lẫn biểu đồ
+    # tháng đều cần từng mốc một. Khoá có thêm cột month.
+    'ntl_monthly': ([f'{NTL_PACKAGE}/data_processed/ntl_monthly.csv'], 'GIU_THANG'),
     # derive ghi chỉ số ngày theo THÁNG; app hiển thị theo năm nên gộp trung bình các tháng.
     # day_indices_monthly_ee.csv cũng là di sản Earth Engine, cùng lý do.
     'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
@@ -120,7 +123,12 @@ def cell(name, raw):
 
 
 def rows_of(records, want, monthly):
-    """Chuyển bản ghi CSV thành dòng của bảng, gộp lên năm nếu nguồn ghi theo tháng."""
+    """Chuyển bản ghi CSV thành dòng của bảng, gộp lên năm nếu nguồn ghi theo tháng.
+
+    monthly='GIU_THANG' thì giữ nguyên từng tháng, khoá là (tỉnh, năm, tháng).
+    """
+    if monthly == 'GIU_THANG':
+        return rows_theo_thang(records, want)
     gom = {}
     for record in records:
         code = (record.get('province_code') or '').strip()
@@ -158,6 +166,24 @@ def rows_of(records, want, monthly):
     return out
 
 
+def rows_theo_thang(records, want):
+    """Mỗi dòng CSV là một dòng bảng; không gộp gì cả."""
+    out = []
+    for record in records:
+        code = (record.get('province_code') or '').strip()
+        year = record.get('year')
+        month = record.get('month')
+        if not code or not str(year or '').strip().isdigit():
+            continue
+        if not str(month or '').strip().isdigit() or not 1 <= int(month) <= 12:
+            continue
+        row = {name: cell(name, record[name]) for name in want if name in record}
+        row['province_code'] = code.zfill(2)
+        row['year'], row['month'] = int(year), int(month)
+        out.append(row)
+    return out
+
+
 def load_table(connection, root, table, candidates, monthly):
     want = columns(connection, table)
     connection.execute(f'DELETE FROM {table}')
@@ -168,7 +194,9 @@ def load_table(connection, root, table, candidates, monthly):
         if not path.exists():
             continue
         header, records = read_csv(path)
-        batch = rows_of(records, want, monthly if monthly and monthly in header else None)
+        buoc = monthly if monthly == 'GIU_THANG' else (
+            monthly if monthly and monthly in header else None)
+        batch = rows_of(records, want, buoc)
         if not batch:
             # Tệp CÓ dòng nhưng không dòng nào vào được bảng: gần như luôn là lệch tên
             # khoá (bảng cũ còn mang tên cột tiếng Việt). Báo "chưa có dữ liệu" ở đây là
@@ -217,7 +245,7 @@ def main():
     report = build(arguments.root, arguments.db)
 
     print(f"province: {report['province']} dòng")
-    for table in ('ntl_annual', 'day_annual', 'economy'):
+    for table in ('ntl_annual', 'ntl_monthly', 'day_annual', 'economy'):
         info = report[table]
         print(f"\n{table}: {info['rows']} dòng")
         if not info['rows']:

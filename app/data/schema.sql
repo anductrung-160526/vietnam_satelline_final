@@ -43,6 +43,28 @@ CREATE TABLE IF NOT EXISTS ntl_annual(
   PRIMARY KEY(province_code,year)
 );
 
+-- Chỉ số ảnh đêm theo THÁNG: VIIRS 2013-2025. DMSP không có vì NOAA chỉ phát hành
+-- sản phẩm tổng hợp năm. Tháng 2013 có mặt ở đây nhưng không vào chuỗi chỉ số năm.
+CREATE TABLE IF NOT EXISTS ntl_monthly(
+  province_code TEXT NOT NULL, province_name TEXT,
+  year INTEGER NOT NULL, month INTEGER NOT NULL,
+  period TEXT, source TEXT,
+  sol REAL, sol_raw REAL,
+  background_threshold REAL, background_pixels INTEGER,
+  sol_density REAL,
+  sol_change_yoy_pct REAL,   -- so với cùng tháng năm trước
+  sol_change_mom_pct REAL,   -- so với tháng liền trước; trống nếu tháng trước thiếu
+  sol_ma3 REAL,              -- trung bình trượt 3 tháng, làm mượt dao động mùa
+  rad_mean REAL, rad_std REAL, rad_min REAL, rad_max REAL, rad_cv REAL,
+  valid_pixels INTEGER, lit_pixels INTEGER,
+  lit_area_km2 REAL, lit_area_pct REAL, lit_pixel_pct REAL, lit_sol REAL,
+  lit_threshold REAL,
+  cloud_free_obs REAL,       -- ít lượt quan sát sạch mây thì con số tháng đó kém tin cậy
+  area_km2 REAL,
+  calibration TEXT, status TEXT,
+  PRIMARY KEY(province_code,year,month)
+);
+
 -- Chỉ số ảnh ngày theo năm: Landsat 2004-2014, Sentinel-2 2015-2025.
 -- Cảnh báo: Sentinel-2 2015-2018 là TOA (L1C), 2019-2025 là phản xạ bề mặt (L2A).
 -- Hậu tố _std, KHÔNG phải _stdDev. derive sinh bảng này theo THÁNG; build_indices gộp
@@ -91,4 +113,5 @@ CREATE TABLE IF NOT EXISTS source_image(
 );
 
 CREATE INDEX IF NOT EXISTS ix_ntl_year ON ntl_annual(year);
+CREATE INDEX IF NOT EXISTS ix_ntl_thang ON ntl_monthly(year,month);
 CREATE INDEX IF NOT EXISTS ix_day_year ON day_annual(year);
