@@ -37,8 +37,13 @@ Dặn thêm trong ghi âm:
    Ngoại lệ duy nhất được phép: **phép cộng** trên các chỉ số đã tính sẵn (tổng toàn quốc),
    vì đó không phải công thức mới. Thấy cần một phép tính khác thì thêm vào `derive.py`.
 4. **Ô trống là một trạng thái hợp lệ**, phải hiển thị rõ chứ không được tô 0.
-5. Mọi bảng và tệp tải xuống bắc qua **năm 2010** hoặc **mốc 2013** đều phải mang cảnh báo
-   tương ứng (`store.MOC_2010`, cảnh báo DMSP→VIIRS).
+   Hơn thế: mỗi ô mang một **cờ trạng thái** nói rõ *vì sao* trống, theo `CL_OBS_STATUS`
+   của IMF (xem `docs/THAM_KHAO_FAS_IMF.md`).
+5. **Tách "đo cái gì" khỏi "biểu diễn thế nào".** `sol`, `sol_density`, `sol_per_capita`
+   không phải ba chỉ số: chúng là **một** chỉ số với ba mẫu số. Bộ lọc vì thế có hai ô
+   chọn chứ không phải một danh sách dài dần mãi.
+6. Mọi bảng và tệp tải xuống bắc qua **năm 2010** hoặc **mốc 2013** đều phải mang cảnh báo
+   tương ứng (`store.MOC_2010`, cảnh báo DMSP→VIIRS) **và** cờ `B` trên chính những dòng đó.
 
 ---
 
@@ -137,8 +142,16 @@ thang đo giữa hai vệ tinh.
 **Toàn quốc**: `SOL` = tổng 63 tỉnh, `Diện tích` = tổng diện tích, `Mật độ` =
 tổng SOL ÷ tổng diện tích. Đây là phép cộng trên chỉ số đã có, không phải công thức mới.
 
-**Không có số**: hiện `—` kèm lý do ngắn (`chưa có ảnh`, `tháng này không có lượt quan
-sát sạch mây`). Tuyệt đối không hiện `0`.
+**Không có số**: hiện `—` kèm lý do ngắn. Lý do lấy thẳng từ cờ trạng thái của dòng:
+
+| Cờ | Hiển thị |
+|---|---|
+| `L` | "tháng này không có lượt quan sát sạch mây" |
+| `M` | "nguồn ảnh này không có số liệu đó" |
+| `B` | số vẫn hiện, kèm chấm vàng và chú giải "mốc đổi vệ tinh" |
+| `U` | số vẫn hiện, kèm chấm xám và chú giải "ít pixel hợp lệ" |
+
+Tuyệt đối không hiện `0` thay cho ô trống.
 
 ### 5.4. Tải ảnh
 
@@ -193,30 +206,51 @@ Bảng chỉ số theo năm hoặc theo tháng, cho cả 63 tỉnh, tải đư�
 ```
 cột lọc                   bảng
 ┌──────────────────┐  ┌───────────────────────────────────────────┐
-│ Chỉ số           │  │ Tỉnh          2020    2021    2022   2023 │
-│  [Tổng SOL    ▾] │  │ An Giang    12.431  13.009  13.880 14.102 │
-│                  │  │ Bà Rịa…     28.004  29.117  31.002 32.455 │
-│ Bước thời gian   │  │ Bạc Liêu     9.220   9.515   9.903 10.221 │
-│  [Năm][Tháng]    │  │ …                                         │
-│                  │  │ 63 tỉnh · nguồn VIIRS                     │
-│ Từ [2020] đến    │  └───────────────────────────────────────────┘
-│    [2025]        │  [ Tải CSV ]
-│                  │
+│ Đo cái gì        │  │ Tỉnh        2009   2010   2011  …  2014   │
+│  [Tổng SOL    ▾] │  │ An Giang  12.431  38.9ᴮ 40.112 …  9.902ᴮ │
+│ Tính theo        │  │ Bà Rịa…   28.004  87.1ᴮ 90.337 … 21.455ᴮ │
+│  [Số thô      ▾] │  │ Bắc Kạn    —ᴸ     9.515  9.903 …  2.221  │
+│                  │  │ …                                         │
+│ Bước thời gian   │  │ ᴮ đứt gãy chuỗi · ᴸ không có ảnh sạch mây│
+│  [Năm][Tháng]    │  └───────────────────────────────────────────┘
+│ Từ [2008] đến    │  [ Tải CSV ]
+│    [2015]        │
 │ ⚠ cảnh báo…      │
 └──────────────────┘
 ```
 
 - Hàng = 63 tỉnh (xếp A–Z, giống bộ chọn phạm vi).
 - Cột = mốc thời gian trong khoảng đã chọn.
-- Ô không có số để **trống**, không tô 0.
+- Ô không có số để **trống**, không tô 0, kèm chữ nhỏ trên cao là **cờ trạng thái**.
+- Chú giải cờ nằm ngay dưới bảng, không bắt người đọc đi tìm.
 - Cột `source` hiện ở chân bảng, không chen vào từng ô.
 - Chọn một tỉnh ở cột lọc → bảng vẫn hiện đủ 63 tỉnh nhưng **tô sáng hàng của tỉnh đó**.
   Cô cần so sánh giữa các tỉnh, lọc còn một hàng là mất mục đích.
 
-### 6.3. Danh mục chỉ số
+### 6.3. Hai ô chọn: chỉ số và cách biểu diễn
 
-Lấy từ `store.INDICATORS`. Thêm chỉ số mới ở đó là nó tự xuất hiện trong ô chọn và trong
-tệp CSV — không sửa giao diện.
+Theo mô hình của FAS. Ô thứ nhất chọn **đo cái gì**, ô thứ hai chọn **tính theo đơn vị nào**.
+Mỗi cặp hợp lệ ứng với đúng một cột trong bảng:
+
+| Đo cái gì | Tính theo | Cột |
+|---|---|---|
+| Tổng độ sáng (SOL) | Số thô | `sol` |
+| Tổng độ sáng (SOL) | Trên km² | `sol_density` |
+| Tổng độ sáng (SOL) | Trên đầu người | `sol_per_capita` *(chờ dân số)* |
+| Tổng độ sáng **o/w vùng sáng** | Số thô | `lit_sol` |
+| Diện tích vùng sáng | km² | `lit_area_km2` |
+| Diện tích vùng sáng | % diện tích tỉnh | `lit_area_pct` |
+| Số pixel sáng | Số đếm | `lit_pixels` |
+| Số pixel sáng | % pixel hợp lệ | `lit_pixel_pct` |
+| Bức xạ trung bình | Số thô | `rad_mean` |
+| Hệ số biến thiên | Không thứ nguyên | `rad_cv` |
+
+Ô thứ hai **chỉ hiện những lựa chọn hợp lệ** với chỉ số đang chọn; cặp không tồn tại thì
+không được bày ra rồi báo lỗi.
+
+Ánh xạ này khai báo một chỗ duy nhất trong `store.INDICATORS`, thêm cột mới là hai ô chọn
+tự cập nhật. Lợi ích cụ thể: khi cô gửi dân số, thêm "trên đầu người" là **một dòng**
+trong bảng ánh xạ, không phải bốn cột mới và bốn mục mới trong danh sách.
 
 Theo **tháng** chỉ hiện những chỉ số có ở bảng `ntl_monthly`; chọn một chỉ số chỉ có theo
 năm rồi bấm `Theo tháng` thì nút đó bị vô hiệu hoá kèm lời giải thích.
@@ -224,16 +258,23 @@ năm rồi bấm `Theo tháng` thì nút đó bị vô hiệu hoá kèm lời gi
 ### 6.4. API
 
 ```
-GET /api/panel?chi_so=sol&buoc=nam&tu=2020&den=2025
-GET /api/panel.csv?chi_so=sol&buoc=thang&tu=2020&den=2025
+GET /api/panel?chi_so=sol&bieu_dien=tho&buoc=nam&tu=2020&den=2025
+GET /api/panel.csv?chi_so=sol&bieu_dien=tren_km2&buoc=thang&tu=2020&den=2025
 ```
 
-`buoc` nhận `nam` hoặc `thang`; mặc định `nam`. Trả về `{chi_so, moc[], dong[], canh_bao[]}`
-trong đó `dong[i] = {province_code, province_name, gia_tri[]}` dài đúng bằng `moc`.
+`buoc` nhận `nam` hoặc `thang`, mặc định `nam`. `bieu_dien` mặc định `tho`. Trả về
+`{chi_so, bieu_dien, moc[], dong[], canh_bao[], chu_giai_co{}}` trong đó
+`dong[i] = {province_code, province_name, gia_tri[], co[]}`, cả `gia_tri` và `co` dài
+đúng bằng `moc`. Cặp `chi_so` + `bieu_dien` không hợp lệ → `400` kèm danh sách cặp hợp lệ.
 
 CSV: `Content-Disposition` dùng tên ASCII, ví dụ `chi_so_dem_sol_thang_2020_2025.csv`.
-Dòng đầu là tiêu đề cột; **cảnh báo đi vào một cột `canh_bao` ở cuối**, không chen dòng
-chữ vào giữa bảng số — Excel sẽ hỏng.
+Dòng đầu là tiêu đề cột. **Mỗi cột giá trị đi kèm một cột cờ** `<mốc>_co`, giống cách SDMX
+ghép `OBS_VALUE` với `OBS_STATUS`. **Cảnh báo đi vào một cột `canh_bao` ở cuối**, không chen
+dòng chữ vào giữa bảng số — Excel sẽ hỏng.
+
+Gói tải xuống kèm `ghi_chu_phuong_phap.md`: hai mốc đổi vệ tinh, tham số mô hình hiệu chỉnh,
+hai ngưỡng khác nhau giữa hai cảm biến, và câu `lit_area_km2` là cận trên. FAS bắt nộp
+*country notes* cùng số liệu vì đúng lý do này — tệp CSV rời không mang theo tài liệu nào.
 
 ### 6.5. Việc phải làm trước
 
@@ -241,14 +282,17 @@ Hiện `build_indices` chỉ nạp `ntl_annual`. Cần:
 
 1. Thêm bảng `ntl_monthly` vào `app/data/schema.sql` (khoá `province_code + year + month`).
 2. Nạp `ntl_monthly.csv` trong `build_indices`, tăng `SCHEMA_VERSION`.
-3. `store.panel()` nhận thêm tham số bước thời gian.
+3. `store.panel()` nhận thêm tham số bước thời gian và cách biểu diễn.
+4. Cột `obs_status` trong `derive.py` — xem mục 11.
 
 ### 6.6. Nghiệm thu
 
 - Chọn `Tổng SOL`, bước `Tháng`, 2020–2021 → bảng 63 hàng × 24 cột.
 - Tải CSV, mở bằng Excel → mã tỉnh giữ số 0 đầu (`01` chứ không phải `1`).
-- Chọn khoảng 2008–2015 → hiện **cả hai** cảnh báo (mốc 2010 và mốc 2013).
+- Chọn khoảng 2008–2015 → hiện **cả hai** cảnh báo, và mọi ô của **2010** và **2014**
+  mang cờ `B`.
 - Chọn chỉ số chỉ có theo năm → nút `Theo tháng` mờ đi, có lời giải thích.
+- Chọn `Tổng SOL` + `Trên đầu người` khi chưa có dân số → ô thứ hai không bày lựa chọn đó.
 
 ---
 
@@ -281,10 +325,13 @@ Chuẩn bị sẵn tệp mẫu `app/data/kinh_te_mau.csv` đúng cột, để kh
 
 **Làm ngay** (cô nói rõ chỉ cần những thứ này):
 
-| Chỉ số | Công thức | Đơn vị |
-|---|---|---|
-| `sol_per_capita` | `sol ÷ population` | đơn vị bức xạ/người |
-| `elasticity_beta` | β trong `ln(GRDP) = α + β·ln(SOL)` | không thứ nguyên |
+| Chỉ số | Công thức | Đơn vị | `derivation_type` |
+|---|---|---|---|
+| `sol_per_capita` | `sol ÷ population` | đơn vị bức xạ/người | `SC` tính toán dẫn xuất |
+| `elasticity_beta` | β trong `ln(GRDP) = α + β·ln(SOL)` | không thứ nguyên | `SE` ước lượng |
+
+`sol_per_capita` không phải chỉ số mới trong danh mục: nó là **`SOL` biểu diễn theo đầu
+người**, thêm một dòng vào bảng ánh xạ ở mục 6.3.
 
 **Để sau** (nhóm cô sẽ kiểm tra độ chính xác trước): GDP dự báo từ ảnh, chênh lệch GDP
 thật và dự báo, SOL trên một đồng GRDP, cường độ vùng sáng, tỷ trọng SOL quốc gia.
@@ -356,13 +403,16 @@ Bảng `economy` rỗng → trả `200` với mảng rỗng và một câu giả
 
 ## 8. Trạng thái rỗng và lỗi
 
-| Tình huống | Hiển thị |
-|---|---|
-| Chưa có ảnh mốc đã chọn | `—` + lệnh cần chạy để sinh ảnh |
-| Tháng không có lượt quan sát sạch mây | `—` + "tháng này không có ảnh sạch mây" |
-| Bảng `economy` rỗng | Lời giải thích đang chờ số liệu của cô |
-| Chưa có ranh giới GADM | Lệnh `python -m app.data.build_boundaries --tai-gadm` |
-| TiTiler chưa chạy | Ảnh nền không hiện, bản đồ vẫn dùng được, có lời giải thích |
+| Tình huống | Cờ | Hiển thị |
+|---|---|---|
+| Chưa có ảnh mốc đã chọn | `O` | `—` + lệnh cần chạy để sinh ảnh |
+| Tháng không có lượt quan sát sạch mây | `L` | `—` + "tháng này không có ảnh sạch mây" |
+| Cột không áp dụng cho nguồn ảnh này | `M` | `—` + "nguồn ảnh này không có số liệu đó" |
+| Mốc đổi vệ tinh (2010, 2014) | `B` | số vẫn hiện, chấm vàng |
+| Tháng quá ít pixel hợp lệ | `U` | số vẫn hiện, chấm xám |
+| Bảng `economy` rỗng | — | Lời giải thích đang chờ số liệu của cô |
+| Chưa có ranh giới GADM | — | Lệnh `python -m app.data.build_boundaries --tai-gadm` |
+| TiTiler chưa chạy | — | Ảnh nền không hiện, bản đồ vẫn dùng được, có lời giải thích |
 
 Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **cần chạy gì**.
 
@@ -382,14 +432,45 @@ Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **c�
 
 | # | Việc | Phụ thuộc |
 |---|---|---|
+| 0 | Cột `obs_status` trong `derive.py` + chạy lại chỉ số | **chốt trước** |
 | 1 | Nạp `ntl_monthly` vào SQLite, tăng `SCHEMA_VERSION` | không |
-| 2 | `store.panel()` nhận bước thời gian; `/api/panel` + `.csv` | 1 |
-| 3 | Màn 2 — bảng + nút tải CSV | 2 |
-| 4 | `/api/anh-dem.tif` nhận `province_code` | không |
-| 5 | `/api/tong-hop` + ba số SOL / Area / Density trên màn 1 | 1 |
-| 6 | Thanh chuyển ba màn | không |
-| 7 | Bảng `economy`, tệp mẫu, hàm hồi quy β + test dữ liệu giả | không |
-| 8 | Màn 3 | 7 + số liệu của cô |
+| 2 | Bảng ánh xạ chỉ số × cách biểu diễn trong `store.INDICATORS` | không |
+| 3 | `store.panel()` nhận bước thời gian và cách biểu diễn; `/api/panel` + `.csv` | 1, 2 |
+| 4 | Màn 2 — hai ô chọn, bảng có cờ, nút tải CSV | 3 |
+| 5 | `/api/anh-dem.tif` nhận `province_code` | không |
+| 6 | `/api/tong-hop` + ba số SOL / Area / Density trên màn 1 | 1 |
+| 7 | Thanh chuyển ba màn | không |
+| 8 | `metadata/ghi_chu_phuong_phap.md` kèm vào mọi gói tải | không |
+| 9 | Bảng `economy`, tệp mẫu, hàm hồi quy β + test dữ liệu giả | không |
+| 10 | Màn 3 | 9 + số liệu của cô |
 
-Mục 1–6 làm được ngay. Mục 7 viết và kiểm chứng được bằng dữ liệu giả trước khi cô gửi số;
-chỉ mục 8 là thật sự phải chờ.
+Mục 1–8 làm được ngay. Mục 9 viết và kiểm chứng được bằng dữ liệu giả trước khi cô gửi số;
+chỉ mục 10 là thật sự phải chờ.
+
+**Mục 0 phải chốt trước mọi thứ khác.** Nó đổi nội dung bảng nên phải chạy lại chỉ số
+(lần trước mất 40 phút), và màn 2 được thiết kế quanh cột cờ đó. Làm màn 2 trước rồi mới
+thêm cờ là phải sửa lại cả giao diện lẫn API.
+
+---
+
+## 11. Cột `obs_status` — thiết kế
+
+Một ký tự mỗi dòng, theo `CL_OBS_STATUS` của IMF (chi tiết ở `docs/THAM_KHAO_FAS_IMF.md`).
+Chỉ dùng bảy mã trong số 25 mã của IMF, vì bảy mã đó là tất cả những gì bộ dữ liệu này
+phân biệt được:
+
+| Mã | Nghĩa | Gán khi nào |
+|---|---|---|
+| `A` | Giá trị bình thường | mặc định |
+| `B` | Đứt gãy chuỗi do đổi phương pháp | `year` = 2010 (F16→F18) hoặc 2014 (DMSP→VIIRS) |
+| `L` | Thiếu — có tồn tại nhưng không thu được | `valid_pixels` = 0 |
+| `M` | Thiếu — không thể tồn tại | cột không áp dụng cho nguồn ảnh (DMSP và `cloud_free_obs`) |
+| `O` | Thiếu, không rõ lý do | `status` = `CHUA_CO_ANH` |
+| `U` | Độ tin cậy thấp | `cloud_free_obs` < 2 |
+| `E` | Giá trị ước lượng | dòng DMSP của các cột `_cal` |
+
+Một dòng chỉ mang **một** mã. Khi nhiều điều kiện cùng đúng, ưu tiên theo thứ tự
+`M` > `L` > `O` > `B` > `U` > `E` > `A`: thiếu dữ liệu quan trọng hơn mọi ghi chú khác.
+
+Mã `U` giải quyết chuyện `sol_change_mom_pct` ra 343.328%: **giữ nguyên con số**, gắn cờ,
+để người dùng tự lọc. Xoá số là mất dữ liệu; để trần là mời người ta vẽ nhầm biểu đồ.
