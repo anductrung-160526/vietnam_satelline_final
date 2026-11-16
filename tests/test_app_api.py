@@ -1098,3 +1098,33 @@ def test_build_boundaries_ghi_khoa_tieng_anh():
     nguon = Path('app/data/build_boundaries.py').read_text(encoding='utf-8')
     assert "'province_code': code" in nguon
     assert "'ma_tinh': code" not in nguon
+
+
+def test_gia_lap_kinh_te_khoi_phuc_dung_beta(tmp_path):
+    """Số giả lập phải (a) mang nhãn GIA_LAP, (b) để hồi quy tìm lại đúng beta đã cấy.
+
+    Nếu ước lượng không trả lại con số đã cấy thì phép hồi quy sai, chứ không phải
+    dữ liệu sai — đây là cách duy nhất kiểm được do_co_gian trên bộ số đã biết đáp án.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'gia_lap', Path(__file__).resolve().parent.parent / 'scripts' / 'gia_lap_kinh_te.py')
+    gia_lap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gia_lap)
+    from task_pipeline.derive import do_co_gian
+
+    import math
+    import random
+    rng = random.Random(3)
+    theo_tinh = {f'{i:02d}': {n: math.exp(rng.gauss(10, 1.2)) for n in range(2014, 2026)}
+                 for i in range(1, 64)}
+    dong = gia_lap.sinh(theo_tinh, beta=0.45, alpha=9.0, nhieu=0.2)
+    assert len(dong) == 63 * 12
+    assert all('GIA_LAP' in d['source'] for d in dong), 'thiếu nhãn giả lập'
+    assert all(d['grdp'] > 0 and d['population'] > 0 for d in dong)
+
+    for d in dong:
+        d['sol'] = theo_tinh[d['province_code']][d['year']]
+    ket = do_co_gian(dong, gia_so_sanh=True)
+    assert abs(ket['beta'] - 0.45) < 0.06, f"beta lệch quá: {ket['beta']}"
+    assert ket['n'] == 63 * 12

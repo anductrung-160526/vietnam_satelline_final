@@ -420,7 +420,7 @@ def kinh_te_dem(year_from=2014, year_to=2025):
     with connect() as connection:
         rows = connection.execute(
             'SELECT e.province_code, p.province_name, e.year, e.population,'
-            ' COALESCE(e.grdp, e.gdp) AS grdp, e.grdp_price_basis, n.sol '
+            ' COALESCE(e.grdp, e.gdp) AS grdp, e.grdp_price_basis, e.source, n.sol '
             'FROM economy e JOIN province p ON p.province_code = e.province_code '
             'LEFT JOIN ntl_annual n ON n.province_code = e.province_code AND n.year = e.year '
             'WHERE e.year BETWEEN ? AND ? ORDER BY p.number, e.year',
@@ -430,6 +430,10 @@ def kinh_te_dem(year_from=2014, year_to=2025):
         return {'dong': [], 'hoi_quy': None, 'nam_tu': year_from, 'nam_den': year_to,
                 'canh_bao': ['Chưa có số liệu kinh tế. Nạp dân số và GRDP vào bảng '
                              'economy rồi chạy lại build_indices.']}
+    # Số giả lập phải tự khai ở mọi nơi nó xuất hiện. Dò nhãn ngay trên cột source
+    # thay vì tin vào trí nhớ người nạp: bảng này sẽ đi thẳng vào báo cáo của cô.
+    gia_lap = sorted({r['source'] for r in dong
+                      if 'GIA_LAP' in str(r.get('source') or '').upper()})
     co_so = {r.get('grdp_price_basis') for r in dong} - {None, ''}
     gia_so_sanh = (True if co_so == {'so_sanh'} else
                    False if co_so == {'hien_hanh'} else None)
@@ -439,8 +443,15 @@ def kinh_te_dem(year_from=2014, year_to=2025):
                                if r.get('sol') and r.get('population') else None)
         mot = hoi_quy['theo_tinh'].get(r['province_code'])
         r['beta_tinh'] = mot['beta'] if mot else None
+    canh_bao = list(hoi_quy.get('canh_bao', []))
+    if gia_lap:
+        canh_bao.insert(0, 'SỐ LIỆU KINH TẾ LÀ GIẢ LẬP, KHÔNG PHẢI SỐ THẬT — chỉ để '
+                           'chạy thử giao diện. Hệ số beta dưới đây là con số đã cấy '
+                           f"vào lúc sinh dữ liệu ({'; '.join(gia_lap)}), không phải kết "
+                           'quả nghiên cứu. Thay bằng dân số và GRDP thật trước khi '
+                           'trích vào báo cáo.')
     return {'dong': dong, 'hoi_quy': hoi_quy, 'nam_tu': year_from, 'nam_den': year_to,
-            'canh_bao': hoi_quy.get('canh_bao', [])}
+            'gia_lap': gia_lap, 'canh_bao': canh_bao}
 
 
 def tong_hop(year, month=0):

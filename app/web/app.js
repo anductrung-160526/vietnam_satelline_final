@@ -721,7 +721,7 @@ async function dungManKinhTe(){
 
   const h = d.hoi_quy || {};
   const canh = (d.canh_bao || []).map(c =>
-    `<p class="canh${c.includes('GIÁ HIỆN HÀNH') ? ' thieu' : ''}">${thoat(c)}</p>`).join('');
+    `<p class="canh${/GIÁ HIỆN HÀNH|GIẢ LẬP/.test(c) ? ' thieu' : ''}">${thoat(c)}</p>`).join('');
   const dienGiai = (h.beta === null || h.beta === undefined) ? ''
     : `<p class="dien-giai">Ánh sáng ban đêm tăng 10% ứng với GRDP tăng khoảng `
       + `<b>${dinhDang(h.beta * 10, 1)}%</b>.</p>`;
