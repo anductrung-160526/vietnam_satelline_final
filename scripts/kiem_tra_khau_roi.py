@@ -62,11 +62,18 @@ def quet_state(root, moc):
 
 
 def quet_bien_nhan(root, moc):
+    """Đếm biên nhận — nhưng tên tệp là job_id băm, KHÔNG chứa mốc.
+
+    Vì vậy không lọc theo mốc được: chỉ đếm tổng và cho biết thư mục có tồn tại hay
+    không. Bản trước lọc theo mốc nên luôn ra 0 và kết luận "đứt giữa tải và ghi
+    nhận" — một báo động giả đã làm mất thì giờ.
+    """
     ra = {}
-    for path in Path(root).glob('_control/*/.local_state/receipts'):
-        nhanh = path.parent.parent.name
-        ra[nhanh] = sorted(f.stem for f in path.glob('*.json')
-                           if moc in f.stem and 'VIIRS' in f.stem.upper())
+    for path in Path(root).glob('_control/*/.local_state'):
+        nhanh = path.parent.name
+        thu_muc = path / 'receipts'
+        ra[nhanh] = {'co_thu_muc': thu_muc.is_dir(),
+                     'tong': sum(1 for _ in thu_muc.glob('*.json')) if thu_muc.is_dir() else 0}
     return ra
 
 
@@ -148,8 +155,12 @@ def main():
                   + (f'   lỗi: {dict(loi)}' if loi else ''))
 
         bn = quet_bien_nhan(a.root, moc)
-        so_bn = sum(len(v) for v in bn.values())
-        print(f'\n2. BIÊN NHẬN: {so_bn} tệp')
+        so_bn = sum(v['tong'] for v in bn.values())
+        thieu_tm = [n for n, v in bn.items() if not v['co_thu_muc']]
+        print(f'\n2. BIÊN NHẬN: {so_bn} tệp trên tất cả các nhánh '
+              '(tên là job_id băm nên không lọc theo mốc được)')
+        if thieu_tm:
+            print('   Nhánh không có thư mục receipts: ' + ', '.join(thieu_tm))
 
         tep = quet_tep(a.root, moc)
         if tep is None:
@@ -203,15 +214,14 @@ def main():
                   + ', '.join(f'{k or "(trống)"}={v}' for k, v in sorted(hong.items(), key=lambda x: str(x[0]))))
             print('   => Đứt ở khâu TẢI. Chạy lại luồng tải cho mốc này; các job DONE_LOCAL')
             print('      sẽ được bỏ qua, chỉ tải phần còn thiếu.')
-        elif so_bn < so_done:
-            print(f'   {so_done} job DONE_LOCAL nhưng chỉ {so_bn} biên nhận.')
-            print('   => Đứt giữa TẢI và GHI NHẬN: trạng thái nói xong mà biên nhận mất.')
-        elif tep is not None and len(tep) < so_bn:
-            print(f'   {so_bn} biên nhận nhưng chỉ {len(tep)} tệp trên đĩa.')
+        elif tep is not None and len(tep) < so_done:
+            print(f'   {so_done} job DONE_LOCAL nhưng chỉ {len(tep)} tệp trên đĩa.')
             print('   => Tệp đã bị xoá hoặc chưa chuyển về ổ này.')
-        elif co_bang < so_done:
-            print(f'   Đủ {so_done} tệp nhưng bảng chỉ có {co_bang} tỉnh có số.')
-            print('   => Đứt ở khâu TÍNH. Chạy lại derive (local.py --only night) cho mốc này.')
+        elif co_bang < so_tep:
+            print(f'   Đủ {so_tep} tệp trên đĩa nhưng bảng chỉ có {co_bang} tỉnh có số.')
+            print('   => Ảnh đã vào tới khâu tính. Dòng rỗng ở đây KHÔNG phải thiếu ảnh mà')
+            print('      là ảnh không còn pixel hợp lệ nào (cf_cvg = 0, mây che kín tỉnh).')
+            print('      Tải lại vô ích. Kiểm chứng: scripts/soi_mot_anh.py.')
         else:
             print('   Bốn chặng khớp nhau. Nếu bảng vẫn thiếu thì nguyên nhân nằm ngoài')
             print('   phạm vi script này.')

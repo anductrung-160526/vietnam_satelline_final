@@ -708,3 +708,27 @@ class TheLightGrdpElasticity(unittest.TestCase):
     def test_a_weak_fit_says_so(self):
         ra = derive.do_co_gian(self._bo(beta=0.8, nhieu=5.0), gia_so_sanh=True)
         self.assertTrue(any('R²' in c for c in ra['canh_bao']), ra['canh_bao'])
+
+
+def test_thang_may_kin_khong_bi_gan_la_thieu_anh():
+    """Ảnh có mà 0 pixel hợp lệ phải là L (mây), không phải O (không có ảnh).
+
+    Hai nhãn này dẫn tới hai hành động ngược nhau: O thì đi tải lại, L thì tải bao
+    nhiêu lần cũng vẫn trống. Nhãn sai từng khiến cả tháng 2022-07 trông như lỗi tải
+    trong khi 63 tệp ảnh nằm sẵn trên đĩa.
+    """
+    from task_pipeline import derive
+
+    class _Cache:
+        def get(self, path, compute, nhan=()):
+            return dict(sol=None, sol_raw=None, valid_pixels=0, background_pixels=None,
+                        rad_max=None, rad_min=None, rad_mean=None, rad_std=None,
+                        rad_cv=None, lit_pixels=None, lit_sol=None, lit_area_km2=None,
+                        lit_pixel_pct=None, background_threshold=0.5, cloud_free_obs=0.0)
+
+    tinh = {'ma_tinh': '01', 'ten_tinh': 'Hà Nội', 'slug': 'ha_noi', 'number': 1}
+    rows = derive.ntl_monthly_rows(tinh, {'2022-07': 'co_anh_nhung_may_kin.tif'},
+                                   3359.0, _Cache())
+    assert len(rows) == 1
+    assert rows[0]['obs_status'] == 'L', rows[0]['obs_status']
+    assert rows[0]['status'] != 'CHUA_CO_ANH'

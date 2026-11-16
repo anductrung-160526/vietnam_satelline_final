@@ -501,9 +501,17 @@ def ntl_monthly_rows(province,filtered,area,cache):
         cua_so=[by[k]['sol'] for k in thu_tu[max(0,i-2):i+1] if by[k]['sol'] is not None]
         row['sol_ma3']=round(sum(cua_so)/len(cua_so),4) if cua_so else None
         row['calibration']='PENDING'
-        row['status']='OK' if row['sol'] is not None else 'CHUA_CO_ANH'
+        # Vòng lặp trên chỉ sinh dòng cho những mốc CÓ trong `filtered`, tức là ảnh đã
+        # tải xong và đã lọc. Vậy ở đây luôn có ảnh. sol rỗng nghĩa là ảnh có mà không
+        # pixel nào hợp lệ — cf_cvg = 0 trên toàn tỉnh, tức tháng đó mây che kín.
+        #
+        # Trước đây hai dòng này suy trạng thái từ `sol is not None`, nên tháng mây kín
+        # bị gán CHUA_CO_ANH và cờ O ("không có ảnh"). Hai thứ đó xử lý ngược nhau:
+        # thiếu ảnh thì phải tải lại, mây kín thì tải bao nhiêu lần cũng vẫn trống.
+        # Nhãn sai đã khiến 2022-07 trông như lỗi tải trong khi 63 tệp nằm sẵn trên đĩa.
+        row['status']='OK' if row['sol'] is not None else 'INSUFFICIENT_QUALITY'
         # Chuỗi tháng toàn VIIRS nên không có mốc đổi vệ tinh nào: không gán B ở đây.
-        row['obs_status']=co_trang_thai(row,row['sol'] is not None)
+        row['obs_status']=co_trang_thai(row,True)
     return rows
 
 
