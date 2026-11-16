@@ -303,22 +303,25 @@ Bảng chỉ số theo năm hoặc theo tháng, cho cả 63 tỉnh, tải đư�
 ```
 cột lọc                   bảng
 ┌─────────────────────┐  ┌────────────────────────────────────────┐
-│ ▾ Phạm vi   63 · 63 │  │ Tỉnh      2009   2010   2011 …  2014    │
-│ ▾ Chỉ số    14 · 1  │  │ An Giang 12.431 38.9ᴮ 40.112 …  9.902ᴮ │
-│ ▾ Thời gian 286 · 8 │  │ Bắc Kạn   —ᴸ     9.515  9.903 …  2.221  │
+│ ▾ Phạm vi   63 · 63 │  │ Tỉnh      2009   2010   2011 …  2014   │
+│ ▾ Chỉ số    14 · 1  │  │ An Giang 12.431 38.900 40.112 …  9.902 │
+│ ▾ Thời gian 286 · 8 │  │ Bắc Kạn   —      9.515  9.903 …  2.221 │
 │ ▸ Hàm thời gian     │  │ …                                      │
-│                     │  │ ᴮ đứt gãy chuỗi · ᴸ không có ảnh sạch  │
-│ ⚠ cảnh báo…         │  └────────────────────────────────────────┘
-└─────────────────────┘  [ Tải CSV ]
+│ ⚠ bắc qua 2010      │  └────────────────────────────────────────┘
+│ ⚠ bắc qua 2013      │  [ Tải CSV ]
+└─────────────────────┘
 ```
 
 - Hàng = tỉnh đã tick (mặc định cả 63, xếp A–Z).
 - Cột = mốc thời gian đã tick, cộng một cột cho mỗi **hàm thời gian** đã thêm.
 - Tick **nhiều chỉ số** thì bảng thêm một cột `Chỉ số` và mỗi tỉnh chiếm nhiều hàng.
-- Ô không có số để **trống**, không tô 0, kèm chữ nhỏ trên cao là **cờ trạng thái**.
-- Nghĩa của cờ nằm ở **tooltip** khi rê chuột, không in thành chú giải dưới bảng.
-  Chú giải đầy đủ đi kèm tệp tải xuống trong `ghi_chu_phuong_phap.md`.
+- Ô không có số để **trống** (`—`), không tô 0.
+- **Bảng không in chữ cờ.** Cờ vẫn nằm trong dữ liệu và trong tệp CSV; trên màn hình nó
+  chỉ là **tooltip** khi rê chuột lên ô. Chú giải đầy đủ đi kèm tệp tải xuống trong
+  `ghi_chu_phuong_phap.md`.
 - Dưới bảng **chỉ có nút Tải CSV**, không có dòng ghi chú nào.
+- Hai cảnh báo mốc đổi vệ tinh nằm **cuối cột lọc**, cạnh chính cái đang chọn ra khoảng
+  thời gian gây ra chúng. Bảng sạch chữ, nhưng người dùng vẫn không thể bỏ sót chúng.
 - Chọn một tỉnh ở cột lọc → bảng vẫn hiện đủ 63 tỉnh nhưng **tô sáng hàng của tỉnh đó**.
   Cô cần so sánh giữa các tỉnh, lọc còn một hàng là mất mục đích.
 
