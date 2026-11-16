@@ -52,7 +52,7 @@ Dặn thêm trong ghi âm:
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ VNGISDASH  [Ảnh đêm][Chỉ số đêm][Chỉ số kinh tế đêm]          │  thanh ứng dụng
+│ VNGISDASH        [Ảnh đêm][Chỉ số đêm][Chỉ số kinh tế đêm]    │  thanh ứng dụng
 ├──────────────┬────────────────────────────────────────────────┤
 │  cột lọc     │          vùng nội dung của màn                 │
 │  cao hết     │                                                │
@@ -63,8 +63,9 @@ Dặn thêm trong ghi âm:
 **Khung ứng dụng chiếm hết màn hình.** Không có tiêu đề trang, không có dải giới thiệu
 phía trên: mở ra là thấy ngay công cụ, giống Copernicus Browser.
 
-**Ba nút chuyển màn nằm ngay trên thanh ứng dụng**, cạnh tên VNGISDASH — không phải một
-thanh riêng bên dưới. Ba nút chứ không phải menu thả xuống: cô cần thấy ngay app có ba phần.
+**Ba nút chuyển màn nằm trên thanh ứng dụng, dồn về phía phải** — bên trái đã có tên
+VNGISDASH, khoảng trống còn lại là chỗ của ba tab. Không phải một thanh riêng bên dưới.
+Ba nút chứ không phải menu thả xuống: cô cần thấy ngay app có ba phần.
 
 **Cột lọc cao hết chiều dọc** và tự cuộn bên trong khi nội dung dài, cũng như Copernicus.
 Vùng nội dung bên phải cuộn độc lập.
@@ -229,14 +230,13 @@ thẻ số liệu nằm trên ảnh:
 │ SOL           │ DIỆN TÍCH     │ MẬT ĐỘ        │
 │ 63 280        │ 4 494         │ 14,09         │
 │   nW/cm²/sr   │   km²         │   trên km²    │
-│ VIIRS·07/2024 │ GADM 4.1      │ SOL ÷ dt      │
 └───────────────┴───────────────┴───────────────┘
 ```
 
 ### 5.3. Ba thẻ số liệu
 
 **Ba thẻ nằm ngang phía trên ảnh, bên phải cột lọc** — không nằm trong cột lọc và không
-chồng lên ảnh. Mỗi thẻ: nhãn, con số lớn, đơn vị, và một dòng nhỏ ghi nguồn hoặc công thức.
+chồng lên ảnh. Mỗi thẻ chỉ có **nhãn, con số lớn và đơn vị**, không ghi chú gì thêm.
 
 | Nhãn | Cột | Đơn vị | Làm tròn |
 |---|---|---|---|
@@ -244,8 +244,8 @@ chồng lên ảnh. Mỗi thẻ: nhãn, con số lớn, đơn vị, và một d�
 | Diện tích | `area_km2` | **km²** (đã chốt, không dùng m²) | 0 chữ số |
 | Mật độ | `sol_density` | đơn vị bức xạ / km² | 2 chữ số |
 
-Dưới ba số ghi nguồn ảnh và mốc: `VIIRS · 2024` hoặc `DMSP · 2010`, để không ai nhầm
-thang đo giữa hai vệ tinh.
+Thẻ không ghi nguồn ảnh. Nguồn và mốc đã nằm ở bộ chọn thời gian bên cột lọc, và đơn vị
+trên thẻ (`nW/cm²/sr` với VIIRS, `DN` với DMSP) tự nói ra đang là thang đo nào.
 
 **Toàn quốc**: `SOL` = tổng 63 tỉnh, `Diện tích` = tổng diện tích, `Mật độ` =
 tổng SOL ÷ tổng diện tích. Đây là phép cộng trên chỉ số đã có, không phải công thức mới.
