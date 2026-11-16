@@ -86,7 +86,101 @@ kèm nút *Xem toàn quốc*. Gõ còn đúng một tỉnh thì chọn luôn; En
 Theo tháng chỉ có từ **2014**: DMSP là sản phẩm tổng hợp năm, NOAA không phát hành theo
 tháng. Phải ghi câu này dưới bộ chọn, không để người dùng tự đoán.
 
-### 4.3. Dải cảnh báo
+### 4.3. Bảng điều khiển lọc — màn 2 và màn 3
+
+Theo mẫu **World Bank DataBank** (ảnh chụp cô gửi 16/11). Màn 1 **không** dùng kiểu này:
+nó là trình xem ảnh, mỗi lúc một phạm vi một mốc, nên giữ ô chọn đơn và thanh trượt.
+
+Cột lọc rộng 320 px (kéo được), gồm bốn nhóm gập mở. Mỗi tiêu đề nhóm hiện **số có sẵn**
+và **số đã chọn**, như DataBank:
+
+```
+┌────────────────────────────────┐
+│ ▾ Phạm vi      Có 63 · Chọn 63 │
+│   [✓][✕][⇅]   [tìm tỉnh…  🔍] │
+│   A B C D Đ G H K L M N …      │
+│   ┌──────────────────────────┐ │
+│   │ ☑ An Giang               │ │
+│   │ ☑ Bà Rịa - Vũng Tàu      │ │
+│   │ ☑ Bạc Liêu               │ │
+│   └──────────────────────────┘ │
+│ ▾ Chỉ số        Có 14 · Chọn 1 │
+│   [tìm chỉ số…           🔍]   │
+│   ☑ Tổng độ sáng — SOL         │
+│     (nW/cm²/sr · DN)           │
+│   ☐ Mật độ độ sáng             │
+│     (nW/cm²/sr trên km²)       │
+│ ▾ Thời gian    Có 286 · Chọn 8 │
+│   Khoảng có sẵn: 2004–2025     │
+│   XEM GẦN ĐÂY  5  10  15  20   │
+│   ☐ 2025 ▸ tháng               │
+│   ☐ 2024 ▸ tháng               │
+│   ☐ 2013                       │
+│ ▸ Hàm thời gian                │
+└────────────────────────────────┘
+```
+
+**Thanh công cụ mỗi nhóm**: chọn tất cả · bỏ chọn tất cả · đảo thứ tự · ô tìm kiếm.
+Ô tìm bỏ dấu, giống bộ chọn phạm vi ở mục 4.1.
+
+#### Nhóm *Chỉ số* — tên kèm đơn vị
+
+Đúng như DataBank viết *"Access to electricity (% of population)"*. Nhãn của ta:
+
+| Nhãn hiển thị | Cột |
+|---|---|
+| Tổng độ sáng — SOL (nW/cm²/sr · DN) | `sol` |
+| Tổng độ sáng, mật độ (nW/cm²/sr trên km²) | `sol_density` |
+| Tổng độ sáng, bình quân đầu người (nW/cm²/sr trên người) | `sol_per_capita` |
+| Tổng độ sáng **o/w** vùng sáng (nW/cm²/sr · DN) | `lit_sol` |
+| Tổng độ sáng, đã hiệu chỉnh liên vệ tinh (nW/cm²/sr) | `sol_cal` |
+| Diện tích vùng sáng (km²) | `lit_area_km2` |
+| Diện tích vùng sáng (% diện tích tỉnh) | `lit_area_pct` |
+| Số pixel sáng (pixel) | `lit_pixels` |
+| Số pixel sáng (% pixel hợp lệ) | `lit_pixel_pct` |
+| Bức xạ trung bình (nW/cm²/sr · DN) | `rad_mean` |
+| Độ lệch chuẩn bức xạ (nW/cm²/sr · DN) | `rad_std` |
+| Hệ số biến thiên (không thứ nguyên) | `rad_cv` |
+| Số lượt quan sát sạch mây (lượt) | `cloud_free_obs` |
+
+> **Quan hệ với mô hình hai chiều ở mục 6.3.** Bên trong vẫn là `chỉ số × cách biểu diễn`:
+> thêm "bình quân đầu người" vẫn chỉ là **một dòng** trong bảng ánh xạ. Danh sách phẳng
+> này được **sinh ra** từ bảng ánh xạ đó, nhãn ghép từ tên chỉ số và đơn vị của cách biểu
+> diễn. Hai thứ không mâu thuẫn: một cái là mô hình dữ liệu, một cái là cách bày ra.
+
+#### Nhóm *Thời gian* — hai cấp, năm rồi tháng
+
+- Danh sách năm 2004–2025, xếp mới nhất trước, ô tick, chia cột như DataBank.
+- `Khoảng có sẵn: 2004–2025` ở đầu nhóm.
+- `XEM GẦN ĐÂY  5 · 10 · 15 · 20` — bấm là tick nhanh N năm gần nhất.
+- **Năm từ 2014 trở đi có mũi tên mở ra 12 tháng.** Tick năm = tick cả 12 tháng;
+  tick vài tháng thì ô của năm thành trạng thái nửa chọn (`indeterminate`).
+- Năm 2004–2013 **không** có mũi tên: DMSP là ảnh tổng hợp năm, NOAA không phát hành
+  theo tháng. Không bày ra rồi báo lỗi.
+- Bỏ hẳn hai nút `Theo năm` / `Theo tháng` của bản trước: cây thời gian đã nói rõ hơn.
+
+#### Nhóm *Hàm thời gian*
+
+Theo *Create Time Function* của DataBank.
+
+| Trường | Giá trị |
+|---|---|
+| Loại | Tốc độ tăng trưởng bình quân năm · Trung bình trượt 3 kỳ · Tổng trong khoảng · Trung bình trong khoảng · Chỉ số gốc (năm gốc = 100) |
+| Khoảng | Từ … đến … |
+| Tên hàm | người dùng tự đặt, thành tên cột trong bảng và trong CSV |
+| Nút | Thêm · Xoá |
+
+Hàm đã thêm hiện thành **một cột phụ** bên phải bảng, không thay thế các cột mốc thời gian.
+
+> **Công thức vẫn thuộc `derive.py`.** Hàm thời gian tính trên khoảng do người dùng chọn
+> nên không tiền tính được, nhưng công thức đặt ở `task_pipeline/derive.py: ham_thoi_gian`
+> và API chỉ gọi. Nguyên tắc là "không viết công thức trong API", không phải "không tính
+> lúc có yêu cầu".
+>
+> Tốc độ tăng trưởng bình quân năm **từ chối chạy** khi khoảng bắc qua 2010 hoặc 2013 trên
+> cột gốc: hai mốc đó làm con số vô nghĩa. Dùng cột `_cal` thì qua được mốc 2013.
+
+### 4.4. Dải cảnh báo
 
 Hiện ngay dưới bộ chọn, mỗi cảnh báo một dòng, nền vàng nhạt:
 
@@ -205,32 +299,29 @@ Bảng chỉ số theo năm hoặc theo tháng, cho cả 63 tỉnh, tải đư�
 
 ```
 cột lọc                   bảng
-┌──────────────────┐  ┌───────────────────────────────────────────┐
-│ Đo cái gì        │  │ Tỉnh        2009   2010   2011  …  2014   │
-│  [Tổng SOL    ▾] │  │ An Giang  12.431  38.9ᴮ 40.112 …  9.902ᴮ │
-│ Tính theo        │  │ Bà Rịa…   28.004  87.1ᴮ 90.337 … 21.455ᴮ │
-│  [Số thô      ▾] │  │ Bắc Kạn    —ᴸ     9.515  9.903 …  2.221  │
-│                  │  │ …                                         │
-│ Bước thời gian   │  │ ᴮ đứt gãy chuỗi · ᴸ không có ảnh sạch mây│
-│  [Năm][Tháng]    │  └───────────────────────────────────────────┘
-│ Từ [2008] đến    │  [ Tải CSV ]
-│    [2015]        │
-│ ⚠ cảnh báo…      │
-└──────────────────┘
+┌─────────────────────┐  ┌────────────────────────────────────────┐
+│ ▾ Phạm vi   63 · 63 │  │ Tỉnh      2009   2010   2011 …  2014    │
+│ ▾ Chỉ số    14 · 1  │  │ An Giang 12.431 38.9ᴮ 40.112 …  9.902ᴮ │
+│ ▾ Thời gian 286 · 8 │  │ Bắc Kạn   —ᴸ     9.515  9.903 …  2.221  │
+│ ▸ Hàm thời gian     │  │ …                                      │
+│                     │  │ ᴮ đứt gãy chuỗi · ᴸ không có ảnh sạch  │
+│ ⚠ cảnh báo…         │  └────────────────────────────────────────┘
+└─────────────────────┘  [ Tải CSV ]
 ```
 
-- Hàng = 63 tỉnh (xếp A–Z, giống bộ chọn phạm vi).
-- Cột = mốc thời gian trong khoảng đã chọn.
+- Hàng = tỉnh đã tick (mặc định cả 63, xếp A–Z).
+- Cột = mốc thời gian đã tick, cộng một cột cho mỗi **hàm thời gian** đã thêm.
+- Tick **nhiều chỉ số** thì bảng thêm một cột `Chỉ số` và mỗi tỉnh chiếm nhiều hàng.
 - Ô không có số để **trống**, không tô 0, kèm chữ nhỏ trên cao là **cờ trạng thái**.
 - Chú giải cờ nằm ngay dưới bảng, không bắt người đọc đi tìm.
 - Cột `source` hiện ở chân bảng, không chen vào từng ô.
 - Chọn một tỉnh ở cột lọc → bảng vẫn hiện đủ 63 tỉnh nhưng **tô sáng hàng của tỉnh đó**.
   Cô cần so sánh giữa các tỉnh, lọc còn một hàng là mất mục đích.
 
-### 6.3. Hai ô chọn: chỉ số và cách biểu diễn
+### 6.3. Mô hình bên trong: chỉ số × cách biểu diễn
 
-Theo mô hình của FAS. Ô thứ nhất chọn **đo cái gì**, ô thứ hai chọn **tính theo đơn vị nào**.
-Mỗi cặp hợp lệ ứng với đúng một cột trong bảng:
+Người dùng thấy một danh sách phẳng có ô tick (mục 4.3). Bên trong, danh sách đó **sinh ra
+từ** bảng ánh xạ hai chiều theo mô hình của FAS. Mỗi cặp hợp lệ là một dòng:
 
 | Đo cái gì | Tính theo | Cột |
 |---|---|---|
@@ -245,12 +336,11 @@ Mỗi cặp hợp lệ ứng với đúng một cột trong bảng:
 | Bức xạ trung bình | Số thô | `rad_mean` |
 | Hệ số biến thiên | Không thứ nguyên | `rad_cv` |
 
-Ô thứ hai **chỉ hiện những lựa chọn hợp lệ** với chỉ số đang chọn; cặp không tồn tại thì
-không được bày ra rồi báo lỗi.
+Cặp không tồn tại thì **không sinh ra mục nào** trong danh sách; không bày ra rồi báo lỗi.
 
-Ánh xạ này khai báo một chỗ duy nhất trong `store.INDICATORS`, thêm cột mới là hai ô chọn
-tự cập nhật. Lợi ích cụ thể: khi cô gửi dân số, thêm "trên đầu người" là **một dòng**
-trong bảng ánh xạ, không phải bốn cột mới và bốn mục mới trong danh sách.
+Ánh xạ khai báo một chỗ duy nhất trong `store.INDICATORS`. Lợi ích cụ thể: khi cô gửi dân
+số, thêm "trên đầu người" là **một dòng** trong bảng ánh xạ, và nó tự xuất hiện thành một
+mục có ô tick, một cột trong bảng và một cột trong CSV.
 
 Theo **tháng** chỉ hiện những chỉ số có ở bảng `ntl_monthly`; chọn một chỉ số chỉ có theo
 năm rồi bấm `Theo tháng` thì nút đó bị vô hiệu hoá kèm lời giải thích.
@@ -258,14 +348,23 @@ năm rồi bấm `Theo tháng` thì nút đó bị vô hiệu hoá kèm lời gi
 ### 6.4. API
 
 ```
-GET /api/panel?chi_so=sol&bieu_dien=tho&buoc=nam&tu=2020&den=2025
-GET /api/panel.csv?chi_so=sol&bieu_dien=tren_km2&buoc=thang&tu=2020&den=2025
+GET /api/panel?chi_so=sol,rad_cv&tinh=01,27&moc=2020,2021,2024-07&ham=cagr:2014:2025
+GET /api/panel.csv?chi_so=sol&moc=2024-01,2024-02,2024-03
 ```
 
-`buoc` nhận `nam` hoặc `thang`, mặc định `nam`. `bieu_dien` mặc định `tho`. Trả về
-`{chi_so, bieu_dien, moc[], dong[], canh_bao[], chu_giai_co{}}` trong đó
-`dong[i] = {province_code, province_name, gia_tri[], co[]}`, cả `gia_tri` và `co` dài
-đúng bằng `moc`. Cặp `chi_so` + `bieu_dien` không hợp lệ → `400` kèm danh sách cặp hợp lệ.
+| Tham số | Ý nghĩa |
+|---|---|
+| `chi_so` | một hoặc nhiều mã, cách nhau bởi dấu phẩy |
+| `tinh` | mã tỉnh đã tick; bỏ trống = cả 63 |
+| `moc` | mốc đã tick: `2010` (năm) hoặc `2024-07` (tháng), trộn được |
+| `ham` | `<loại>:<từ>:<đến>`, lặp lại được cho nhiều hàm |
+
+Trả về `{chi_so[], moc[], ham[], dong[], canh_bao[], chu_giai_co{}}` trong đó
+`dong[i] = {province_code, province_name, chi_so, gia_tri[], co[], ham{}}`; `gia_tri` và
+`co` dài đúng bằng `moc`.
+
+Mã lỗi `400` cho: mã chỉ số không có trong danh mục; mốc tháng của năm trước 2014;
+hàm `cagr` trên khoảng bắc qua 2010 hoặc 2013 với cột gốc.
 
 CSV: `Content-Disposition` dùng tên ASCII, ví dụ `chi_so_dem_sol_thang_2020_2025.csv`.
 Dòng đầu là tiêu đề cột. **Mỗi cột giá trị đi kèm một cột cờ** `<mốc>_co`, giống cách SDMX
@@ -436,16 +535,18 @@ Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **c�
 | 1 | Nạp `ntl_monthly` vào SQLite, tăng `SCHEMA_VERSION` | không |
 | 2 | Bảng ánh xạ chỉ số × cách biểu diễn trong `store.INDICATORS` | không |
 | 3 | `store.panel()` nhận bước thời gian và cách biểu diễn; `/api/panel` + `.csv` | 1, 2 |
-| 4 | Màn 2 — hai ô chọn, bảng có cờ, nút tải CSV | 3 |
-| 5 | `/api/anh-dem.tif` nhận `province_code` | không |
-| 6 | `/api/tong-hop` + ba số SOL / Area / Density trên màn 1 | 1 |
-| 7 | Thanh chuyển ba màn | không |
-| 8 | `metadata/ghi_chu_phuong_phap.md` kèm vào mọi gói tải | không |
-| 9 | Bảng `economy`, tệp mẫu, hàm hồi quy β + test dữ liệu giả | không |
-| 10 | Màn 3 | 9 + số liệu của cô |
+| 4 | Bảng điều khiển lọc kiểu DataBank: bốn nhóm gập mở, ô tick, cây thời gian năm→tháng | 2 |
+| 5 | `derive.ham_thoi_gian` — năm hàm thời gian + test | không |
+| 6 | Màn 2 — bảng có cờ, cột hàm thời gian, nút tải CSV | 3, 4, 5 |
+| 7 | `/api/anh-dem.tif` nhận `province_code` | không |
+| 8 | `/api/tong-hop` + ba số SOL / Area / Density trên màn 1 | 1 |
+| 9 | Thanh chuyển ba màn | không |
+| 10 | `metadata/ghi_chu_phuong_phap.md` kèm vào mọi gói tải | không |
+| 11 | Bảng `economy`, tệp mẫu, hàm hồi quy β + test dữ liệu giả | không |
+| 12 | Màn 3 — dùng lại bảng điều khiển lọc của màn 2 | 4, 11 + số liệu của cô |
 
-Mục 1–8 làm được ngay. Mục 9 viết và kiểm chứng được bằng dữ liệu giả trước khi cô gửi số;
-chỉ mục 10 là thật sự phải chờ.
+Mục 1–10 làm được ngay. Mục 11 viết và kiểm chứng được bằng dữ liệu giả trước khi cô gửi số;
+chỉ mục 12 là thật sự phải chờ.
 
 **Mục 0 phải chốt trước mọi thứ khác.** Nó đổi nội dung bảng nên phải chạy lại chỉ số
 (lần trước mất 40 phút), và màn 2 được thiết kế quanh cột cờ đó. Làm màn 2 trước rồi mới
