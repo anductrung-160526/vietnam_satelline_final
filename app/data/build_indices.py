@@ -22,14 +22,14 @@ REPO = HERE.parent.parent
 # Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
 # tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
 # An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
 # Cột chữ; mọi cột khác được đọc thành số.
 TEXT_COLUMNS = {'province_code', 'province_name', 'source', 'note', 'calibration', 'status',
                 'reflectance_type', 'source_collection', 'phuong_phap', 'status',
-                'period', 'frequency'}
+                'period', 'frequency', 'obs_status'}
 
 # bảng -> các vị trí CSV có thể có, và cách gộp (None = mỗi dòng một năm sẵn rồi)
 SOURCES = {

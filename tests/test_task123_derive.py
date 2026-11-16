@@ -506,3 +506,95 @@ class StalePartsFromAnOlderSchemaNeverCollapseTheTable(unittest.TestCase):
                 derive.merge(root)
         self.assertIn('012_022', loi.getvalue())
         self.assertIn('province_code', loi.getvalue())
+
+
+class TheObservationStatusFlag(unittest.TestCase):
+    """Cờ theo CL_OBS_STATUS của IMF: một mã mỗi dòng, ưu tiên O > L > B > U > A."""
+
+    def _dong(self, **sua):
+        row = dict(year=2020, valid_pixels=1000, cloud_free_obs=8.0)
+        row.update(sua)
+        return row
+
+    def test_a_normal_row_is_A(self):
+        self.assertEqual(derive.co_trang_thai(self._dong(), True), 'A')
+
+    def test_no_image_is_O(self):
+        self.assertEqual(derive.co_trang_thai(self._dong(), False), 'O')
+
+    def test_zero_valid_pixels_is_L(self):
+        """Có ảnh nhưng cả tỉnh mây che: khác hẳn 'không có ảnh'."""
+        self.assertEqual(derive.co_trang_thai(self._dong(valid_pixels=0), True), 'L')
+
+    def test_a_satellite_change_year_is_B(self):
+        for year in (2010, 2014):
+            with self.subTest(nam=year):
+                self.assertEqual(
+                    derive.co_trang_thai(self._dong(year=year), True,
+                                         derive.MOC_DOI_VE_TINH), 'B')
+
+    def test_few_cloud_free_observations_is_U(self):
+        self.assertEqual(derive.co_trang_thai(self._dong(cloud_free_obs=1.2), True), 'U')
+
+    def test_missing_data_outranks_every_other_note(self):
+        """Năm 2010 mà không có ảnh thì là O, không phải B: thiếu dữ liệu quan trọng hơn."""
+        self.assertEqual(
+            derive.co_trang_thai(self._dong(year=2010), False, derive.MOC_DOI_VE_TINH), 'O')
+        self.assertEqual(
+            derive.co_trang_thai(self._dong(year=2010, valid_pixels=0), True,
+                                 derive.MOC_DOI_VE_TINH), 'L')
+        # Mốc đổi vệ tinh quan trọng hơn chuyện ít lượt quan sát.
+        self.assertEqual(
+            derive.co_trang_thai(self._dong(year=2010, cloud_free_obs=0.5), True,
+                                 derive.MOC_DOI_VE_TINH), 'B')
+
+    def test_a_row_without_cloud_free_obs_is_not_U(self):
+        """DMSP không có băng cf_cvg; trống nghĩa là KHÔNG BIẾT, không phải ít."""
+        self.assertEqual(derive.co_trang_thai(self._dong(cloud_free_obs=None), True), 'A')
+
+
+class EveryRowCarriesExactlyOneFlag(unittest.TestCase):
+
+    def _bo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def anh(path, value, cf=None):
+                data = np.full((1, 4, 4), value, dtype='float32')
+                data[0, 0, 0] = 40.0
+                path = tif(path, data, 'float32')
+                if cf is not None:
+                    with rasterio.open(path, 'r+') as ds:
+                        ds.update_tags(CF_CVG_MEAN=str(cf))
+                return path
+
+            dmsp = {str(y): anh(root / f'd{y}.tif', 1.0) for y in range(2004, 2014)}
+            viirs = {str(y): anh(root / f'v{y}.tif', 0.2, cf=6.0) for y in range(2014, 2026)}
+            filtered = {f'2014-{m:02}': anh(root / f'f{m}.tif', 0.2, cf=(1.0 if m == 6 else 6.0))
+                        for m in range(1, 13)}
+            cache = derive.Cache(root / 'c.json')
+            nam, _ = derive.ntl_annual_rows(P, dmsp, viirs, 20.0, cache)
+            thang = derive.ntl_monthly_rows(P, filtered, 20.0, cache)
+            return nam, thang
+
+    def test_every_annual_row_has_a_flag(self):
+        nam, _ = self._bo()
+        self.assertTrue(all(r.get('obs_status') in set('ABLOU') for r in nam))
+
+    def test_the_two_satellite_change_years_are_flagged_B(self):
+        nam, _ = self._bo()
+        theo = {r['year']: r['obs_status'] for r in nam}
+        self.assertEqual(theo[2010], 'B')
+        self.assertEqual(theo[2014], 'B')
+        self.assertEqual(theo[2011], 'A')
+
+    def test_monthly_rows_never_carry_B(self):
+        """Chuỗi tháng toàn VIIRS nên không có mốc đổi vệ tinh nào."""
+        _, thang = self._bo()
+        self.assertNotIn('B', {r['obs_status'] for r in thang})
+
+    def test_a_month_with_few_clean_observations_is_U(self):
+        _, thang = self._bo()
+        theo = {r['period']: r['obs_status'] for r in thang}
+        self.assertEqual(theo['2014-06'], 'U')
+        self.assertEqual(theo['2014-07'], 'A')

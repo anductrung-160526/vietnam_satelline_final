@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS ntl_annual(
   cloud_free_obs REAL,       -- số lượt quan sát sạch mây trung bình (trống với DMSP)
   area_km2 REAL,
   note TEXT, calibration TEXT, status TEXT,
+  -- Cờ theo CL_OBS_STATUS của IMF: A bình thường · B đứt gãy chuỗi do đổi vệ tinh
+  -- · L có ảnh nhưng không pixel nào hợp lệ · O không có ảnh · U kém tin cậy.
+  obs_status TEXT,
   PRIMARY KEY(province_code,year)
 );
 
@@ -61,7 +64,7 @@ CREATE TABLE IF NOT EXISTS ntl_monthly(
   lit_threshold REAL,
   cloud_free_obs REAL,       -- ít lượt quan sát sạch mây thì con số tháng đó kém tin cậy
   area_km2 REAL,
-  calibration TEXT, status TEXT,
+  calibration TEXT, status TEXT, obs_status TEXT,
   PRIMARY KEY(province_code,year,month)
 );
 

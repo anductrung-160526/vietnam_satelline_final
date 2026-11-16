@@ -440,6 +440,37 @@ def day_rows(province,status,raw,area,cache):
     return rows
 
 
+# Cờ trạng thái quan sát, theo CL_OBS_STATUS của IMF (docs/THAM_KHAO_FAS_IMF.md).
+# Chỉ dùng năm mã trong số 25 mã của IMF, vì năm mã đó là tất cả những gì bộ dữ liệu này
+# phân biệt được Ở MỨC DÒNG.
+#
+# Hai mã của IMF cố ý KHÔNG dùng ở đây, vì chúng là thuộc tính của một CỘT chứ không phải
+# của cả dòng: M (dữ liệu không thể tồn tại — cloud_free_obs ở dòng DMSP) và E (giá trị
+# ước lượng — nhóm cột _cal). Gán chúng cho cả dòng sẽ nói sai về những cột còn lại.
+# cloud_free_obs trống ở DMSP đã được giải thích trong codebook; nhóm _cal đã có cột
+# calibration mang tên phương pháp.
+MOC_DOI_VE_TINH = (2010, 2014)   # F16->F18 và DMSP->VIIRS
+IT_TIN_CAY = 2.0                 # dưới 2 lượt quan sát sạch mây
+
+
+def co_trang_thai(row,co_anh,moc_gay=()):
+    """Một dòng mang ĐÚNG một mã. Thiếu dữ liệu quan trọng hơn mọi ghi chú khác.
+
+    Thứ tự ưu tiên O > L > B > U > A:
+      O  không có ảnh
+      L  có ảnh nhưng không pixel nào hợp lệ (cả tỉnh mây che)
+      B  đứt gãy chuỗi do đổi vệ tinh
+      U  ít lượt quan sát sạch mây nên con số kém tin cậy
+      A  bình thường
+    """
+    if not co_anh:return 'O'
+    if not row.get('valid_pixels'):return 'L'
+    if int(row['year']) in moc_gay:return 'B'
+    cov=row.get('cloud_free_obs')
+    if cov is not None and cov < IT_TIN_CAY:return 'U'
+    return 'A'
+
+
 def _dan_xuat(row,area):
     """Các cột suy ra từ thống kê ảnh và diện tích tỉnh. Dùng chung cho năm và tháng."""
     row['sol_density']=round(row['sol']/area,6) if row['sol'] is not None and area else None
@@ -471,6 +502,8 @@ def ntl_monthly_rows(province,filtered,area,cache):
         row['sol_ma3']=round(sum(cua_so)/len(cua_so),4) if cua_so else None
         row['calibration']='PENDING'
         row['status']='OK' if row['sol'] is not None else 'CHUA_CO_ANH'
+        # Chuỗi tháng toàn VIIRS nên không có mốc đổi vệ tinh nào: không gán B ở đây.
+        row['obs_status']=co_trang_thai(row,row['sol'] is not None)
     return rows
 
 
@@ -499,6 +532,7 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
         row['note']='' if same or prev is None else 'DOI_NGUON_ANH_CHUA_HIEU_CHINH'
         row['lit_threshold']=nguong
         row['calibration']='PENDING';row['status']='OK' if path else 'CHUA_CO_ANH'
+        row['obs_status']=co_trang_thai(row,bool(path),MOC_DOI_VE_TINH)
         rows.append(row);prev=row
     if '2013' in dmsp and '2013' in viirs:
         # Phải dùng ĐÚNG ngưỡng nền của cột sol. Gọi ntl_stats trần (background=0) thì
@@ -680,6 +714,10 @@ CODEBOOK=[
  ('cloud_free_obs','Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP vì '
   'sản phẩm stable_lights của NOAA không có băng này','Numeric','lượt'),
  ('status','OK, OK_TOA, CHUA_CO_ANH, MISSING_SOURCE, INSUFFICIENT_QUALITY','String',''),
+ ('obs_status','Cờ trạng thái quan sát theo CL_OBS_STATUS của IMF, một mã mỗi dòng: '
+  'A bình thường · B đứt gãy chuỗi do đổi vệ tinh (năm 2010 và 2014) · L có ảnh nhưng '
+  'không pixel nào hợp lệ · O không có ảnh · U ít lượt quan sát sạch mây nên kém tin cậy. '
+  'Ưu tiên O > L > B > U > A. Chuỗi tháng không có mã B vì toàn VIIRS','String',''),
  ('note','DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS; rỗng ở mọi '
   'dòng khác, nên trong ntl_panel (hai nửa không giáp nhau) luôn rỗng','String',''),
  # --- Hiệu chỉnh liên vệ tinh DMSP→VIIRS (chỉ bảng theo năm) ---

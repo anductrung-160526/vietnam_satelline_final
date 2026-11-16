@@ -84,6 +84,7 @@ Bảng này sinh ra từ `task_pipeline/derive.py: CODEBOOK` — sửa ở đó 
 | `valid_pixels` | Số pixel có dữ liệu trong ranh giới tỉnh | Numeric | pixel |
 | `cloud_free_obs` | Số lượt quan sát sạch mây trung bình (cf_cvg). Trống với DMSP vì sản phẩm stable_lights của NOAA không có băng này | Numeric | lượt |
 | `status` | OK, OK_TOA, CHUA_CO_ANH, MISSING_SOURCE, INSUFFICIENT_QUALITY | String | — |
+| `obs_status` | Cờ trạng thái quan sát theo CL_OBS_STATUS của IMF, một mã mỗi dòng: A bình thường · B đứt gãy chuỗi do đổi vệ tinh (năm 2010 và 2014) · L có ảnh nhưng không pixel nào hợp lệ · O không có ảnh · U ít lượt quan sát sạch mây nên kém tin cậy. Ưu tiên O > L > B > U > A. Chuỗi tháng không có mã B vì toàn VIIRS | String | — |
 | `note` | DOI_NGUON_ANH_CHUA_HIEU_CHINH tại năm chuyển từ DMSP sang VIIRS; rỗng ở mọi dòng khác, nên trong ntl_panel (hai nửa không giáp nhau) luôn rỗng | String | — |
 | `sol_cal` | sol sau khi quy DMSP về thang VIIRS; dòng VIIRS giữ nguyên | Numeric | nW/cm²/sr |
 | `sol_density_cal` | sol_cal / area_km2 | Numeric | nW/cm²/sr trên km² |
@@ -105,7 +106,7 @@ Bảng nào có cột nào:
 |---|---|---|
 | `ntl_panel` | **Bộ chính**: DMSP theo năm 2004–2013 + VIIRS theo tháng 2014–2025 | cả hai nhóm, phân biệt bằng `frequency` |
 | `ntl_annual` | Chuỗi theo năm 2004–2025 (VIIRS năm = trung vị các tháng) | `sol_change_pct`, nhóm `_cal` |
-| `ntl_monthly` | Mọi tháng VIIRS có ảnh, kể cả 2013 | `sol_change_mom_pct`, `sol_change_yoy_pct`, `sol_ma3` |
+| `ntl_monthly` | Mọi tháng VIIRS có ảnh, kể cả 2013 | `sol_change_mom_pct`, `sol_change_yoy_pct`, `sol_ma3`; **không bao giờ có cờ `B`** vì toàn VIIRS |
 | `ntl_overlap_2013` | Cặp DMSP–VIIRS năm 2013 để khớp mô hình hiệu chỉnh | `sol_dmsp`, `sol_viirs` |
 | `day_indices_monthly` | Chỉ số ảnh ngày theo tháng | `reflectance_type`, `<KÊNH>_mean/_std` |
 

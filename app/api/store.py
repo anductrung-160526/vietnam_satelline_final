@@ -24,6 +24,14 @@ ECONOMY_FIELDS = ('year', 'population', 'gdp', 'gdp_per_capita', 'source')
 
 # Sentinel-2 trước 2019 là phản xạ đỉnh khí quyển, từ 2019 là phản xạ bề mặt.
 # Quyết định đã được giảng viên chấp nhận; app phải nói ra để không ai so sánh mù.
+# Nghĩa của cờ CL_OBS_STATUS, gửi kèm mỗi bảng để giao diện không phải chép lại.
+CHU_GIAI_CO = {
+    'B': 'đứt gãy chuỗi do đổi vệ tinh',
+    'L': 'có ảnh nhưng không điểm ảnh nào hợp lệ',
+    'O': 'không có ảnh',
+    'U': 'ít lượt quan sát sạch mây, độ tin cậy thấp',
+}
+
 TOA_YEARS = range(2015, 2019)
 TOA_WARNING = ('Sentinel-2 2015–2018 là phản xạ đỉnh khí quyển (TOA, L1C); từ 2019 là phản xạ '
                'bề mặt (L2A). So sánh trực tiếp giữa hai giai đoạn cần nêu rõ khác biệt này.')
@@ -312,6 +320,7 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
         tinh_rows = connection.execute(
             'SELECT province_code,province_name,number FROM province ORDER BY number').fetchall()
         o = {}          # (mã chỉ số, mã tỉnh, tên mốc) -> giá trị
+        co = {}         # cùng khoá -> cờ CL_OBS_STATUS, chỉ khi khác 'A'
         nguon = {}
         for entry in muc:
             for loai, year, month in cac_moc:
@@ -319,16 +328,22 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
                 bang = entry.get('bang_thang') if loai == 'thang' else entry.get('bang')
                 if not bang:
                     continue
+                co_co = bang in ('ntl_annual', 'ntl_monthly')
+                cot_co = ',obs_status' if co_co else ",''"
                 if loai == 'thang':
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source FROM {bang} '
+                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
                            f'WHERE year=? AND month=?')
                     tham = (year, month)
                 else:
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source FROM {bang} '
+                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
                            f'WHERE year=?' + ('' if bang != 'ntl_monthly' else ' AND month=0'))
                     tham = (year,)
-                for ma_tinh, gia_tri, src in connection.execute(cau, tham):
-                    o[(entry['ma'], ma_tinh, ten_moc(loai, year, month))] = gia_tri
+                for ma_tinh, gia_tri, src, flag in connection.execute(cau, tham):
+                    khoa = (entry['ma'], ma_tinh, ten_moc(loai, year, month))
+                    o[khoa] = gia_tri
+                    # 'A' là bình thường: không gửi về để khỏi nặng tải và nặng mắt.
+                    if flag and flag != 'A':
+                        co[khoa] = flag
                     if src:
                         nguon.setdefault(ma_tinh, set()).add(src)
 
@@ -344,10 +359,11 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
                 'chi_so': entry['ma'], 'ten': entry['ten'], 'don_vi': entry['don_vi'],
                 'chu_so': entry['chu_so'],
                 'source': '/'.join(sorted(nguon.get(ma_tinh, ()))) or None,
-                'gia_tri': [o.get((entry['ma'], ma_tinh, m)) for m in nhan_moc]})
+                'gia_tri': [o.get((entry['ma'], ma_tinh, m)) for m in nhan_moc],
+                'co': [co.get((entry['ma'], ma_tinh, m)) for m in nhan_moc]})
     co_so = {d['province_code'] for d in dong if any(v is not None for v in d['gia_tri'])}
     return {'chi_so': [dict(e) for e in muc], 'moc': nhan_moc, 'dong': dong,
-            'co_thang': co_thang,
+            'co_thang': co_thang, 'chu_giai_co': CHU_GIAI_CO,
             'so_tinh_co_du_lieu': len(co_so),
             'canh_bao': _canh_bao_bang(muc, nam_nam, cac_moc)}
 
