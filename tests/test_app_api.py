@@ -1128,3 +1128,38 @@ def test_gia_lap_kinh_te_khoi_phuc_dung_beta(tmp_path):
     ket = do_co_gian(dong, gia_so_sanh=True)
     assert abs(ket['beta'] - 0.45) < 0.06, f"beta lệch quá: {ket['beta']}"
     assert ket['n'] == 63 * 12
+
+
+def _nap_kiem_tra_thang():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'kttt', Path(__file__).resolve().parent.parent / 'scripts' / 'kiem_tra_thang_thieu.py')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_tach_duoc_thieu_anh_voi_may_che():
+    """Hai thứ trông giống nhau trên bảng (ô trống) nhưng xử lý ngược nhau.
+
+    Thiếu ảnh thì phải tải lại; mây che thì tải bao nhiêu lần cũng vẫn trống.
+    Nhầm hai cái này là đi tải lại vài trăm GB mà không được gì.
+    """
+    m = _nap_kiem_tra_thang()
+    khong_anh = {'status': 'CHUA_CO_ANH', 'obs': 'O', 'pix': None, 'sol': None, 'phu': None}
+    may_che = {'status': 'OK', 'obs': 'L', 'pix': 0, 'sol': None, 'phu': None}
+    thieu_phu = {'status': 'OK', 'obs': 'A', 'pix': 5000, 'sol': 1.0, 'phu': 0.3}
+    du = {'status': 'OK', 'obs': 'A', 'pix': 20000, 'sol': 1.0, 'phu': 0.99}
+    assert m.phan_loai(khong_anh) == 'a_khong_co_anh'
+    assert m.phan_loai(may_che) == 'b_khong_pixel'
+    assert m.phan_loai(thieu_phu) == 'c_phu_thieu'
+    assert m.phan_loai(du) == 'd_binh_thuong'
+
+
+def test_do_phu_lay_trung_vi_khong_lay_cuc_dai():
+    """Một tháng quang mây bất thường không được thành thước đo cho cả chuỗi."""
+    m = _nap_kiem_tra_thang()
+    dong = [{'ma': '01', 'pix': p} for p in (100, 100, 100, 100, 180)]
+    chuan = m.do_phu(dong)
+    assert chuan['01'] == 100, 'phải là trung vị 100, không phải cực đại 180'
+    assert dong[-1]['phu'] == 1.8
