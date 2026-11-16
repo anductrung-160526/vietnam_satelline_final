@@ -54,6 +54,30 @@ def dem(product, moc, hinh, cid):
     return int(col.size().getInfo())
 
 
+def do_cf(moc, hinh, cid):
+    """Số pixel có cf_cvg > 0 và cf_cvg trung bình của một sản phẩm, trong ranh giới tỉnh.
+
+    Đếm cảnh KHÔNG đủ để biết ảnh có dùng được hay không: tháng 2022-07 có đủ một
+    cảnh VCMSLCFG cho cả 63 tỉnh, nhưng cf_cvg bằng 0 trên toàn ảnh nên không một
+    pixel nào dùng được. `methods.inventory` chỉ chuyển sang sản phẩm dự phòng khi
+    số cảnh bằng 0, nên trường hợp "có cảnh mà rỗng" không bao giờ kích hoạt dự
+    phòng. Hàm này đo đúng thứ quyết định: số pixel thật sự quan sát được.
+    """
+    import ee
+    col = collection('VIIRS_MONTHLY', moc, ee.Geometry(hinh), collection_id=cid)
+    if int(col.size().getInfo()) == 0:
+        return None
+    cf = col.select('cf_cvg').mean().clip(ee.Geometry(hinh))
+    kw = dict(geometry=ee.Geometry(hinh), scale=500, crs='EPSG:4326', maxPixels=int(1e13),
+              tileScale=4)
+    ra = ee.Dictionary({
+        'duong': cf.gt(0).rename('x').reduceRegion(ee.Reducer.sum(), **kw).get('x'),
+        'tong': cf.mask(cf.mask()).rename('x').reduceRegion(ee.Reducer.count(), **kw).get('x'),
+        'tb': cf.rename('x').reduceRegion(ee.Reducer.mean(), **kw).get('x'),
+    }).getInfo()
+    return ra
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -61,6 +85,10 @@ def main():
     p.add_argument('--tinh', nargs='*', default=None, help='Mã tỉnh; bỏ trống = cả 63')
     p.add_argument('--project', default=None, help='Project Earth Engine')
     p.add_argument('--config', default=None, help='direct-config.json nếu máy khác đã dựng ranh giới')
+    p.add_argument('--do-cf', action='store_true', dest='do_cf',
+                   help='Đo số pixel cf_cvg > 0 của CẢ HAI sản phẩm. Chậm hơn nhiều '
+                        'nhưng trả lời được câu "có cảnh mà rỗng thì sản phẩm kia có '
+                        'cứu được không" — điều mà phép đếm cảnh không trả lời nổi.')
     a = p.parse_args()
 
     # Nạp ranh giới TRƯỚC khi gọi Earth Engine: thiếu tệp thì báo ngay, khỏi bắt người
@@ -92,6 +120,28 @@ def main():
                 co_b.append((ma, ten, nb))
             else:
                 trong.append((ma, ten))
+            if a.do_cf:
+                try:
+                    ca = do_cf(moc, hinh, VIIRS_A)
+                    cb = do_cf(moc, hinh, VIIRS_B)
+                except Exception as loi:                              # noqa: BLE001
+                    print(f'  {ma} {ten}: LỖI đo cf_cvg — {loi}')
+                    ca = cb = None
+                def mo_ta(c):
+                    if c is None:
+                        return 'không có cảnh'
+                    duong, tong = c.get('duong') or 0, c.get('tong') or 0
+                    tb = c.get('tb')
+                    return (f"{int(duong):,}/{int(tong):,} pixel có cf_cvg>0"
+                            + (f", tb={tb:.2f}" if tb is not None else ''))
+                print(f'  {ma} {ten}')
+                print(f'       VCMSLCFG (đang dùng): {mo_ta(ca)}')
+                print(f'       VCMCFG   (dự phòng) : {mo_ta(cb)}')
+                tot_a = (ca or {}).get('duong') or 0
+                tot_b = (cb or {}).get('duong') or 0
+                if tot_a == 0 and tot_b > 0:
+                    print('       >>> Sản phẩm dự phòng CÓ dữ liệu ở chỗ sản phẩm chính rỗng.')
+                continue
             print(f'  {ma} {ten:<22} VCMSLCFG={na}'
                   + (f'  VCMCFG={nb}' if nb is not None else ''))
 
