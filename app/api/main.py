@@ -207,10 +207,47 @@ def thong_tin_ranh_gioi():
             'ma_danh_muc_thieu_trong_file': sorted(ma_danh_muc - ma_file)[:10]}
 
 
+def _duong_ranh_gioi():
+    return Path(os.environ.get(
+        'VNGIS_BOUNDARIES', Path(__file__).resolve().parent.parent / 'data' / 'provinces.geojson'))
+
+
+def _hinh_tinh(province_code):
+    """Polygon của một tỉnh, lấy từ tệp ranh giới đã dựng sẵn."""
+    path = _duong_ranh_gioi()
+    if not path.is_file():
+        return None
+    for f in json.loads(path.read_text(encoding='utf-8'))['features']:
+        if str(f['properties'].get('province_code', '')).zfill(2) == province_code:
+            return f
+    return None
+
+
+def _cat_theo_tinh(nguon, hinh):
+    """Cắt COG toàn quốc theo ranh giới tỉnh, trả về bytes GeoTIFF.
+
+    Ngoài ranh giới thành NoData chứ không thành 0: 0 là một giá trị bức xạ hợp lệ,
+    dùng nó cho vùng không thuộc tỉnh là bịa ra số liệu.
+    """
+    import rasterio
+    from rasterio.mask import mask as cat_mask
+    with rasterio.open(nguon) as ds:
+        anh, bien_doi = cat_mask(ds, [hinh['geometry']], crop=True,
+                                 nodata=ds.nodata if ds.nodata is not None else -9999)
+        ho_so = ds.profile | {'height': anh.shape[1], 'width': anh.shape[2],
+                              'transform': bien_doi, 'driver': 'GTiff',
+                              'nodata': ds.nodata if ds.nodata is not None else -9999}
+    bo_nho = rasterio.io.MemoryFile()
+    with bo_nho.open(**ho_so) as ra:
+        ra.write(anh)
+    return bo_nho.read()
+
+
 @app.get('/api/anh-dem.tif')
 def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100),
-                thang: int = Query(0, ge=0, le=12, description='0 = ảnh cả năm')):
-    """Tải ảnh đêm (COG) của một mốc thời gian. Mục đích chính của màn hình này."""
+                thang: int = Query(0, ge=0, le=12, description='0 = ảnh cả năm'),
+                province_code: str = Query('', description='Bỏ trống = ảnh toàn quốc')):
+    """Tải ảnh đêm (COG) của một mốc thời gian, cả nước hoặc cắt theo một tỉnh."""
     path = store.cog_path('NTL', nam, thang)
     moc = f'{nam}-{thang:02}' if thang else str(nam)
     if not path:
@@ -220,7 +257,27 @@ def tai_anh_dem(nam: int = Query(..., ge=1990, le=2100),
     path = Path(path)
     if not path.is_file():
         raise HTTPException(410, f'Sổ có ghi ảnh {moc} nhưng file không còn ở {path}.')
-    return FileResponse(path, media_type='image/tiff', filename=f'VN_NTL_{moc}.tif')
+    if not province_code:
+        return FileResponse(path, media_type='image/tiff', filename=f'VN_NTL_{moc}.tif')
+
+    code = _code(province_code)
+    tinh = store.province(code)
+    if tinh is None:
+        raise HTTPException(404, f'Không có tỉnh với mã {province_code}')
+    hinh = _hinh_tinh(code)
+    if hinh is None:
+        raise HTTPException(404, 'Chưa có ranh giới tỉnh để cắt ảnh. Chạy: '
+                                 'python3 -m app.data.build_boundaries --tai-gadm')
+    try:
+        payload = _cat_theo_tinh(path, hinh)
+    except Exception as loi:                                        # noqa: BLE001
+        raise HTTPException(500, f'Không cắt được ảnh {moc} theo tỉnh {code}: {loi}')
+    # Tên tệp chỉ ASCII: tên có dấu làm hỏng header HTTP (lỗi latin-1 đã gặp một lần).
+    ten = f"VN_NTL_{code}_{tinh['slug']}_{moc}.tif"
+    return StreamingResponse(
+        io.BytesIO(payload), media_type='image/tiff',
+        headers={'Content-Disposition': f'attachment; filename="{ten}"',
+                 'Content-Length': str(len(payload))})
 
 
 @app.get('/api/originals')

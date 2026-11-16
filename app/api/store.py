@@ -63,6 +63,15 @@ def provinces():
     return [dict(row) for row in rows]
 
 
+def province(code):
+    """Một tỉnh theo mã, hoặc None. slug dùng để đặt tên tệp tải xuống (chỉ ASCII)."""
+    with connect() as connection:
+        row = connection.execute(
+            'SELECT province_code,province_name,slug,number,gid_1 FROM province '
+            'WHERE province_code=?', (code,)).fetchone()
+    return dict(row) if row else None
+
+
 def _series(connection, table, fields, code, year_from, year_to):
     names = ','.join(f'"{f}"' for f in fields)
     rows = connection.execute(

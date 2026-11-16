@@ -812,3 +812,94 @@ class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
             if entry.get('bang_thang'):
                 with self.subTest(chi_so=entry['ma']):
                     self.assertIn(entry['ma'], cot)
+
+
+class DownloadingOneProvincesImage(unittest.TestCase):
+    """Chọn một tỉnh rồi bấm tải thì phải ra ảnh của riêng tỉnh đó, không phải cả nước."""
+
+    def _dung(self, co_ranh_gioi=True):
+        import json
+        import sqlite3
+        import numpy as np
+        import rasterio
+        from affine import Affine
+        from app.data.build_cogs import record
+        thu_muc = tempfile.TemporaryDirectory()
+        self.addCleanup(thu_muc.cleanup)
+        goc = Path(thu_muc.name)
+        # ảnh 20x20 phủ 105–107°Đ, 20–22°B
+        anh = goc / 'ntl.tif'
+        with rasterio.open(anh, 'w', driver='GTiff', width=20, height=20, count=1,
+                           dtype='float32', crs='EPSG:4326', nodata=-9999,
+                           transform=Affine(.1, 0, 105, 0, -.1, 22)) as ds:
+            ds.write(np.full((1, 20, 20), 5.0, dtype='float32'))
+        db = goc / 'x.db'
+        from app.data import build_indices
+        build_indices.build(thu_muc.name, db)
+        record(db, 'cog_image', [('NTL', 2024, 7, str(anh), 'VIIRS', 10,
+                                  105.0, 20.0, 107.0, 22.0)], theo_thang=True)
+        if co_ranh_gioi:
+            # một ô vuông nhỏ ở góc, nhỏ hơn hẳn ảnh gốc
+            gj = {'type': 'FeatureCollection', 'features': [
+                {'type': 'Feature', 'properties': {'province_code': '01'},
+                 'geometry': {'type': 'Polygon', 'coordinates': [
+                     [[105.1, 21.9], [105.5, 21.9], [105.5, 21.5], [105.1, 21.5],
+                      [105.1, 21.9]]]}}]}
+            rg = goc / 'rg.geojson'
+            rg.write_text(json.dumps(gj), encoding='utf-8')
+            os.environ['VNGIS_BOUNDARIES'] = str(rg)
+            self.addCleanup(os.environ.pop, 'VNGIS_BOUNDARIES', None)
+        os.environ['VNGIS_DB'] = str(db)
+        self.addCleanup(os.environ.pop, 'VNGIS_DB', None)
+        from fastapi.testclient import TestClient
+        from app.api.main import app
+        return TestClient(app)
+
+    def test_the_clipped_image_is_smaller_than_the_national_one(self):
+        import rasterio
+        client = self._dung()
+        ca_nuoc = client.get('/api/anh-dem.tif', params={'nam': 2024, 'thang': 7})
+        mot_tinh = client.get('/api/anh-dem.tif',
+                              params={'nam': 2024, 'thang': 7, 'province_code': '01'})
+        self.assertEqual(mot_tinh.status_code, 200, mot_tinh.text[:300])
+        with rasterio.io.MemoryFile(mot_tinh.content) as m, m.open() as ds:
+            self.assertLess(ds.width, 20)
+            self.assertLess(ds.height, 20)
+            # Cắt bám lưới pixel nên biên nở ra ngoài tối đa một ô (0,1 độ).
+            self.assertGreaterEqual(ds.bounds.left, 105.0 - 1e-9)
+            self.assertLessEqual(ds.bounds.left, 105.1 + 1e-9)
+            self.assertLessEqual(ds.bounds.right, 105.6 + 1e-9)
+        self.assertEqual(ca_nuoc.status_code, 200)
+
+    def test_outside_the_boundary_is_nodata_not_zero(self):
+        """0 là một giá trị bức xạ hợp lệ; dùng nó cho vùng ngoài tỉnh là bịa số liệu."""
+        import numpy as np
+        import rasterio
+        client = self._dung()
+        r = client.get('/api/anh-dem.tif',
+                       params={'nam': 2024, 'thang': 7, 'province_code': '01'})
+        with rasterio.io.MemoryFile(r.content) as m, m.open() as ds:
+            self.assertIsNotNone(ds.nodata)
+            self.assertNotEqual(ds.nodata, 0)
+            self.assertFalse(np.any(ds.read(1) == 0))
+
+    def test_the_filename_is_ascii_so_the_http_header_survives(self):
+        client = self._dung()
+        r = client.get('/api/anh-dem.tif',
+                       params={'nam': 2024, 'thang': 7, 'province_code': '01'})
+        ten = r.headers['content-disposition']
+        ten.encode('latin-1')
+        self.assertIn('VN_NTL_01_', ten)
+
+    def test_without_boundaries_it_says_which_command_to_run(self):
+        client = self._dung(co_ranh_gioi=False)
+        r = client.get('/api/anh-dem.tif',
+                       params={'nam': 2024, 'thang': 7, 'province_code': '01'})
+        self.assertEqual(r.status_code, 404)
+        self.assertIn('build_boundaries', r.json()['detail'])
+
+    def test_an_unknown_province_is_a_404(self):
+        client = self._dung()
+        r = client.get('/api/anh-dem.tif',
+                       params={'nam': 2024, 'thang': 7, 'province_code': '99'})
+        self.assertEqual(r.status_code, 404)
