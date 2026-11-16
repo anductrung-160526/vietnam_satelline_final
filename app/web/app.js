@@ -657,24 +657,145 @@ function doiXem(chart){
   if(chart) requestAnimationFrame(veDuong);
 }
 
-/* ===================== màn 3 ===================== */
+/* ===================== màn 3: chỉ số kinh tế đêm ===================== */
+let bdTan = null;
+
+function locKinhTe(d){
+  /* Màn này chưa có bộ lọc: khoảng thời gian do phương pháp quyết định chứ không phải
+     do người dùng. Điền thông tin phương pháp vào cột trái thay vì để trống trơn. */
+  const h = (d && d.hoi_quy) || {};
+  const soTinh = d ? new Set(d.dong.map(r => r.province_code)).size : 0;
+  $('loc-kinhte').innerHTML =
+    `<details class="nhom" open><summary>Phương pháp</summary><div class="than-nhom">
+       <p class="canh-nho"><b>Giai đoạn ${d ? d.nam_tu + '–' + d.nam_den : '2014–2025'}</b>
+         — giai đoạn VIIRS, một cảm biến, không mốc nối nào. Mở rộng về trước là vướng
+         mốc đổi vệ tinh 2010 chưa hiệu chỉnh.</p>
+       <p class="canh-nho">Mô hình gộp mọi tỉnh-năm. β riêng từng tỉnh chỉ tính khi tỉnh
+         đó có ít nhất 8 quan sát.</p>
+       <p class="canh-nho">Dòng có SOL hoặc GRDP không dương bị bỏ: log của số không
+         dương không tồn tại.</p>
+     </div></details>
+     <details class="nhom" open><summary>Dữ liệu<span class="dem">${soTinh} tỉnh</span>
+       </summary><div class="than-nhom">
+       <p class="canh-nho">Dân số và GRDP do giảng viên cung cấp, không trích xuất từ ảnh
+         vệ tinh. SOL lấy từ bảng chỉ số đêm theo năm.</p>
+     </div></details>`;
+}
+
 async function dungManKinhTe(){
-  $('loc-kinhte').innerHTML = '';
-  let co = false;
-  try{
-    const d = await layJSON('/api/coverage');
-    co = (d.economy || []).length > 0;
-  }catch{ /* để co = false */ }
-  $('vung-kinhte').innerHTML = co
-    ? '<div class="trong-rong"><h2>Chỉ số kinh tế đêm</h2>'
-      + '<p>Đã có số liệu kinh tế. Phần hồi quy độ co giãn đang được làm.</p></div>'
-    : '<div class="trong-rong"><h2>Chưa có số liệu kinh tế</h2>'
-      + '<p>Màn này cần dân số và GRDP theo tỉnh. Khi có, nạp vào bảng '
-      + '<code>economy</code> rồi chạy lại <code>build_indices</code>.</p>'
+  let d = null;
+  try{ d = await layJSON('/api/kinh-te-dem'); }
+  catch(loi){
+    $('vung-kinhte').innerHTML =
+      `<div class="trong-rong"><h2>Không lấy được số liệu</h2>`
+      + `<p>${thoat(loi.message)}</p></div>`;
+    return;
+  }
+  locKinhTe(d.dong.length ? d : null);
+  if(!d.dong.length){
+    $('vung-kinhte').innerHTML =
+      '<div class="trong-rong"><h2>Chưa có số liệu kinh tế</h2>'
+      + '<p>Màn này cần dân số và GRDP theo tỉnh. Điền vào mẫu '
+      + '<code>app/data/economy_mau.csv</code>, đổi tên thành <code>economy.csv</code> '
+      + 'rồi chạy lại <code>build_indices</code>.</p>'
       + '<p>Hai chỉ số sẽ tính: ánh sáng bình quân đầu người, và hệ số co giãn β trong '
       + '<code>ln(GRDP) = α + β·ln(SOL)</code>.</p>'
-      + '<p>Trước khi chạy phải biết GRDP ở <b>giá so sánh</b> hay giá hiện hành — '
-      + 'giá hiện hành làm β sai lệch vì lạm phát.</p></div>';
+      + '<p>Cột <code>grdp_price_basis</code> phải ghi <b>so_sanh</b> hoặc '
+      + '<b>hien_hanh</b>. Giá hiện hành làm β sai lệch vì lạm phát — đây là thứ duy '
+      + 'nhất có thể làm sai toàn bộ con số.</p></div>';
+    return;
+  }
+
+  const h = d.hoi_quy || {};
+  const canh = (d.canh_bao || []).map(c =>
+    `<p class="canh${c.includes('GIÁ HIỆN HÀNH') ? ' thieu' : ''}">${thoat(c)}</p>`).join('');
+  const dienGiai = (h.beta === null || h.beta === undefined) ? ''
+    : `<p class="dien-giai">Ánh sáng ban đêm tăng 10% ứng với GRDP tăng khoảng `
+      + `<b>${dinhDang(h.beta * 10, 1)}%</b>.</p>`;
+  $('vung-kinhte').innerHTML =
+    `<div class="the-beta">
+       <h2>Độ co giãn ánh sáng – GRDP</h2>
+       <dl class="hang-beta">
+         <div><dt>β</dt><dd>${dinhDang(h.beta, 2) ?? '—'}</dd></div>
+         <div><dt>R²</dt><dd class="thuong">${dinhDang(h.r2, 2) ?? '—'}</dd></div>
+         <div><dt>Số quan sát</dt><dd class="thuong">${h.n ?? '—'}</dd></div>
+         <div><dt>Giai đoạn</dt><dd class="thuong">${d.nam_tu}–${d.nam_den}</dd></div>
+       </dl>
+       <p class="ct">ln(GRDP) = α + β·ln(SOL) · gộp mọi tỉnh-năm</p>
+       ${dienGiai}${canh}
+     </div>
+     <div class="chan-bang">
+       <div class="doi-xem" id="xem-kt">
+         <button type="button" aria-pressed="true" data-xem="bang">Bảng</button>
+         <button type="button" aria-pressed="false" data-xem="chart">Biểu đồ</button>
+       </div>
+     </div>
+     <div class="cuon" id="o-bang-kt"><table id="bang-kt"></table></div>
+     <div id="o-chart-kt" hidden>
+       <div class="bieu-do" id="bd-tan"></div>
+       <p class="ghi-bd">Mỗi điểm là một tỉnh-năm. Đường thẳng là mô hình đã khớp;
+         độ dốc của nó chính là β.</p>
+     </div>`;
+  veBangKinhTe(d);
+  document.querySelectorAll('#xem-kt button').forEach(b => {
+    b.onclick = () => {
+      const chart = b.dataset.xem === 'chart';
+      $('o-bang-kt').hidden = chart;
+      $('o-chart-kt').hidden = !chart;
+      document.querySelectorAll('#xem-kt button').forEach(x =>
+        x.setAttribute('aria-pressed', String((x.dataset.xem === 'chart') === chart)));
+      if(chart) requestAnimationFrame(() => veTan(d));
+    };
+  });
+}
+
+function veBangKinhTe(d){
+  const dong = [...d.dong].sort((a, b) =>
+    a.province_name.localeCompare(b.province_name, 'vi') || a.year - b.year);
+  $('bang-kt').innerHTML =
+    '<thead><tr><th>Tỉnh</th><th>Năm</th><th>Dân số</th><th>GRDP</th><th>SOL</th>'
+    + '<th>SOL/người</th><th>β tỉnh</th></tr></thead><tbody>'
+    + dong.map(r => `<tr class="${r.province_code === maDangXem ? 'sang' : ''}">`
+        + `<td>${thoat(r.province_name)}</td><td>${r.year}</td>`
+        + `<td>${dinhDang(r.population, 0) ?? '—'}</td>`
+        + `<td>${dinhDang(r.grdp, 0) ?? '—'}</td>`
+        + `<td>${dinhDang(r.sol, 0) ?? '—'}</td>`
+        + `<td>${dinhDang(r.sol_per_capita, 4) ?? '—'}</td>`
+        + `<td>${dinhDang(r.beta_tinh, 2) ?? '—'}</td></tr>`).join('')
+    + '</tbody>';
+}
+
+function veTan(d){
+  if(typeof echarts === 'undefined') return;
+  bdTan = bdTan || echarts.init($('bd-tan'));
+  const diem = d.dong
+    .filter(r => r.sol > 0 && r.grdp > 0)
+    .map(r => [Math.log(r.sol), Math.log(r.grdp), r.province_name, r.year]);
+  const h = d.hoi_quy || {};
+  const x = diem.map(p => p[0]);
+  const duong = (h.beta !== null && h.beta !== undefined && x.length)
+    ? [[Math.min(...x), h.alpha + h.beta * Math.min(...x)],
+       [Math.max(...x), h.alpha + h.beta * Math.max(...x)]] : [];
+  bdTan.setOption({
+    animationDuration:400, textStyle:{color:'#8b97b0'},
+    grid:{left:64, right:18, top:24, bottom:44},
+    tooltip:{trigger:'item', backgroundColor:'#131b2d', borderColor:'#232e45',
+             textStyle:{color:'#e8ecf5'},
+             formatter:p => p.value.length > 2
+               ? `${p.value[2]} ${p.value[3]}<br>ln(SOL) ${p.value[0].toFixed(3)}`
+                 + `<br>ln(GRDP) ${p.value[1].toFixed(3)}` : ''},
+    xAxis:{type:'value', name:'ln(SOL)', nameLocation:'middle', nameGap:26, scale:true,
+           axisLine:{lineStyle:{color:'#232e45'}}, axisTick:{show:false},
+           splitLine:{lineStyle:{color:'#1a2334'}}},
+    yAxis:{type:'value', name:'ln(GRDP)', scale:true,
+           axisLine:{lineStyle:{color:'#232e45'}}, axisTick:{show:false},
+           splitLine:{lineStyle:{color:'#1a2334'}}},
+    series:[{type:'scatter', symbolSize:6, data:diem,
+             itemStyle:{color:'rgba(106,169,255,.6)'}},
+            {type:'line', symbol:'none', data:duong, tooltip:{show:false},
+             lineStyle:{color:'#ffc857', width:2}}],
+  }, true);
+  bdTan.resize();
 }
 
 /* ===================== khởi động ===================== */
@@ -729,7 +850,7 @@ async function dungManKinhTe(){
     b.onclick = () => doiXem(b.dataset.xem === 'chart');
   });
   $('nut-csv').onclick = () => { window.location = '/api/panel.csv?' + thamSoBang(); };
-  addEventListener('resize', () => bieuDo?.resize());
+  addEventListener('resize', () => { bieuDo?.resize(); bdTan?.resize(); });
 
   await dungBanDo();
   chonPhamVi(null);

@@ -410,6 +410,39 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
             'canh_bao': _canh_bao_bang(muc, nam_nam, cac_moc)}
 
 
+def kinh_te_dem(year_from=2014, year_to=2025):
+    """Bảng kinh tế đêm + hệ số co giãn β. Bảng economy rỗng thì trả mảng rỗng, không lỗi.
+
+    Mặc định 2014–2025: giai đoạn VIIRS, một cảm biến, không mốc nối nào. Mở rộng về
+    trước là vướng mốc 2010 chưa hiệu chỉnh.
+    """
+    from task_pipeline.derive import do_co_gian
+    with connect() as connection:
+        rows = connection.execute(
+            'SELECT e.province_code, p.province_name, e.year, e.population,'
+            ' COALESCE(e.grdp, e.gdp) AS grdp, e.grdp_price_basis, n.sol '
+            'FROM economy e JOIN province p ON p.province_code = e.province_code '
+            'LEFT JOIN ntl_annual n ON n.province_code = e.province_code AND n.year = e.year '
+            'WHERE e.year BETWEEN ? AND ? ORDER BY p.number, e.year',
+            (year_from, year_to)).fetchall()
+    dong = [dict(r) for r in rows]
+    if not dong:
+        return {'dong': [], 'hoi_quy': None, 'nam_tu': year_from, 'nam_den': year_to,
+                'canh_bao': ['Chưa có số liệu kinh tế. Nạp dân số và GRDP vào bảng '
+                             'economy rồi chạy lại build_indices.']}
+    co_so = {r.get('grdp_price_basis') for r in dong} - {None, ''}
+    gia_so_sanh = (True if co_so == {'so_sanh'} else
+                   False if co_so == {'hien_hanh'} else None)
+    hoi_quy = do_co_gian(dong, gia_so_sanh)
+    for r in dong:
+        r['sol_per_capita'] = (r['sol'] / r['population']
+                               if r.get('sol') and r.get('population') else None)
+        mot = hoi_quy['theo_tinh'].get(r['province_code'])
+        r['beta_tinh'] = mot['beta'] if mot else None
+    return {'dong': dong, 'hoi_quy': hoi_quy, 'nam_tu': year_from, 'nam_den': year_to,
+            'canh_bao': hoi_quy.get('canh_bao', [])}
+
+
 def tong_hop(year, month=0):
     """Tổng cả nước của một mốc: SOL, diện tích, mật độ.
 

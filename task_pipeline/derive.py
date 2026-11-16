@@ -548,6 +548,71 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
     return rows,overlap
 
 
+# ---------------------------------------------------------------- kinh tế đêm
+# Cô dặn: dùng GRDP theo tỉnh, hồi quy logarit để tìm beta, KHÔNG cần phần phức tạp khác.
+#
+#     ln(GRDP) = alpha + beta * ln(SOL)
+#
+# beta là độ co giãn: ánh sáng tăng 1% thì GRDP tăng beta phần trăm.
+TOI_THIEU_QUAN_SAT = 10      # dưới mức này thì hệ số không nói lên điều gì
+TOI_THIEU_QUAN_SAT_TINH = 8  # beta riêng từng tỉnh cần ít nhất ngần này năm
+
+
+def _ols_log(cap):
+    """Bình phương nhỏ nhất trên log–log. cap: [(sol, grdp)], chỉ nhận cả hai đều dương."""
+    diem=[(math.log(x),math.log(y)) for x,y in cap
+          if x is not None and y is not None and x>0 and y>0]
+    n=len(diem)
+    if n<2:return None
+    mx=sum(a for a,_ in diem)/n
+    my=sum(b for _,b in diem)/n
+    sxx=sum((a-mx)**2 for a,_ in diem)
+    if sxx==0:return None
+    beta=sum((a-mx)*(b-my) for a,b in diem)/sxx
+    alpha=my-beta*mx
+    du=sum((b-(alpha+beta*a))**2 for a,b in diem)
+    tong=sum((b-my)**2 for _,b in diem)
+    return {'beta':round(beta,6),'alpha':round(alpha,6),
+            'r2':round(1-du/tong,6) if tong else None,'n':n}
+
+
+def do_co_gian(rows,gia_so_sanh=None):
+    """Độ co giãn ánh sáng–GRDP, gộp mọi tỉnh-năm, kèm beta riêng từng tỉnh.
+
+    rows: mỗi phần tử có province_code, sol, grdp. Dòng thiếu hoặc không dương bị bỏ:
+    log của số không dương không tồn tại, và một tỉnh tối om không nói gì về quan hệ này.
+
+    gia_so_sanh=False -> vẫn tính nhưng gắn cảnh báo: GRDP giá hiện hành làm beta bị lạm
+    phát thổi lên, vì GRDP danh nghĩa tăng một phần chỉ vì giá còn ánh sáng không phản
+    ứng với giá. Đây là thứ duy nhất có thể làm sai toàn bộ con số beta.
+    """
+    cap=[(r.get('sol'),r.get('grdp')) for r in rows]
+    chung=_ols_log(cap)
+    if chung is None or chung['n']<TOI_THIEU_QUAN_SAT:
+        return {'beta':None,'alpha':None,'r2':None,'n':chung['n'] if chung else 0,
+                'theo_tinh':{},'canh_bao':[
+                    f'Dưới {TOI_THIEU_QUAN_SAT} quan sát hợp lệ, không ước lượng được.']}
+    theo_tinh={}
+    nhom={}
+    for r in rows:
+        nhom.setdefault(r.get('province_code'),[]).append((r.get('sol'),r.get('grdp')))
+    for ma,cua in nhom.items():
+        mot=_ols_log(cua)
+        if mot and mot['n']>=TOI_THIEU_QUAN_SAT_TINH:
+            theo_tinh[ma]={'beta':mot['beta'],'r2':mot['r2'],'n':mot['n']}
+    canh=[]
+    if gia_so_sanh is False:
+        canh.append('GRDP đang ở GIÁ HIỆN HÀNH: beta bị lạm phát thổi lên. '
+                    'Phải khử lạm phát trước khi trích con số này vào báo cáo.')
+    elif gia_so_sanh is None:
+        canh.append('Chưa biết GRDP ở giá so sánh hay giá hiện hành. '
+                    'Giá hiện hành làm beta sai lệch — xác nhận trước khi dùng.')
+    if chung['r2'] is not None and chung['r2']<0.5:
+        canh.append(f"R² = {chung['r2']:.2f} thấp: quan hệ ánh sáng–GRDP yếu trên bộ dữ "
+                    'liệu này, không nên rút kết luận định lượng.')
+    return dict(chung,theo_tinh=theo_tinh,canh_bao=canh)
+
+
 # ---------------------------------------------------------------- hàm thời gian
 # Theo "Create Time Function" của World Bank DataBank: rút một chuỗi thành MỘT con số
 # cho khoảng người dùng chọn, hiện thành một cột phụ bên phải bảng.

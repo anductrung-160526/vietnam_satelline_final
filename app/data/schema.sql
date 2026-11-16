@@ -88,7 +88,15 @@ CREATE TABLE IF NOT EXISTS day_annual(
 -- Chỉ số kinh tế do giảng viên cung cấp. Bảng rỗng là trạng thái hợp lệ: app vẫn chạy.
 CREATE TABLE IF NOT EXISTS economy(
   province_code TEXT NOT NULL, year INTEGER NOT NULL,
-  population REAL, gdp REAL, gdp_per_capita REAL, source TEXT,
+  population REAL,            -- dân số trung bình năm
+  grdp REAL,                  -- GRDP theo tỉnh
+  gdp REAL,                   -- giữ tên cũ để không phá dữ liệu đã nạp
+  gdp_per_capita REAL,
+  -- 'so_sanh' hoặc 'hien_hanh'. Trường quan trọng nhất của bảng này: GRDP giá hiện hành
+  -- làm hệ số co giãn bị lạm phát thổi lên, vì GRDP danh nghĩa tăng một phần chỉ vì giá
+  -- còn ánh sáng không phản ứng với giá.
+  grdp_price_basis TEXT,
+  source TEXT,
   PRIMARY KEY(province_code,year)
 );
 

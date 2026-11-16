@@ -7,7 +7,12 @@ Nguyên mẫu Web Dashboard, **ba màn** trên cùng một khung ứng dụng (x
 |---|---|
 | **Ảnh đêm** | Bản đồ nền ban đêm cắt theo ranh giới, ba thẻ SOL / Diện tích / Mật độ, tải `.tif` toàn quốc hoặc theo tỉnh |
 | **Chỉ số đêm** | Bảng điều khiển lọc kiểu World Bank DataBank (ô tick cho tỉnh, chỉ số, cây thời gian năm→tháng), bảng tỉnh × chỉ số, biểu đồ chuỗi thời gian, tải CSV |
-| **Chỉ số kinh tế đêm** | Chờ dân số và GRDP của giảng viên |
+| **Chỉ số kinh tế đêm** | Ánh sáng bình quân đầu người, hệ số co giãn β trong `ln(GRDP) = α + β·ln(SOL)`, biểu đồ phân tán kèm đường hồi quy |
+
+Số liệu kinh tế: điền vào mẫu `app/data/economy_mau.csv`, đổi tên thành `economy.csv`,
+đặt cạnh nó hoặc trong `data_processed/`, rồi chạy lại `build_indices`. Cột
+`grdp_price_basis` phải ghi `so_sanh` hoặc `hien_hanh` — giá hiện hành làm β sai lệch vì
+lạm phát, và app sẽ hiện cảnh báo đỏ.
 
 **Đây là lớp CHỈ ĐỌC.** Mọi con số đều do `task_pipeline/derive.py` tính ra và ghi vào
 `data_processed/*.csv`. API không tính chỉ số. Nếu app cần một con số chưa có, bổ sung vào

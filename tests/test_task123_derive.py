@@ -1,4 +1,5 @@
 """Laptop stages (raw -> intermediate -> processed), table merge and the E layout migration."""
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -646,3 +647,64 @@ class TimeFunctionsReduceASeriesToOneNumber(unittest.TestCase):
         for xau in ('2024-13', '24-01', '', None, 'abc'):
             with self.subTest(moc=xau):
                 self.assertIsNone(derive.nam_thap_phan(xau))
+
+
+class TheLightGrdpElasticity(unittest.TestCase):
+    """Cô chỉ cần β trong ln(GRDP) = α + β·ln(SOL)."""
+
+    def _bo(self, beta=0.8, so_tinh=10, so_nam=12, nhieu=0.0, hat=7):
+        """Bộ dữ liệu có beta biết trước. Nhiễu dùng random.Random có hạt cố định:
+        bộ sinh tự chế rẻ tiền cho nhiễu tương quan với thứ tự, làm ước lượng lệch."""
+        import random
+        r = random.Random(hat)
+        rows = []
+        for i in range(so_tinh):
+            for t in range(so_nam):
+                sol = 1000 * (1 + 0.1 * i) * (1.07 ** t)
+                grdp = math.exp(2.0 + beta * math.log(sol) + r.uniform(-nhieu, nhieu))
+                rows.append({'province_code': f'{i + 1:02}', 'sol': sol, 'grdp': grdp})
+        return rows
+
+    def test_it_recovers_a_known_beta(self):
+        ra = derive.do_co_gian(self._bo(beta=0.8), gia_so_sanh=True)
+        self.assertAlmostEqual(ra['beta'], 0.8, places=6)
+        self.assertAlmostEqual(ra['r2'], 1.0, places=6)
+        self.assertEqual(ra['n'], 120)
+
+    def test_it_still_recovers_beta_through_noise(self):
+        """Dung sai 0,05 là rộng hơn sai số chuẩn của ước lượng (~0,02) ở mức nhiễu này."""
+        ra = derive.do_co_gian(self._bo(beta=0.65, nhieu=0.15), gia_so_sanh=True)
+        self.assertAlmostEqual(ra['beta'], 0.65, delta=0.05)
+        self.assertLess(ra['r2'], 1.0)
+
+    def test_each_province_gets_its_own_beta_when_long_enough(self):
+        ra = derive.do_co_gian(self._bo(so_nam=12), gia_so_sanh=True)
+        self.assertEqual(len(ra['theo_tinh']), 10)
+        ngan = derive.do_co_gian(self._bo(so_nam=5), gia_so_sanh=True)
+        self.assertEqual(ngan['theo_tinh'], {}, 'dưới 8 quan sát thì không ước lượng riêng')
+
+    def test_non_positive_values_are_dropped_not_crashed(self):
+        rows = self._bo()
+        rows += [{'province_code': '99', 'sol': 0, 'grdp': 100},
+                 {'province_code': '99', 'sol': 10, 'grdp': -5},
+                 {'province_code': '99', 'sol': None, 'grdp': None}]
+        ra = derive.do_co_gian(rows, gia_so_sanh=True)
+        self.assertEqual(ra['n'], 120)
+
+    def test_too_few_observations_gives_no_number_at_all(self):
+        ra = derive.do_co_gian(self._bo(so_tinh=1, so_nam=3), gia_so_sanh=True)
+        self.assertIsNone(ra['beta'])
+        self.assertTrue(ra['canh_bao'])
+
+    def test_current_prices_raise_a_warning(self):
+        """Giá hiện hành làm β bị lạm phát thổi lên — thứ duy nhất làm sai toàn bộ."""
+        ra = derive.do_co_gian(self._bo(), gia_so_sanh=False)
+        self.assertTrue(any('GIÁ HIỆN HÀNH' in c for c in ra['canh_bao']))
+
+    def test_an_unknown_price_basis_also_warns(self):
+        ra = derive.do_co_gian(self._bo(), gia_so_sanh=None)
+        self.assertTrue(any('Chưa biết' in c for c in ra['canh_bao']))
+
+    def test_a_weak_fit_says_so(self):
+        ra = derive.do_co_gian(self._bo(beta=0.8, nhieu=5.0), gia_so_sanh=True)
+        self.assertTrue(any('R²' in c for c in ra['canh_bao']), ra['canh_bao'])

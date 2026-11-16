@@ -991,3 +991,80 @@ class TheFlagsTravelWithTheValues(unittest.TestCase):
         body = self.client.get('/api/panel', params={'chi_so': 'sol', 'moc': '2010'}).json()
         self.assertIn('B', body['chu_giai_co'])
         self.assertIn('vệ tinh', body['chu_giai_co']['B'])
+
+
+class TheNightEconomyScreen(unittest.TestCase):
+    """Màn 3: ánh sáng bình quân đầu người và hệ số co giãn β."""
+
+    def _nap(self, co_so_gia='so_sanh', so_nam=12):
+        import math
+        import sqlite3
+        db, client, _ = fresh_database(self)
+        with sqlite3.connect(db) as con:
+            # Mã tỉnh của Cục Thống kê KHÔNG liên tục (không có 03, 05): phải lấy mã thật,
+            # nếu không phép nối với bảng province sẽ loại bớt dòng.
+            ma_that = [r[0] for r in con.execute(
+                'SELECT province_code FROM province ORDER BY number LIMIT 6')]
+            for i, ma in enumerate(ma_that):
+                for t in range(so_nam):
+                    nam = 2014 + t
+                    sol = 1000 * (1 + 0.2 * i) * (1.07 ** t)
+                    grdp = math.exp(2.0 + 0.8 * math.log(sol))
+                    con.execute('INSERT OR REPLACE INTO ntl_annual'
+                                '(province_code,year,source,sol) VALUES(?,?,?,?)',
+                                (ma, nam, 'VIIRS', sol))
+                    con.execute('INSERT OR REPLACE INTO economy'
+                                '(province_code,year,population,grdp,grdp_price_basis) '
+                                'VALUES(?,?,?,?,?)', (ma, nam, 1_000_000 * (i + 1),
+                                                      grdp, co_so_gia))
+        return client
+
+    def test_an_empty_economy_table_is_not_an_error(self):
+        """App phải chạy được khi cô chưa gửi số liệu."""
+        _, client, _ = fresh_database(self)
+        r = client.get('/api/kinh-te-dem')
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body['dong'], [])
+        self.assertIsNone(body['hoi_quy'])
+        self.assertTrue(body['canh_bao'])
+
+    def test_beta_comes_back_from_real_rows(self):
+        body = self._nap().get('/api/kinh-te-dem').json()
+        self.assertAlmostEqual(body['hoi_quy']['beta'], 0.8, places=5)
+        self.assertEqual(body['hoi_quy']['n'], 72, '6 tỉnh × 12 năm')
+
+    def test_light_per_capita_is_on_every_row(self):
+        body = self._nap().get('/api/kinh-te-dem').json()
+        r = body['dong'][0]
+        self.assertAlmostEqual(r['sol_per_capita'], r['sol'] / r['population'], places=9)
+
+    def test_current_prices_warn_loudly(self):
+        body = self._nap(co_so_gia='hien_hanh').get('/api/kinh-te-dem').json()
+        self.assertTrue(any('GIÁ HIỆN HÀNH' in c for c in body['canh_bao']))
+
+    def test_a_missing_price_basis_also_warns(self):
+        body = self._nap(co_so_gia=None).get('/api/kinh-te-dem').json()
+        self.assertTrue(any('Chưa biết' in c for c in body['canh_bao']))
+
+    def test_each_province_gets_its_own_beta_when_long_enough(self):
+        body = self._nap(so_nam=12).get('/api/kinh-te-dem').json()
+        self.assertTrue(all(r['beta_tinh'] is not None for r in body['dong']))
+        ngan = self._nap(so_nam=4).get('/api/kinh-te-dem').json()
+        self.assertTrue(all(r['beta_tinh'] is None for r in ngan['dong']))
+
+    def test_the_sample_csv_has_the_columns_the_loader_expects(self):
+        import csv
+        from app.data import build_indices
+        mau = REPO / 'app' / 'data' / 'economy_mau.csv'
+        self.assertTrue(mau.is_file(), 'tệp mẫu để cô điền số liệu')
+        with mau.open(encoding='utf-8-sig') as f:
+            cot = set(next(csv.reader(f)))
+        _, _, _ = fresh_database(self)
+        import sqlite3
+        from app.api import store
+        with sqlite3.connect(store.database_path()) as con:
+            that = {r[1] for r in con.execute('PRAGMA table_info(economy)')}
+        self.assertTrue(cot <= that, f'cột thừa trong tệp mẫu: {cot - that}')
+        for bat_buoc in ('province_code', 'year', 'population', 'grdp', 'grdp_price_basis'):
+            self.assertIn(bat_buoc, cot)

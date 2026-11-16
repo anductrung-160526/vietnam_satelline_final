@@ -188,3 +188,19 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 .trong-rong{display:flex;flex-direction:column;gap:10px;max-width:60ch}
 .trong-rong h2{font-size:1.05rem;margin:0}
 .trong-rong p{margin:0;color:var(--chu-mo);font-size:.88rem}
+
+/* ---------- thẻ hồi quy của màn 3 ---------- */
+.the-beta{border:1px solid var(--vien);border-radius:10px;background:var(--nen-cao);
+  padding:16px 18px}
+.the-beta h2{font-size:1.05rem;margin:0}
+.hang-beta{display:flex;flex-wrap:wrap;gap:26px;margin:12px 0 10px}
+.hang-beta div{min-width:88px}
+.hang-beta dt{font-size:.7rem;color:var(--chu-mo);text-transform:uppercase;
+  letter-spacing:.1em;margin:0}
+.hang-beta dd{margin:2px 0 0;font-family:ui-monospace,monospace;font-size:1.5rem;
+  font-weight:500;color:var(--nhan);font-variant-numeric:tabular-nums}
+.hang-beta dd.thuong{color:var(--chu);font-size:1.15rem}
+.ct{font-family:ui-monospace,monospace;font-size:.82rem;color:var(--chu-mo);margin:0}
+.dien-giai{margin:8px 0 0;font-size:.88rem;color:var(--chu)}
+#o-chart-kt{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+#o-chart-kt[hidden]{display:none}
