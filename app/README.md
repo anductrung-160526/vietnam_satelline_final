@@ -1,7 +1,13 @@
 # VNGISDash — lớp web
 
-Nguyên mẫu Web Dashboard: bản đồ nền ban đêm, tra cứu theo tỉnh, biểu đồ chuỗi thời gian,
-nút trích xuất dữ liệu.
+Nguyên mẫu Web Dashboard, **ba màn** trên cùng một khung ứng dụng (xem
+`docs/DAC_TA_MAN_HINH.md`):
+
+| Màn | Nội dung |
+|---|---|
+| **Ảnh đêm** | Bản đồ nền ban đêm cắt theo ranh giới, ba thẻ SOL / Diện tích / Mật độ, tải `.tif` toàn quốc hoặc theo tỉnh |
+| **Chỉ số đêm** | Bảng điều khiển lọc kiểu World Bank DataBank (ô tick cho tỉnh, chỉ số, cây thời gian năm→tháng), bảng tỉnh × chỉ số, biểu đồ chuỗi thời gian, tải CSV |
+| **Chỉ số kinh tế đêm** | Chờ dân số và GRDP của giảng viên |
 
 **Đây là lớp CHỈ ĐỌC.** Mọi con số đều do `task_pipeline/derive.py` tính ra và ghi vào
 `data_processed/*.csv`. API không tính chỉ số. Nếu app cần một con số chưa có, bổ sung vào

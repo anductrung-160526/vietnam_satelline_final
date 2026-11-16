@@ -154,6 +154,17 @@ def get_choropleth(chi_so: str = Query('sol'),
     return data
 
 
+@app.get('/api/tong-hop')
+def get_tong_hop(nam: int = Query(..., ge=1990, le=2100),
+                 thang: int = Query(0, ge=0, le=12)):
+    """Tổng cả nước của một mốc — ba số của màn Ảnh đêm khi đang xem toàn quốc."""
+    data = store.tong_hop(nam, thang)
+    if data is None:
+        moc = f'{nam}-{thang:02}' if thang else str(nam)
+        raise HTTPException(404, f'Chưa có chỉ số của mốc {moc}.')
+    return data
+
+
 @app.get('/api/coverage')
 def get_coverage():
     """Năm nào đã có dữ liệu gì — dùng cho trang trạng thái và báo cáo tiến độ."""

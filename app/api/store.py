@@ -352,6 +352,29 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
             'canh_bao': _canh_bao_bang(muc, nam_nam, cac_moc)}
 
 
+def tong_hop(year, month=0):
+    """Tổng cả nước của một mốc: SOL, diện tích, mật độ.
+
+    Chỉ SUM() trên chỉ số đã tính sẵn, không phải công thức mới — nguyên tắc "không tính
+    chỉ số trong API" vẫn giữ. Mật độ là tổng SOL chia tổng diện tích, không phải trung
+    bình các mật độ tỉnh: trung bình mật độ sẽ cho tỉnh nhỏ cùng trọng số với tỉnh lớn.
+    """
+    bang = 'ntl_monthly' if month else 'ntl_annual'
+    dieu_kien = 'year=? AND month=?' if month else 'year=?'
+    tham = (year, month) if month else (year,)
+    with connect() as connection:
+        row = connection.execute(
+            f'SELECT SUM(sol),SUM(area_km2),COUNT(*),GROUP_CONCAT(DISTINCT source) '
+            f'FROM {bang} WHERE {dieu_kien} AND sol IS NOT NULL', tham).fetchone()
+    sol, dien_tich, so_tinh, nguon = row
+    if not so_tinh:
+        return None
+    return {'sol': sol, 'area_km2': dien_tich,
+            'sol_density': (sol / dien_tich) if sol is not None and dien_tich else None,
+            'so_tinh': so_tinh, 'source': nguon,
+            'year': year, 'month': month}
+
+
 def _canh_bao_bang(muc, years, cac_moc):
     """Cảnh báo cho một bảng nhiều chỉ số: gộp cảnh báo của từng chỉ số, không lặp."""
     ra = []
