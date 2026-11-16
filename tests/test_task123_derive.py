@@ -598,3 +598,51 @@ class EveryRowCarriesExactlyOneFlag(unittest.TestCase):
         theo = {r['period']: r['obs_status'] for r in thang}
         self.assertEqual(theo['2014-06'], 'U')
         self.assertEqual(theo['2014-07'], 'A')
+
+
+class TimeFunctionsReduceASeriesToOneNumber(unittest.TestCase):
+    """Theo Create Time Function của DataBank: một cột phụ cho khoảng đã chọn."""
+
+    NAM = ['2014', '2015', '2016', '2017']
+    GT = [100.0, 110.0, 121.0, 133.1]      # tăng đều 10%/năm
+
+    def test_sum_and_mean(self):
+        self.assertAlmostEqual(derive.ham_thoi_gian('tong', self.NAM, self.GT), 464.1, 3)
+        self.assertAlmostEqual(derive.ham_thoi_gian('trung_binh', self.NAM, self.GT),
+                               116.025, 3)
+
+    def test_total_change_over_the_span(self):
+        self.assertAlmostEqual(derive.ham_thoi_gian('thay_doi', self.NAM, self.GT), 33.1, 3)
+
+    def test_the_growth_rate_recovers_a_known_rate(self):
+        """Chuỗi tăng đúng 10%/năm thì CAGR phải ra 10%."""
+        self.assertAlmostEqual(derive.ham_thoi_gian('cagr', self.NAM, self.GT), 10.0, 6)
+
+    def test_monthly_periods_are_a_fraction_of_a_year(self):
+        """Gấp đôi sau 12 tháng là +100%/năm, không phải +100% mỗi tháng."""
+        moc = [f'2024-{m:02}' for m in range(1, 13)] + ['2025-01']
+        gt = [100.0 * (2 ** (i / 12)) for i in range(13)]
+        self.assertAlmostEqual(derive.ham_thoi_gian('cagr', moc, gt), 100.0, 4)
+
+    def test_gaps_are_skipped_not_counted_as_zero(self):
+        gt = [100.0, None, 121.0, None]
+        self.assertAlmostEqual(derive.ham_thoi_gian('tong', self.NAM, gt), 221.0, 3)
+        self.assertAlmostEqual(derive.ham_thoi_gian('trung_binh', self.NAM, gt), 110.5, 3)
+
+    def test_what_cannot_be_computed_is_None_not_zero(self):
+        """0 là kết quả hợp lệ; dùng nó cho 'không tính được' là nói sai."""
+        self.assertIsNone(derive.ham_thoi_gian('cagr', ['2014'], [100.0]))
+        self.assertIsNone(derive.ham_thoi_gian('cagr', self.NAM, [None] * 4))
+        self.assertIsNone(derive.ham_thoi_gian('thay_doi', self.NAM, [0.0, 1, 2, 3]))
+        self.assertIsNone(derive.ham_thoi_gian('cagr', ['2014', '2014'], [1.0, 2.0]))
+
+    def test_an_unknown_function_raises_instead_of_guessing(self):
+        with self.assertRaises(ValueError):
+            derive.ham_thoi_gian('khong_co_that', self.NAM, self.GT)
+
+    def test_the_period_parser(self):
+        self.assertEqual(derive.nam_thap_phan('2010'), 2010.0)
+        self.assertAlmostEqual(derive.nam_thap_phan('2024-07'), 2024 + 6.5 / 12, 6)
+        for xau in ('2024-13', '24-01', '', None, 'abc'):
+            with self.subTest(moc=xau):
+                self.assertIsNone(derive.nam_thap_phan(xau))

@@ -351,7 +351,9 @@ function nhacThoiGian(chu){
 /* Theo mẫu World Bank DataBank: bốn nhóm gập mở, mỗi nhóm hiện "Có N · Chọn n",
    chọn bằng ô tick vì người dùng cần nhiều tỉnh, nhiều chỉ số, nhiều mốc cùng lúc. */
 const NAM_DAU = 2004, NAM_CUOI = 2025, NAM_CO_THANG = 2014;
-const chon = {tinh:new Set(), chiSo:new Set(['sol']), moc:new Set()};
+const chon = {tinh:new Set(), chiSo:new Set(['sol']), moc:new Set(), ham:new Set()};
+const HAM = {tong:'Tổng trong khoảng', trung_binh:'Trung bình trong khoảng',
+             thay_doi:'Thay đổi toàn kỳ (%)', cagr:'Tốc độ tăng trưởng bình quân năm (%)'};
 
 function nhomLoc(ten, id, than, mo){
   return `<details class="nhom"${mo ? ' open' : ''}>
@@ -404,11 +406,20 @@ function cayThoiGian(){
     + `<ul class="cay" id="cay-thoi-gian">${hang.join('')}</ul>`;
 }
 
+function dsHam(){
+  return `<ul class="ds" id="ds-ham">` + Object.entries(HAM).map(([ma, ten]) =>
+    `<li><label><input type="checkbox" data-ham="${ma}"><span>${ten}</span></label></li>`
+  ).join('') + '</ul>'
+  + '<p class="canh-nho">Mỗi hàm thành một cột phụ bên phải bảng. Tốc độ tăng trưởng và '
+  + 'thay đổi toàn kỳ từ chối chạy khi khoảng bắc qua mốc đổi vệ tinh.</p>';
+}
+
 function dungLoc(hop){
   hop.innerHTML =
       nhomLoc('Phạm vi', 'tinh', dsTinhLoc(), false)
     + nhomLoc('Chỉ số', 'chiso', dsChiSoLoc(), true)
-    + nhomLoc('Thời gian', 'moc', cayThoiGian(), true);
+    + nhomLoc('Thời gian', 'moc', cayThoiGian(), true)
+    + nhomLoc('Hàm thời gian', 'ham', dsHam(), false);
   danhSachTinh.forEach(t => chon.tinh.add(t.province_code));
   for(let y = NAM_CUOI - 5; y <= NAM_CUOI; y++) chon.moc.add(String(y));
   dongBoCay(hop);
@@ -418,6 +429,7 @@ function dungLoc(hop){
     const o = e.target;
     if(o.dataset.tinh)  o.checked ? chon.tinh.add(o.dataset.tinh)  : chon.tinh.delete(o.dataset.tinh);
     if(o.dataset.chiso) o.checked ? chon.chiSo.add(o.dataset.chiso): chon.chiSo.delete(o.dataset.chiso);
+    if(o.dataset.ham)   o.checked ? chon.ham.add(o.dataset.ham)    : chon.ham.delete(o.dataset.ham);
     if(o.dataset.nam){
       const y = o.dataset.nam;
       o.checked ? chon.moc.add(y) : chon.moc.delete(y);
@@ -502,6 +514,8 @@ function capNhatDem(hop){
   dat('tinh', danhSachTinh.length, chon.tinh.size);
   dat('chiso', hop.querySelectorAll('[data-chiso]').length, chon.chiSo.size);
   dat('moc', (NAM_CUOI - NAM_DAU + 1) + (NAM_CUOI - NAM_CO_THANG + 1) * 12, chon.moc.size);
+  const oHam = hop.querySelector('#dem-ham');
+  if(oHam) oHam.innerHTML = `Đã thêm <b>${chon.ham.size}</b>`;
 }
 
 /* ===================== màn 2: bảng và biểu đồ ===================== */
@@ -514,6 +528,7 @@ function thamSoBang(){
   if(chon.moc.size) p.set('moc', sapXep(chon.moc).join(','));
   if(chon.tinh.size && chon.tinh.size < danhSachTinh.length)
     p.set('province_code', sapXep(chon.tinh).join(','));
+  if(chon.ham.size) p.set('ham', sapXep(chon.ham).join(','));
   return p;
 }
 
@@ -551,15 +566,31 @@ function veBang(){
   const than = dong.map(r => {
     const dau = r.province_code === truoc ? '' : thoat(r.province_name);
     truoc = r.province_code;
-    const o = r.gia_tri.map(v => v === null || v === undefined
-      ? '<td class="rong">—</td>'
-      : `<td>${dinhDang(v, chuSo[r.chi_so] ?? 2)}</td>`).join('');
+    /* Bảng không in chữ cờ. Nghĩa của cờ nằm ở tooltip; chú giải đầy đủ đi kèm
+       tệp tải xuống. */
+    const chuGiai = d.chu_giai_co || {};
+    const o = r.gia_tri.map((v, i) => {
+      const co = (r.co || [])[i];
+      const tt = co && chuGiai[co] ? ` title="${thoat(chuGiai[co])}"` : '';
+      return (v === null || v === undefined)
+        ? `<td class="rong"${tt}>—</td>`
+        : `<td${tt}>${dinhDang(v, chuSo[r.chi_so] ?? 2)}</td>`;
+    }).join('')
+    + (d.ham || []).map(h => {
+        const v = (r.ham || {})[h.ma];
+        if(v !== null && v !== undefined) return `<td class="ham-o">${dinhDang(v, 2)}</td>`;
+        const vi = r.ham_tu_choi
+          ? ` title="Không tính được: ${thoat(r.ham_tu_choi.join('; '))}"` : '';
+        return `<td class="rong ham-o"${vi}>—</td>`;
+      }).join('');
     return `<tr class="${r.province_code === maDangXem ? 'sang' : ''}">`
       + `<td>${dau}</td><td>${thoat(r.ten)}</td>${o}</tr>`;
   }).join('');
   $('bang-chiso').innerHTML =
     `<thead><tr><th>Tỉnh</th><th>Chỉ số</th>`
-    + d.moc.map(m => `<th>${m}</th>`).join('') + '</tr></thead>'
+    + d.moc.map(m => `<th>${m}</th>`).join('')
+    + (d.ham || []).map(h => `<th class="ham-o">${thoat(h.ten)}</th>`).join('')
+    + '</tr></thead>'
     + `<tbody>${than}</tbody>`;
 }
 
@@ -608,7 +639,12 @@ function veDuong(){
     series:dong.map((r, i) => ({
       name:`${r.province_name} · ${r.ten}`, type:'line', connectNulls:false,
       smooth:false, color:MAU[i % MAU.length], lineStyle:{width:2},
-      showSymbol:d.moc.length <= 36, symbolSize:6, data:r.gia_tri})),
+      showSymbol:d.moc.length <= 36, symbolSize:6,
+      /* Điểm mang cờ U vẽ rỗng ruột: giữ số mà vẫn nói rằng điểm đó kém tin cậy. */
+      data:r.gia_tri.map((v, k) => ((r.co || [])[k] === 'U' && v !== null)
+        ? {value:v, itemStyle:{color:'#080c16', borderColor:MAU[i % MAU.length],
+                               borderWidth:2}}
+        : v)})),
   }, true);
   bieuDo.resize();
 }

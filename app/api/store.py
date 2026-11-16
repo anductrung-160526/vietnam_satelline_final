@@ -294,7 +294,32 @@ def ten_moc(loai, year, month):
     return f'{year}-{month:02}' if loai == 'thang' else str(year)
 
 
-def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
+# Công thức thuộc derive.py, API chỉ gọi. Hàm thời gian tính trên khoảng người dùng chọn
+# nên không tiền tính được, nhưng nguyên tắc là "không viết công thức trong API", không
+# phải "không tính lúc có yêu cầu".
+from task_pipeline.derive import HAM_THOI_GIAN, ham_thoi_gian, nam_thap_phan
+
+# Cột đã quy về cùng một thang đo thì đi qua mốc 2013 được; cột gốc thì không.
+COT_DA_HIEU_CHINH = {'sol_cal', 'sol_density_cal', 'sol_change_cal_pct'}
+MOC_CAN = {2010: 'mốc đổi vệ tinh DMSP F16→F18 năm 2010 chưa hiệu chỉnh',
+           2014: 'mốc đổi vệ tinh DMSP→VIIRS năm 2013/2014'}
+
+
+def _bac_qua_moc(nhan_moc, ma_chi_so):
+    """Khoảng có bắc qua mốc đổi vệ tinh nào mà cột này không xử lý được không?"""
+    nam = sorted({int(str(m)[:4]) for m in nhan_moc})
+    if not nam:
+        return []
+    ra = []
+    for moc, ly_do in MOC_CAN.items():
+        if moc == 2014 and ma_chi_so in COT_DA_HIEU_CHINH:
+            continue
+        if nam[0] < moc <= nam[-1]:
+            ra.append(ly_do)
+    return ra
+
+
+def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
     """Bảng rộng kiểu WDI: mỗi dòng một (tỉnh × chỉ số), mỗi cột một mốc thời gian.
 
     codes: danh sách mã chỉ số. Mã lạ -> None, không bao giờ ghép vào câu SQL.
@@ -361,8 +386,25 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025):
                 'source': '/'.join(sorted(nguon.get(ma_tinh, ()))) or None,
                 'gia_tri': [o.get((entry['ma'], ma_tinh, m)) for m in nhan_moc],
                 'co': [co.get((entry['ma'], ma_tinh, m)) for m in nhan_moc]})
+    # Hàm thời gian: mỗi hàm một cột phụ bên phải bảng.
+    cac_ham = []
+    for ten in (ham or []):
+        ten = str(ten).strip()
+        if ten and ten in HAM_THOI_GIAN:
+            cac_ham.append(ten)
+    if cac_ham:
+        for d in dong:
+            # Tốc độ tăng trưởng qua mốc đổi vệ tinh là con số vô nghĩa: từ chối chạy
+            # thay vì trả về một số trông như thật.
+            can = _bac_qua_moc(nhan_moc, d['chi_so'])
+            d['ham'] = {}
+            for ten in cac_ham:
+                d['ham'][ten] = (None if (can and ten in ('cagr', 'thay_doi'))
+                                 else ham_thoi_gian(ten, nhan_moc, d['gia_tri']))
+            d['ham_tu_choi'] = can if can else None
     co_so = {d['province_code'] for d in dong if any(v is not None for v in d['gia_tri'])}
     return {'chi_so': [dict(e) for e in muc], 'moc': nhan_moc, 'dong': dong,
+            'ham': [{'ma': t, 'ten': HAM_THOI_GIAN[t]} for t in cac_ham],
             'co_thang': co_thang, 'chu_giai_co': CHU_GIAI_CO,
             'so_tinh_co_du_lieu': len(co_so),
             'canh_bao': _canh_bao_bang(muc, nam_nam, cac_moc)}

@@ -548,6 +548,55 @@ def ntl_annual_rows(province,dmsp,viirs,area,cache):
     return rows,overlap
 
 
+# ---------------------------------------------------------------- hàm thời gian
+# Theo "Create Time Function" của World Bank DataBank: rút một chuỗi thành MỘT con số
+# cho khoảng người dùng chọn, hiện thành một cột phụ bên phải bảng.
+#
+# Đặc tả ban đầu liệt kê năm hàm, trong đó "trung bình trượt 3 kỳ" và "chỉ số gốc = 100"
+# là phép biến đổi CHUỖI chứ không rút về một số, nên không phải hàm thời gian theo nghĩa
+# này. Trung bình trượt đã có sẵn thành cột riêng (sol_ma3); chỉ số gốc nằm ngoài phạm vi.
+HAM_THOI_GIAN = {
+    'tong':       'Tổng trong khoảng',
+    'trung_binh': 'Trung bình trong khoảng',
+    'thay_doi':   'Thay đổi toàn kỳ (%)',
+    'cagr':       'Tốc độ tăng trưởng bình quân năm (%)',
+}
+
+
+def nam_thap_phan(moc):
+    """'2010' -> 2010.0 · '2024-07' -> 2024.5 (giữa tháng 7). Sai định dạng -> None."""
+    text=str(moc or '').strip()
+    if len(text)==4 and text.isdigit():return float(text)
+    if len(text)==7 and text[4]=='-' and text[:4].isdigit() and text[5:].isdigit():
+        thang=int(text[5:])
+        if 1<=thang<=12:return int(text[:4])+(thang-0.5)/12
+    return None
+
+
+def ham_thoi_gian(ten,moc,gia_tri):
+    """Một con số cho cả khoảng, hoặc None khi không tính được.
+
+    Trả None chứ không trả 0: 0 là một kết quả hợp lệ, dùng nó cho "không tính được"
+    là nói sai. Các trường hợp không tính được:
+      - dưới hai điểm có số liệu (thay_doi, cagr)
+      - giá trị đầu kỳ bằng hoặc dưới 0 (chia cho nó thì vô nghĩa)
+      - khoảng thời gian bằng 0 (cagr)
+    """
+    if ten not in HAM_THOI_GIAN:raise ValueError(f'Không có hàm thời gian {ten!r}')
+    cap=[(nam_thap_phan(m),v) for m,v in zip(moc,gia_tri)
+         if v is not None and nam_thap_phan(m) is not None]
+    cap.sort()
+    if not cap:return None
+    so=[v for _,v in cap]
+    if ten=='tong':return round(sum(so),4)
+    if ten=='trung_binh':return round(sum(so)/len(so),4)
+    if len(cap)<2 or so[0]<=0:return None
+    if ten=='thay_doi':return round(100*(so[-1]/so[0]-1),4)
+    khoang=cap[-1][0]-cap[0][0]
+    if khoang<=0:return None
+    return round(100*((so[-1]/so[0])**(1/khoang)-1),4)
+
+
 def ntl_panel_rows(annual,monthly):
     """MỘT bộ dữ liệu duy nhất: DMSP theo NĂM đến 2013, VIIRS theo THÁNG từ 2014.
 

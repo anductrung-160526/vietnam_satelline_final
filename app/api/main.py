@@ -106,12 +106,15 @@ def get_panel(chi_so: str = Query('sol', description='Một hoặc nhiều mã, 
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
               province_code: str = Query('', description='Mã tỉnh ngăn bằng dấu phẩy; '
-                                                         'để trống là tất cả')):
+                                                         'để trống là tất cả'),
+              ham: str = Query('', description='Hàm thời gian, ngăn bằng dấu phẩy: '
+                                               'tong, trung_binh, thay_doi, cagr')):
     """Bảng rộng: mỗi dòng một tỉnh × chỉ số, mỗi cột một mốc thời gian."""
     if nam_tu > nam_den:
         raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
     data = store.panel(chi_so.split(','), moc.split(',') if moc else None,
-                       province_code.split(',') if province_code else None, nam_tu, nam_den)
+                       province_code.split(',') if province_code else None, nam_tu, nam_den,
+                       ham.split(',') if ham else None)
     if data is None:
         raise HTTPException(400, f'Mã chỉ số hoặc mốc không hợp lệ: chi_so={chi_so} moc={moc}. '
                                  'Xem /api/indicators')
@@ -124,6 +127,7 @@ def panel_csv(chi_so: str = Query('sol'),
               nam_tu: int = Query(YEAR_MIN, ge=1990, le=2100),
               nam_den: int = Query(YEAR_MAX, ge=1990, le=2100),
               province_code: str = Query(''),
+              ham: str = Query(''),
               dang: str = Query('rong', description="'rong' một dòng một tỉnh-chỉ số, "
                                                     "'dai' một dòng một tỉnh-chỉ số-mốc")):
     if nam_tu > nam_den:
@@ -131,7 +135,8 @@ def panel_csv(chi_so: str = Query('sol'),
     if dang not in ('rong', 'dai'):
         raise HTTPException(400, "dang phải là 'rong' hoặc 'dai'")
     data = store.panel(chi_so.split(','), moc.split(',') if moc else None,
-                       province_code.split(',') if province_code else None, nam_tu, nam_den)
+                       province_code.split(',') if province_code else None, nam_tu, nam_den,
+                       ham.split(',') if ham else None)
     if data is None:
         raise HTTPException(400, f'Mã chỉ số hoặc mốc không hợp lệ: chi_so={chi_so} moc={moc}')
     payload = export.panel_csv(data, dang)

@@ -903,3 +903,91 @@ class DownloadingOneProvincesImage(unittest.TestCase):
         r = client.get('/api/anh-dem.tif',
                        params={'nam': 2024, 'thang': 7, 'province_code': '99'})
         self.assertEqual(r.status_code, 404)
+
+
+class TimeFunctionsOnThePanel(unittest.TestCase):
+    """Hàm thời gian thành một cột phụ; từ chối chạy khi khoảng bắc qua mốc đổi vệ tinh."""
+
+    def setUp(self):
+        import sqlite3
+        self.db, self.client, _ = fresh_database(self)
+        with sqlite3.connect(self.db) as con:
+            con.executemany(
+                'INSERT OR REPLACE INTO ntl_annual'
+                '(province_code,year,source,sol,sol_cal,obs_status) VALUES(?,?,?,?,?,?)',
+                [('01', 2014 + i, 'VIIRS', 100.0 * 1.1 ** i, 100.0 * 1.1 ** i,
+                  'B' if 2014 + i == 2014 else 'A') for i in range(4)])
+            con.executemany(
+                'INSERT OR REPLACE INTO ntl_annual'
+                '(province_code,year,source,sol,sol_cal) VALUES(?,?,?,?,?)',
+                [('27', y, 'DMSP' if y <= 2013 else 'VIIRS', 100.0, 100.0)
+                 for y in (2012, 2013, 2014, 2015)])
+
+    def _goi(self, **kw):
+        kw.setdefault('province_code', '01')
+        return self.client.get('/api/panel', params=kw).json()
+
+    def test_the_growth_rate_comes_back_as_an_extra_column(self):
+        body = self._goi(chi_so='sol', moc='2014,2015,2016,2017', ham='cagr')
+        self.assertEqual([h['ma'] for h in body['ham']], ['cagr'])
+        self.assertAlmostEqual(body['dong'][0]['ham']['cagr'], 10.0, places=4)
+
+    def test_several_functions_at_once(self):
+        body = self._goi(chi_so='sol', moc='2014,2015,2016,2017', ham='tong,trung_binh')
+        self.assertEqual(set(body['dong'][0]['ham']), {'tong', 'trung_binh'})
+
+    def test_growth_across_a_satellite_break_is_refused_not_guessed(self):
+        """Một con số trông như thật còn tệ hơn một ô trống."""
+        body = self._goi(chi_so='sol', moc='2012,2013,2014,2015',
+                         province_code='27', ham='cagr,tong')
+        dong = body['dong'][0]
+        self.assertIsNone(dong['ham']['cagr'])
+        self.assertIsNotNone(dong['ham']['tong'], 'tổng không phụ thuộc mốc, vẫn phải tính')
+        self.assertTrue(dong['ham_tu_choi'])
+
+    def test_the_calibrated_column_may_cross_the_2013_break(self):
+        """sol_cal đã quy về cùng thang VIIRS nên đi qua mốc 2013 được."""
+        body = self._goi(chi_so='sol_cal', moc='2012,2013,2014,2015',
+                         province_code='27', ham='cagr')
+        self.assertIsNone(body['dong'][0]['ham_tu_choi'])
+
+    def test_2010_still_blocks_even_the_calibrated_column(self):
+        """Mốc 2010 chưa hiệu chỉnh ở BẤT KỲ cột nào, kể cả cột _cal."""
+        body = self._goi(chi_so='sol_cal', moc='2009,2010,2011',
+                         province_code='27', ham='cagr')
+        self.assertTrue(body['dong'][0]['ham_tu_choi'])
+
+    def test_an_unknown_function_is_ignored_not_crashed(self):
+        body = self._goi(chi_so='sol', moc='2014,2015', ham='khong_co_that')
+        self.assertEqual(body['ham'], [])
+
+
+class TheFlagsTravelWithTheValues(unittest.TestCase):
+
+    def setUp(self):
+        import sqlite3
+        self.db, self.client, _ = fresh_database(self)
+        with sqlite3.connect(self.db) as con:
+            con.executemany(
+                'INSERT OR REPLACE INTO ntl_annual'
+                '(province_code,year,source,sol,obs_status) VALUES(?,?,?,?,?)',
+                [('01', 2009, 'DMSP', 10.0, 'A'), ('01', 2010, 'DMSP', 31.0, 'B'),
+                 ('01', 2011, 'DMSP', 32.0, 'U')])
+
+    def test_each_value_has_a_matching_flag_slot(self):
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol', 'moc': '2009,2010,2011', 'province_code': '01'}).json()
+        dong = body['dong'][0]
+        self.assertEqual(len(dong['co']), len(dong['gia_tri']))
+        self.assertEqual(dong['co'], [None, 'B', 'U'])
+
+    def test_a_normal_flag_is_not_sent(self):
+        """'A' là bình thường: gửi về chỉ làm nặng tải và nặng mắt."""
+        body = self.client.get('/api/panel', params={
+            'chi_so': 'sol', 'moc': '2009', 'province_code': '01'}).json()
+        self.assertEqual(body['dong'][0]['co'], [None])
+
+    def test_the_legend_comes_with_the_table(self):
+        body = self.client.get('/api/panel', params={'chi_so': 'sol', 'moc': '2010'}).json()
+        self.assertIn('B', body['chu_giai_co'])
+        self.assertIn('vệ tinh', body['chu_giai_co']['B'])

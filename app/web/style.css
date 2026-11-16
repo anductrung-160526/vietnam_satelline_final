@@ -176,6 +176,9 @@ tbody td:first-child,tbody td:nth-child(2){font-family:inherit}
 tr.sang td,tr.sang td:first-child,tr.sang td:nth-child(2){background:rgba(255,200,87,.1)}
 tr.sang td:first-child{color:var(--nhan);font-weight:600}
 td.rong{color:var(--chu-mo)}
+/* Cột hàm thời gian: tách khỏi các cột mốc bằng một đường, vì nó không phải một mốc. */
+.ham-o{border-left:1px solid var(--vien);color:var(--nhan)}
+thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:.72rem}
 #o-chart{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
 #o-chart[hidden]{display:none}
 .bieu-do{flex:1;min-height:280px;width:100%}
