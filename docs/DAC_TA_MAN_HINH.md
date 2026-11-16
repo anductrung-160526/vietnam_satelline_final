@@ -304,17 +304,25 @@ Bảng chỉ số theo năm hoặc theo tháng, cho cả 63 tỉnh, tải đư�
 ```
 cột lọc                   bảng
 ┌─────────────────────┐  ┌────────────────────────────────────────┐
-│ ▾ Phạm vi   63 · 63 │  │ Tỉnh      2009   2010   2011 …  2014   │
-│ ▾ Chỉ số    14 · 1  │  │ An Giang 12.431 38.900 40.112 …  9.902 │
-│ ▾ Thời gian 286 · 8 │  │ Bắc Kạn   —      9.515  9.903 …  2.221 │
-│ ▸ Hàm thời gian     │  │ …                                      │
-└─────────────────────┘  └────────────────────────────────────────┘
+│ ▾ Phạm vi   63 · 63 │  │ Tỉnh     Chỉ số       2009   2010  … │
+│ ▾ Chỉ số    13 · 2  │  │ An Giang SOL         12.431 38.900  … │
+│ ▾ Thời gian 286 · 8 │  │          Mật độ        4,14  12,97  … │
+│ ▸ Hàm thời gian     │  │ Bắc Kạn  SOL           —     9.515  … │
+│                     │  │          Mật độ        —      3,17  … │
+└─────────────────────┘  └───────────────────────────────────────┘
                          [ Tải CSV ]
 ```
 
-- Hàng = tỉnh đã tick (mặc định cả 63, xếp A–Z).
-- Cột = mốc thời gian đã tick, cộng một cột cho mỗi **hàm thời gian** đã thêm.
-- Tick **nhiều chỉ số** thì bảng thêm một cột `Chỉ số` và mỗi tỉnh chiếm nhiều hàng.
+- Hàng = **tỉnh × chỉ số**. Mặc định cả 63 tỉnh, xếp A–Z; tick hai chỉ số thì mỗi tỉnh
+  chiếm hai hàng, tên tỉnh chỉ in ở hàng đầu của nhóm.
+- Cột thứ hai là **`Chỉ số`**, ngay bên phải cột `Tỉnh`. Cột này **luôn có**, kể cả khi
+  mới tick một chỉ số: người dùng tick thêm cái thứ hai thì bảng không đổi hình dạng
+  giữa chừng.
+- Hai cột đầu **dính lại khi cuộn ngang**. Thiếu cột `Chỉ số` khi đã cuộn thì không biết
+  hàng đang xem là chỉ số nào, vì mỗi tỉnh chiếm nhiều hàng.
+- Cột tiếp theo = mốc thời gian đã tick, cộng một cột cho mỗi **hàm thời gian** đã thêm.
+- **Không có tiêu đề trên bảng.** Tên chỉ số đã nằm trong cột `Chỉ số`; một dòng tiêu đề
+  nhắc lại chỉ đúng khi tick đúng một chỉ số.
 - Ô không có số để **trống** (`—`), không tô 0.
 - **Bảng không in chữ cờ.** Cờ vẫn nằm trong dữ liệu và trong tệp CSV; trên màn hình nó
   chỉ là **tooltip** khi rê chuột lên ô. Chú giải đầy đủ đi kèm tệp tải xuống trong
