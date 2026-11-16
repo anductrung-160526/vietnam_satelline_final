@@ -1,0 +1,276 @@
+"""Nạp data_processed/*.csv vào SQLite cho API đọc. Không tính chỉ số ở đây.
+
+    python3 -m app.data.build_indices --root E:\\SatelliteData --db app/data/vngis.db
+
+Thiếu file CSV nào thì bảng đó để rỗng, không coi là lỗi: app phải chạy được ngay cả khi
+chỉ có ảnh đêm mà chưa có ảnh ngày. Mỗi lần chạy nạp lại từ đầu (idempotent).
+
+Tên cột phải trùng khớp tên mà task_pipeline/derive.py sinh ra. Lệch tên thì dòng vẫn vào
+bảng nhưng cột để rỗng và không có gì báo lỗi — đã xảy ra thật (app đi tìm 'sol_change_pct'
+trong khi derive ghi 'thay_doi_ntl_pct'). Vì vậy mỗi lần nạp đều in ra cột nào khớp, cột
+nào của bảng không có trong CSV, và cột nào CSV có mà bảng bỏ qua.
+"""
+import argparse
+import csv
+import json
+import sqlite3
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent.parent
+
+# Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
+# tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
+# An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
+SCHEMA_VERSION = 8
+NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
+DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
+
+# Cột chữ; mọi cột khác được đọc thành số.
+TEXT_COLUMNS = {'province_code', 'province_name', 'source', 'note', 'calibration', 'status',
+                'reflectance_type', 'source_collection', 'phuong_phap', 'status',
+                'period', 'frequency', 'obs_status', 'grdp_price_basis'}
+
+# bảng -> các vị trí CSV có thể có, và cách gộp (None = mỗi dòng một năm sẵn rồi)
+SOURCES = {
+    # ntl_indices_ee.csv là di sản của luồng Earth Engine cũ, tên cột không còn khớp
+    # schema này nên không nhận nữa: nạp nó vào chỉ tạo ra một bảng toàn cột rỗng.
+    'ntl_annual': ([f'{NTL_PACKAGE}/data_processed/ntl_annual.csv'], None),
+    # Bảng theo tháng giữ nguyên từng tháng, KHÔNG gộp lên năm: cả app lẫn biểu đồ
+    # tháng đều cần từng mốc một. Khoá có thêm cột month.
+    'ntl_monthly': ([f'{NTL_PACKAGE}/data_processed/ntl_monthly.csv'], 'GIU_THANG'),
+    # derive ghi chỉ số ngày theo THÁNG; app hiển thị theo năm nên gộp trung bình các tháng.
+    # day_indices_monthly_ee.csv cũng là di sản Earth Engine, cùng lý do.
+    'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
+                    f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv'], 'month'),
+    'economy': (['data_processed/economy.csv', 'app/data/economy.csv'], None),
+}
+
+
+def load_provinces(connection):
+    records = json.loads((REPO / 'task_pipeline' / 'provinces.json').read_text(encoding='utf-8'))
+    connection.execute('DELETE FROM province')
+    connection.executemany(
+        'INSERT INTO province(province_code,number,province_name,slug,gid_1) VALUES(?,?,?,?,?)',
+        # provinces.json là danh mục nội bộ của luồng tải ảnh và giữ khoá tiếng Việt;
+        # chỉ ánh xạ sang tên cột tiếng Anh tại đây, không đổi file gốc.
+        [(p['ma_tinh'], p['number'], p['ten_tinh'], p['slug'], p.get('gid_1')) for p in records])
+    return len(records)
+
+
+def mo(db):
+    """Mở cơ sở dữ liệu, dựng lại từ đầu nếu schema đã đổi.
+
+    Dựng lại là xoá sạch, nên mọi lối vào đều phải để lại một cơ sở dữ liệu dùng được:
+    danh mục 63 tỉnh luôn được nạp. Thiếu bước này thì chạy build_cogs sau khi đổi schema
+    sẽ xoá hết tỉnh và giao diện báo "0 tỉnh" — đã xảy ra thật.
+    """
+    path = Path(db)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    da_dung_lai = False
+    if path.exists():
+        thu = sqlite3.connect(path)
+        cu = thu.execute('PRAGMA user_version').fetchone()[0]
+        thu.close()
+        if cu != SCHEMA_VERSION:
+            print(f'  Cấu trúc bảng đổi ({cu} -> {SCHEMA_VERSION}): dựng lại {path.name}.')
+            print('  >>> Chỉ số đã nạp trước đó MẤT. Chạy lại:'
+                  ' python -m app.data.build_indices --root <gốc dữ liệu>')
+            path.unlink()
+            da_dung_lai = True
+    connection = sqlite3.connect(path)
+    connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    connection.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
+    if connection.execute('SELECT COUNT(*) FROM province').fetchone()[0] == 0:
+        load_provinces(connection)
+        connection.commit()
+        if not da_dung_lai:
+            print('  Đã nạp danh mục 63 tỉnh.')
+    return connection
+
+
+def columns(connection, table):
+    return [r[1] for r in connection.execute(f'PRAGMA table_info({table})')]
+
+
+def number(value):
+    """CSV của pipeline dùng -9999 và chuỗi rỗng cho 'không có dữ liệu'."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text in ('', 'NA', 'NaN', 'nan', 'None', '-9999', '-9999.0'):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def text(value):
+    if value is None:
+        return None
+    return str(value).strip() or None
+
+
+def read_csv(path):
+    with open(path, encoding='utf-8-sig', newline='') as stream:
+        reader = csv.DictReader(stream)
+        return list(reader.fieldnames or []), list(reader)
+
+
+def cell(name, raw):
+    return text(raw) if name in TEXT_COLUMNS else number(raw)
+
+
+def rows_of(records, want, monthly):
+    """Chuyển bản ghi CSV thành dòng của bảng, gộp lên năm nếu nguồn ghi theo tháng.
+
+    monthly='GIU_THANG' thì giữ nguyên từng tháng, khoá là (tỉnh, năm, tháng).
+    """
+    if monthly == 'GIU_THANG':
+        return rows_theo_thang(records, want)
+    gom = {}
+    for record in records:
+        code = (record.get('province_code') or '').strip()
+        year = record.get('year') or record.get('nam') or record.get('YEAR')
+        if not code or not str(year or '').strip().isdigit():
+            continue
+        month = (record.get(monthly) or '').strip() if monthly else ''
+        if not monthly and month not in ('', '0', 'ALL', 'NA'):
+            continue
+        key = (code.zfill(2), int(year))
+        row = {name: cell(name, record[name]) for name in want if name in record}
+        row['province_code'], row['year'] = key
+        gom.setdefault(key, []).append(row)
+
+    out = []
+    for (code, year), phan in sorted(gom.items()):
+        if len(phan) == 1 and not monthly:
+            out.append(phan[0])
+            continue
+        hop = {'province_code': code, 'year': year}
+        for name in want:
+            if name in ('province_code', 'year', 'months_used'):
+                continue
+            values = [p[name] for p in phan if p.get(name) is not None]
+            if not values:
+                continue
+            if name in TEXT_COLUMNS:
+                hop[name] = sorted({str(v) for v in values})[0] if len(set(values)) == 1 \
+                    else '/'.join(sorted({str(v) for v in values}))
+            else:
+                hop[name] = round(sum(values) / len(values), 6)
+        if 'months_used' in want:
+            hop['months_used'] = len(phan)
+        out.append(hop)
+    return out
+
+
+def rows_theo_thang(records, want):
+    """Mỗi dòng CSV là một dòng bảng; không gộp gì cả."""
+    out = []
+    for record in records:
+        code = (record.get('province_code') or '').strip()
+        year = record.get('year')
+        month = record.get('month')
+        if not code or not str(year or '').strip().isdigit():
+            continue
+        if not str(month or '').strip().isdigit() or not 1 <= int(month) <= 12:
+            continue
+        row = {name: cell(name, record[name]) for name in want if name in record}
+        row['province_code'] = code.zfill(2)
+        row['year'], row['month'] = int(year), int(month)
+        out.append(row)
+    return out
+
+
+def load_table(connection, root, table, candidates, monthly, repo_fallback=True):
+    want = columns(connection, table)
+    connection.execute(f'DELETE FROM {table}')
+    for relative in candidates:
+        path = Path(root) / relative
+        # economy.csv do người dùng soạn tay nên nằm trong repo chứ không nằm trên ổ dữ
+        # liệu; vì vậy phải dò cả hai chỗ. repo_fallback=False để test dựng db ở thư mục
+        # tạm không nhặt phải CSV thật trong repo — đã có lần test đỏ chỉ vì máy có dữ liệu.
+        if not path.exists() and repo_fallback:
+            path = REPO / relative
+        if not path.exists():
+            continue
+        header, records = read_csv(path)
+        buoc = monthly if monthly == 'GIU_THANG' else (
+            monthly if monthly and monthly in header else None)
+        batch = rows_of(records, want, buoc)
+        if not batch:
+            # Tệp CÓ dòng nhưng không dòng nào vào được bảng: gần như luôn là lệch tên
+            # khoá (bảng cũ còn mang tên cột tiếng Việt). Báo "chưa có dữ liệu" ở đây là
+            # nói sai, và người dùng sẽ đi tìm tệp thay vì chạy lại bước tính chỉ số.
+            if records:
+                thieu = [c for c in ('province_code', 'year') if c not in header]
+                return {'rows': 0, 'source': str(path), 'cot_khop': [],
+                        'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': [],
+                        'khong_doc_duoc': (
+                            f'{len(records)} dòng nhưng KHÔNG dòng nào vào được bảng.'
+                            + (f' Thiếu cột khoá: {", ".join(thieu)}.' if thieu else '')
+                            + f' Cột đang có: {", ".join(header[:8])}'
+                            + (' …' if len(header) > 8 else ''))}
+            continue
+        names = sorted({k for row in batch for k in row})
+        connection.executemany(
+            f'INSERT OR REPLACE INTO {table} ({",".join(names)}) '
+            f'VALUES ({",".join("?" * len(names))})',
+            [[row.get(n) for n in names] for row in batch])
+        return {'rows': len(batch), 'source': str(path),
+                'cot_khop': sorted(set(header) & set(want)),
+                'cot_bang_thieu_trong_csv': sorted(set(want) - set(header) - {'months_used'}),
+                'cot_csv_khong_dung': sorted(set(header) - set(want))}
+    return {'rows': 0, 'source': None, 'cot_khop': [],
+            'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': [], 'khong_doc_duoc': None}
+
+
+def build(root, db, repo_fallback=True):
+    connection = mo(db)
+    report = {'province': load_provinces(connection)}
+    for table, (candidates, monthly) in SOURCES.items():
+        report[table] = load_table(connection, root, table, candidates, monthly, repo_fallback)
+    connection.commit()
+    connection.close()
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Nạp chỉ số vào SQLite cho VNGISDash')
+    parser.add_argument('--root', default='/data/SatelliteData',
+                        help='Thư mục gốc dữ liệu (E:\\SatelliteData hoặc /data/SatelliteData)')
+    parser.add_argument('--db', default=str(HERE / 'vngis.db'))
+    parser.add_argument('--chi-tiet', action='store_true', dest='chi_tiet',
+                        help='In đầy đủ danh sách cột')
+    arguments = parser.parse_args()
+    report = build(arguments.root, arguments.db)
+
+    print(f"province: {report['province']} dòng")
+    for table in ('ntl_annual', 'ntl_monthly', 'day_annual', 'economy'):
+        info = report[table]
+        print(f"\n{table}: {info['rows']} dòng")
+        if not info['rows']:
+            if info.get('khong_doc_duoc'):
+                print(f"  nguồn: {info['source']}")
+                print(f"  ĐỌC KHÔNG ĐƯỢC: {info['khong_doc_duoc']}")
+                print('  Bảng này sinh ra từ phiên bản cũ. Chạy lại bước tính chỉ số:')
+                print('    scripts\\windows\\chi_so_dem.ps1')
+            else:
+                print('  CHƯA CÓ DỮ LIỆU — app sẽ báo "chưa có số liệu" cho phần này.')
+            continue
+        print(f"  nguồn: {info['source']}")
+        print(f"  {len(info['cot_khop'])} cột khớp"
+              + (f": {', '.join(info['cot_khop'])}" if arguments.chi_tiet else ''))
+        if info['cot_bang_thieu_trong_csv']:
+            print('  CỘT RỖNG (bảng có, CSV không có): '
+                  + ', '.join(info['cot_bang_thieu_trong_csv']))
+        if info['cot_csv_khong_dung']:
+            print('  cột CSV app chưa dùng: ' + ', '.join(info['cot_csv_khong_dung']))
+    print('\nMọi "CỘT RỖNG" là chỉ số sẽ trống trên giao diện. Nếu tên chỉ lệch nhau chút ít '
+          '(ví dụ sol_change_pct và thay_doi_ntl_pct) thì đó là lỗi, cần sửa schema cho khớp.')
+
+
+if __name__ == '__main__':
+    main()

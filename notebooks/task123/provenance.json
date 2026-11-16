@@ -1,0 +1,20 @@
+[
+  {
+    "file": "Task3-GEO_NTL_Images.ipynb",
+    "uploaded_sha256": "1cc22bd22d5c7236fe6acea1b0ae972bb52f2ac490206856f6bfc33148d1aa04",
+    "cells_source_sha256": "2b9f6cd4d2f3adeca1d46a07b665b1f918288cc4f4d7d870a0edbbf539337721",
+    "outputs_removed": true
+  },
+  {
+    "file": "Task2-GEO_DayLight_Images.ipynb",
+    "uploaded_sha256": "8b8f05c716d190e83c678e68fc251cbcc77bb8fcd81197ffd5f7042baef24e62",
+    "cells_source_sha256": "cc67bb1938082ff6c30894c7fc56921b9ec65ad9aeee873c7dbe161b23e52324",
+    "outputs_removed": true
+  },
+  {
+    "file": "Task1-GEO_Spectral_Indices.ipynb",
+    "uploaded_sha256": "6b8c4de9b093bd13e991ad2ba8ca078d899094c4eb874dd2e2ae366e5663829a",
+    "cells_source_sha256": "d513b5eb26e242c6a6e712a1c74173f91bd2c419d9a013ed1325a31ecadf3750",
+    "outputs_removed": true
+  }
+]

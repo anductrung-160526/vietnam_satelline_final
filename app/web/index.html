@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VNGISDash</title>
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="ung-dung">
+  <header id="thanh-dau">
+    <span class="hieu">VNGISDASH</span>
+    <nav class="thanh-man" role="tablist" aria-label="Màn hình">
+      <button role="tab" aria-selected="true" data-man="anh">Ảnh đêm</button>
+      <button role="tab" aria-selected="false" data-man="chiso">Chỉ số đêm</button>
+      <button role="tab" aria-selected="false" data-man="kinhte">Chỉ số kinh tế đêm</button>
+    </nav>
+    <span id="trang-thai" class="pill">đang tải…</span>
+  </header>
+
+  <!-- ===================== MÀN 1 — ẢNH ĐÊM ===================== -->
+  <div class="than" id="man-anh">
+    <aside id="cot-loc">
+      <label for="tim-tinh">Phạm vi — tỉnh / thành phố</label>
+      <input id="tim-tinh" type="search" placeholder="Gõ tên tỉnh, có dấu hoặc không…"
+             autocomplete="off" aria-controls="chon-tinh">
+      <select id="chon-tinh"></select>
+      <p id="khong-thay-tinh" class="nho an">Không có tỉnh nào khớp.</p>
+      <button id="nut-toan-quoc" class="nho">↩ Xem toàn quốc</button>
+
+      <label>Thời điểm</label>
+      <div class="nhom-chon" id="chon-buoc">
+        <button class="buoc dang-chon" data-buoc="nam">Theo năm</button>
+        <button class="buoc" data-buoc="thang">Theo tháng</button>
+      </div>
+      <select id="chon-nam"></select>
+      <input type="range" id="nam-truot" min="0" max="0" step="1">
+
+      <div id="canh-bao"></div>
+
+      <button id="nut-tai-anh">Tải ảnh đêm (.tif)</button>
+      <p class="ghi-chu" id="ghi-chu-tai"></p>
+    </aside>
+
+    <div id="thanh-keo" title="Kéo để đổi độ rộng cột · nháy đúp để về mặc định"></div>
+
+    <section id="khung-phai">
+      <div id="the-so" class="the-so"></div>
+      <div id="khung-ban-do">
+        <div id="ban-do"></div>
+        <div class="lop-noi" id="nhan-pham-vi"></div>
+        <div class="lop-noi thang-mau" id="thang-mau"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== MÀN 2 — CHỈ SỐ ĐÊM ===================== -->
+  <div class="than rong" id="man-chiso" hidden>
+    <aside class="loc" id="loc-chiso"></aside>
+    <section class="vung-bang">
+      <div class="chan-bang">
+        <div class="doi-xem" id="xem-chiso">
+          <button type="button" aria-pressed="true" data-xem="bang">Bảng</button>
+          <button type="button" aria-pressed="false" data-xem="chart">Biểu đồ</button>
+        </div>
+        <button class="nut-tai" type="button" id="nut-csv">Tải CSV</button>
+      </div>
+      <div id="canh-bao-bang"></div>
+      <div class="cuon" id="o-bang"><table id="bang-chiso"></table></div>
+      <div id="o-chart" hidden>
+        <div class="bieu-do" id="bd-duong"></div>
+        <p class="ghi-bd" id="ghi-bd"></p>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== MÀN 3 — CHỈ SỐ KINH TẾ ĐÊM ===================== -->
+  <div class="than rong" id="man-kinhte" hidden>
+    <aside class="loc" id="loc-kinhte"></aside>
+    <section class="vung-bang" id="vung-kinhte"></section>
+  </div>
+</div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

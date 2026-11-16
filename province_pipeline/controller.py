@@ -79,8 +79,16 @@ def _remote_manifest(drive, job):
         raise RuntimeError('Output missing checksum/size')
     if int(f['size']) > job['reserved_bytes']:
         raise RuntimeError('Output exceeded reservation; review byte bound')
-    return dict(schema_version=1, job_id=job['job_id'], job=job, files=[dict(
-        f, local_relative_path=job['local_directory']+'/'+f['name'])])
+    manifest_files=[dict(f,local_relative_path=job['local_directory']+'/'+f['name'])]
+    if job.get('preview_required'):
+        preview=drive.find(job['folder_id'],job['prefix']+'.png')
+        if not preview:return None
+        if preview.get('mimeType')==FOLDER or not preview.get('md5Checksum') or not int(preview.get('size',0)):
+            raise RuntimeError('Preview PNG missing checksum/size')
+        manifest_files.append(dict(preview,role='preview',local_relative_path=job['local_directory']+'/'+preview['name']))
+        if sum(int(item['size']) for item in manifest_files)>job['reserved_bytes']:
+            raise RuntimeError('Province TIFF/PNG exceeded combined reservation')
+    return dict(schema_version=1,job_id=job['job_id'],job=job,files=manifest_files)
 
 
 def report_name(job):
@@ -93,11 +101,14 @@ def reconcile(drive, folders, state, tasks):
     by_description = {}
     for task in tasks:
         by_description.setdefault(task.get('description'), []).append(task)
+    receipt_names={f['name'] for f in drive.children(folders['receipts'])} if state.get('receipt_listing_cache') and any(
+        j['status']=='REMOTE_READY' for j in state['jobs'].values()) else set()
     for job in state['jobs'].values():
-        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING'):
+        if job['status'] in ('ACKED', 'DELETED_REMOTE', 'FAILED', 'BLOCKED_OUTPUT', 'MIGRATING',
+                             'MISSING_SOURCE', 'INSUFFICIENT_QUALITY', 'DEFERRED'):
             continue
         if job['status'] == 'REMOTE_READY':
-            receipt = drive.read_json(folders['receipts'], job['job_id']+'.json')
+            receipt = drive.read_json(folders['receipts'], job['job_id']+'.json') if not state.get('receipt_listing_cache') or job['job_id']+'.json' in receipt_names else None
             if receipt:
                 manifest = drive.read_json(folders['manifests'], job['job_id']+'.json')
                 expected = {f['id'] for f in manifest['files']}
@@ -111,6 +122,12 @@ def reconcile(drive, folders, state, tasks):
         report = drive.read_json(folders['reports'], report_name(job))
         if job.get('export_backend') == 'direct':
             if report:
+                if report.get('status')=='OUTPUT_LIMIT':
+                    job.update(status='FAILED',error='OUTPUT_LIMIT: compressed TIFF/PNG or runner disk exceeds budget')
+                    continue
+                if report.get('status')=='NO_VALID_PIXELS':
+                    job.update(status='INSUFFICIENT_QUALITY',error='NO_VALID_PIXELS')
+                    continue
                 if report.get('status') == 'UPLOADED':
                     try:
                         manifest = _remote_manifest(drive, job)
@@ -118,8 +135,18 @@ def reconcile(drive, folders, state, tasks):
                             output=manifest['files'][0]
                             if output['id'] != report.get('file_id') or output['md5Checksum'] != report.get('md5Checksum'):
                                 raise RuntimeError('Direct upload report does not match Drive output')
+                            if job.get('preview_required'):
+                                expected=report.get('preview',{})
+                                preview=manifest['files'][1]
+                                if preview['id']!=expected.get('file_id') or preview['md5Checksum']!=expected.get('md5Checksum'):
+                                    raise RuntimeError('Preview upload report does not match Drive output')
                             drive.write_json(folders['manifests'],job['job_id']+'.json',manifest)
                             job['status']='REMOTE_READY'
+                            if job.get('pipeline_version') == 2 and job['kind'] == 'table':
+                                record = report.get('statistics')
+                                if not record or record.get('job_id') != job['job_id']:
+                                    raise RuntimeError('Missing verified statistics report')
+                                state.setdefault('statistics', {})[job['job_id']] = record
                         else:
                             job['status']='RUNNING'  # Wait for Drive visibility, never upload twice.
                     except RuntimeError as error:
@@ -130,7 +157,7 @@ def reconcile(drive, folders, state, tasks):
                     files=job_output_files(drive,job)
                     if files:
                         job.update(status='BLOCKED_OUTPUT',error='Unconfirmed upload exists; inspect checksum before retry')
-                    elif job.get('attempt',1) < 4:
+                    elif job.get('attempt',1) < job.get('quality',{}).get('max_transfer_attempts',4):
                         job.update(status='RESERVED',attempt=job.get('attempt',1)+1)
                     else:
                         job.update(status='FAILED',error='Direct transfer failed after four attempts; inspect reports')
@@ -243,6 +270,7 @@ def work(config, drive, plan, group_id, boundaries):
     from .earth_engine import build_export, submit_with_request_id
     if plan['config_hash'] != digest(config) or config.get('pause', True):
         raise RuntimeError('Plan/config mismatch or paused')
+    failures = []
     for job in plan['jobs']:
         if job['province']['group_id'] != group_id:
             continue
@@ -261,8 +289,8 @@ def work(config, drive, plan, group_id, boundaries):
                 drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='UPLOADED',**output))
             except Exception as error:
                 # Keep original error type only; no signed URL or token is persisted in reports.
-                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status='FAILED',error_type=type(error).__name__))
-                raise
+                drive.write_json(plan['folders']['reports'],name,dict(job_id=job['job_id'],status={'NoValidPixels':'NO_VALID_PIXELS','OutputLimit':'OUTPUT_LIMIT'}.get(type(error).__name__,'FAILED'),error_type=type(error).__name__))
+                failures.append(job['job_id'])
             continue
         drive.assert_unique_folder_name(job['folder_name'], job['folder_id'])
         task = build_export(config, job, boundaries[job['province']['ma_tinh']])
@@ -276,3 +304,29 @@ def work(config, drive, plan, group_id, boundaries):
             # Keep persisted SUBMITTING intent and byte reservation even on unknown outcome.
             audit('submission_uncertain', job_id=job['job_id'], group_id=group_id)
             raise
+
+    if failures:
+        raise RuntimeError(f'{len(failures)} direct transfers failed; bounded retry on next run')
+
+
+def reconcile_existing(config,drive):
+    """Finalize worker reports without creating/reserving/submitting new data jobs.
+
+    Same single-writer workflow concurrency contract as prepare/organize. A missing
+    state is an error, not an excuse to replace a real state with an empty document.
+    """
+    from collections import Counter
+    if config.get('export_backend','direct')!='direct':
+        raise ValueError('reconcile-only currently supports direct transfers only')
+    folders=control_folders(drive,config['drive_root_id'])
+    state=drive.read_json(folders['root'],'state.json')
+    if state is None:
+        raise RuntimeError('No pipeline state found; verify Drive root before reconciliation')
+    if any(j['status']=='MIGRATING' for j in state['jobs'].values()):
+        raise RuntimeError('Finish organize_only migration before reconciliation')
+    reconcile(drive,folders,state,[])
+    state['updated_at']=datetime.now(timezone.utc).isoformat()
+    drive.write_json(folders['root'],'state.json',state)
+    counts=dict(Counter(j['status'] for j in state['jobs'].values()))
+    audit('reconciliation_complete',status_counts=counts,ready_jobs=counts.get('REMOTE_READY',0),new_jobs=0)
+    return counts

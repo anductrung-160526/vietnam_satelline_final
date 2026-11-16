@@ -1,0 +1,117 @@
+# VNGISDash — lớp web
+
+Nguyên mẫu Web Dashboard, **ba màn** trên cùng một khung ứng dụng (xem
+`docs/DAC_TA_MAN_HINH.md`):
+
+| Màn | Nội dung |
+|---|---|
+| **Ảnh đêm** | Bản đồ nền ban đêm cắt theo ranh giới, ba thẻ SOL / Diện tích / Mật độ, tải `.tif` toàn quốc hoặc theo tỉnh |
+| **Chỉ số đêm** | Bảng điều khiển lọc kiểu World Bank DataBank (ô tick cho tỉnh, chỉ số, cây thời gian năm→tháng), bảng tỉnh × chỉ số, biểu đồ chuỗi thời gian, tải CSV |
+| **Chỉ số kinh tế đêm** | Ánh sáng bình quân đầu người, hệ số co giãn β trong `ln(GRDP) = α + β·ln(SOL)`, biểu đồ phân tán kèm đường hồi quy |
+
+Số liệu kinh tế: điền vào mẫu `app/data/economy_mau.csv`, đổi tên thành `economy.csv`,
+đặt cạnh nó hoặc trong `data_processed/`, rồi chạy lại `build_indices`. Cột
+`grdp_price_basis` phải ghi `so_sanh` hoặc `hien_hanh` — giá hiện hành làm β sai lệch vì
+lạm phát, và app sẽ hiện cảnh báo đỏ.
+
+**Đây là lớp CHỈ ĐỌC.** Mọi con số đều do `task_pipeline/derive.py` tính ra và ghi vào
+`data_processed/*.csv`. API không tính chỉ số. Nếu app cần một con số chưa có, bổ sung vào
+`derive.py` kèm test, đừng tính trong API — nếu không thì sẽ có hai nguồn chân lý.
+
+## Chạy thử tại chỗ
+
+Bước tính chỉ số (`task_pipeline`) cần thư viện của đường ống; lớp web cần thư viện riêng.
+Chạy cả hai cho chắc:
+
+```bash
+pip install -r requirements.txt        # đường ống: pandas, rasterio, earthengine-api…
+pip install -r app/requirements.txt    # lớp web: fastapi, uvicorn, titiler, shapely
+
+# 1. Nạp chỉ số thật vào SQLite (bảng nào chưa có dữ liệu thì để rỗng, không lỗi)
+#    LÀM TRƯỚC build_cogs: đổi SCHEMA_VERSION thì build_indices dựng lại cơ sở dữ liệu
+#    và xoá sạch sổ ảnh COG, nên chạy sau sẽ mất hết ảnh đã vào sổ.
+python3 -m app.data.build_indices --root /data/SatelliteData
+
+# 2. Ranh giới tỉnh cho bản đồ. Lần đầu thêm --tai-gadm để tải GADM 4.1 (~50 MB).
+#    prepare_gadm đối chiếu SHA-256 của cả file nén lẫn nội dung trước khi dùng.
+python3 -m app.data.build_boundaries --tai-gadm
+python3 -m app.data.build_boundaries                      # các lần sau
+python3 -m app.data.build_boundaries --config <đường dẫn> # nếu máy khác đã có sẵn
+
+# 3a. Ảnh nền theo NĂM. Ảnh đêm đổi được bằng rasterio nếu máy không có gdal_translate.
+python3 -m app.data.build_cogs --root /data/SatelliteData --kinds VIIRS DMSP
+
+# 3b. Ảnh nền theo THÁNG: ghép 63 ảnh tỉnh của mỗi tháng thành một ảnh toàn quốc.
+#     Không gọi Earth Engine. Xem trước khối lượng bằng --kiem-ke.
+python3 -m app.data.build_monthly_cogs --root /data/SatelliteData --kiem-ke
+python3 -m app.data.build_monthly_cogs --root /data/SatelliteData
+
+# 4. Chạy
+uvicorn app.api.main:app --reload      # http://localhost:8000
+```
+
+Chưa có chỉ số thật mà cần demo giao diện:
+
+```bash
+python3 -m app.data.demo_seed          # số GIẢ LẬP, giao diện treo biển báo đỏ
+```
+
+Số giả lập có `status='GIA_LAP'`; chạy lại `build_indices.py` là bị xoá sạch.
+**Không bao giờ lấy số từ đó đưa vào báo cáo.**
+
+## Các đầu mối API
+
+| Đường dẫn | Trả về |
+|---|---|
+| `GET /api/health` | tình trạng, số tỉnh, đường dẫn cơ sở dữ liệu |
+| `GET /api/provinces` | 63 tỉnh, kèm số năm đã có dữ liệu từng loại |
+| `GET /api/indices?province_code=01&nam_tu=2004&nam_den=2025` | chuỗi đêm, ngày, kinh tế + cảnh báo phương pháp |
+| `GET /api/coverage` | năm nào đã có dữ liệu gì (dùng cho báo cáo tiến độ) |
+| `GET /api/basemap?buoc=nam\|thang` | các mốc thời gian có ảnh nền đêm |
+| `GET /api/anh-dem.tif?nam=2024&thang=7` | tải ảnh đêm của một mốc (thang=0 là ảnh cả năm) |
+| `GET /api/originals` | ảnh gốc ở tầng lạnh (chỉ liệt kê) |
+| `GET /api/export.zip?province_code=01` | gói 4 phần: ảnh đêm + chỉ số ngày + chỉ số đêm + chỉ số kinh tế |
+| `GET /api/indicators` | danh mục chỉ số, kèm số tỉnh và khoảng năm thực có |
+| `GET /api/panel?chi_so=sol_ntl&nam_tu=2004&nam_den=2025` | bảng kiểu WDI: 63 tỉnh × các năm |
+| `GET /api/panel.csv?chi_so=sol_ntl&dang=rong\|dai` | tải bảng về, dạng rộng hoặc dạng dài |
+| `GET /api/choropleth?chi_so=sol_ntl&nam=2024` | một chỉ số một năm cho mọi tỉnh, để tô màu bản đồ |
+| `GET /tiles/cog/...` | ô bản đồ (chỉ có khi đã cài `titiler.core`) |
+
+## Giao diện
+
+Một màn hình duy nhất: **bộ lọc hẹp bên trái, ảnh chiếm toàn bộ phần còn lại.**
+
+- Cột lọc **kéo giãn được** (kéo thanh dọc, 180–560 px; nháy đúp về 280 px).
+- **Phạm vi**: chọn một trong 63 tỉnh, hoặc "Xem toàn quốc". Bấm thẳng lên bản đồ cũng được.
+- **Thời điểm**: danh sách năm và thanh trượt, đổi cả hai cùng lúc.
+- Ảnh đêm thật hiển thị **cắt theo ranh giới**: một đa giác phủ cả thế giới, khoét lỗ đúng
+  hình cần giữ, đặt TRÊN lớp ảnh. Chọn tỉnh thì chỉ còn ảnh trong tỉnh đó.
+- Nút tải GeoTIFF của năm đang chọn.
+- Không biểu đồ, không ô chỉ số, không bảng: màn hình này chỉ để xem ảnh và tải ảnh.
+
+**Bảng tra cứu kiểu World Development Indicators đã gỡ khỏi giao diện** theo yêu cầu, nhưng
+`/api/indicators`, `/api/panel` và `/api/panel.csv` vẫn còn và vẫn có test. Muốn đưa lại chỉ
+cần dựng lại phần giao diện, không phải làm lại phía máy chủ.
+
+## Nguyên tắc thiết kế
+
+- **Thiếu dữ liệu thì nói ra.** Không bao giờ vẽ 0, không bao giờ để trang trắng.
+  Tỉnh chưa có chỉ số trả về 200 với mảng rỗng, giao diện ghi "chưa có số liệu".
+- **Cảnh báo phương pháp đi theo dữ liệu.** TOA 2015–2018 và việc chưa hiệu chỉnh
+  DMSP–VIIRS xuất hiện cả trên màn hình lẫn trong file tải về.
+- **Từng phần hỏng độc lập.** Bản đồ tải không được thì biểu đồ vẫn chạy, và ngược lại.
+- **Ảnh gốc không lên đám mây.** 24 GB/năm ở tầng lạnh; đám mây chỉ giữ bản nén ~100 MB.
+- **Thư viện trình duyệt nằm trong repo** (`app/web/vendor/`) — mạng chặn CDN vẫn chạy.
+
+## Triển khai Cloud Run
+
+```bash
+gcloud builds submit --tag asia-southeast1-docker.pkg.dev/<PROJECT>/vngis/dash -f app/Dockerfile .
+gcloud run deploy vngisdash \
+  --image asia-southeast1-docker.pkg.dev/<PROJECT>/vngis/dash \
+  --region asia-southeast1 --allow-unauthenticated --min-instances 0
+```
+
+Chỉ số nhỏ nên đóng luôn `vngis.db` vào ảnh container ở giai đoạn nguyên mẫu. Khi dữ liệu
+lớn hơn hoặc cần cập nhật không phải dựng lại ảnh thì chuyển sang Cloud SQL —
+chỉ phải sửa `app/api/store.py`, phần còn lại giữ nguyên.

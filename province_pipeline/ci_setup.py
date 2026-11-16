@@ -19,6 +19,17 @@ def prepare(environment=os.environ):
         raise ValueError('Existing RCLONE_CONF secret is missing or empty')
     # Legacy service-account EE identity cannot export to a user's personal My Drive.
     config['export_backend']='direct'
+    if environment.get('PROVINCE_CYCLES'):
+        if not 1 <= int(environment['PROVINCE_CYCLES']) <= 20:
+            raise ValueError('cycles must be in 1..20')
+    if environment.get('PROVINCE_RUN_PROFILE'):
+        from .profiles import apply_profile
+        config=apply_profile(config,environment['PROVINCE_RUN_PROFILE'],environment.get('PROVINCE_PROCESSING_MODE','raw_source'))
+        # Dispatch is the explicit start action. Read-only modes still never export.
+        if environment.get('PROVINCE_ACTION_MODE') == 'run':
+            config['pause']=False
+        elif environment.get('PROVINCE_ACTION_MODE') == 'organize_only':
+            config['pause']=True
     (out/'config.json').write_text(json.dumps(config),encoding='utf-8')
     private=Path(environment['RUNNER_TEMP'])/'province-auth'
     private.mkdir(mode=0o700,exist_ok=True)
