@@ -406,7 +406,7 @@ Hiện `build_indices` chỉ nạp `ntl_annual`. Cần:
 1. Thêm bảng `ntl_monthly` vào `app/data/schema.sql` (khoá `province_code + year + month`).
 2. Nạp `ntl_monthly.csv` trong `build_indices`, tăng `SCHEMA_VERSION`.
 3. `store.panel()` nhận thêm tham số bước thời gian và cách biểu diễn.
-4. Cột `obs_status` trong `derive.py` — xem mục 11.
+4. Cột `obs_status` trong `derive.py` — xem mục 12.
 
 ### 6.6. Nghiệm thu
 
@@ -553,7 +553,71 @@ Bảng `economy` rỗng → trả `200` với mảng rỗng và một câu giả
 
 ---
 
-## 8. Trạng thái rỗng và lỗi
+## 8. Biểu đồ
+
+Đề cương liệt kê **biểu đồ chuỗi thời gian** là một trong ba thứ phải nghiệm thu, cùng với
+tra cứu bản đồ và tải CSV. Cô cũng nói mục đích là "theo dõi độ dịch chuyển, sự thay đổi
+về kinh tế qua các giai đoạn" — đó chính là việc của biểu đồ.
+
+Thư viện: **ECharts 5.5.1**, đã nằm sẵn ở `app/web/vendor/echarts.min.js` từ đầu dự án.
+Không thêm phụ thuộc mới.
+
+### 8.1. Không tách tab riêng
+
+Biểu đồ **không phải một việc khác, nó là cách nhìn khác của cùng một lựa chọn**. Đầu vào
+của biểu đồ đúng bằng đầu vào của bảng: tỉnh nào, chỉ số nào, mốc nào. Tách ra tab riêng
+thì hoặc phải nhân đôi cả bảng điều khiển lọc, hoặc người dùng chọn xong ở tab này sang
+tab kia lại mất.
+
+DataBank làm đúng vậy: `Variables` chọn dữ liệu, `Layout` đổi cách bày.
+
+**Thiết kế:** một công tắc `Bảng | Biểu đồ` ở hàng trên vùng nội dung của màn 2 và màn 3,
+cạnh nút Tải CSV. Cùng lựa chọn, hai cách vẽ.
+
+### 8.2. Hai biểu đồ làm trước
+
+| Màn | Biểu đồ | Dùng để |
+|---|---|---|
+| 2 | **Đường chuỗi thời gian**, mỗi tỉnh một đường | Theo dõi dịch chuyển giữa các tỉnh qua các giai đoạn |
+| 3 | **Phân tán `ln(SOL)` × `ln(GRDP)` kèm đường hồi quy** | Chứng minh β. Con số 0,78 tự nó không thuyết phục; đám mây điểm bám quanh một đường thẳng mới là bằng chứng |
+
+Để sau: sparkline dưới ba thẻ của màn 1, biểu đồ cột xếp hạng 63 tỉnh, biểu đồ mùa vụ
+12 tháng chồng nhiều năm.
+
+### 8.3. Quy tắc vẽ
+
+**Đường vẽ liền qua mốc 2010** (chốt 16/11/2026, theo yêu cầu người dùng). Bước nhảy
+F16→F18 hiện nguyên trên biểu đồ như nó có trong số liệu.
+
+> **Rủi ro, ghi ra để sau này không ai ngạc nhiên.** Biểu đồ làm bước nhảy 2010 *nổi bật
+> hơn* bảng rất nhiều: một đường vọt lên gấp ba trông như một phát hiện kinh tế ngoạn mục.
+> Nó sẽ bị chụp màn hình. Trên màn hình không còn cảnh báo nào (mục 6.7), nên lớp bảo vệ
+> duy nhất là nhãn trục và tài liệu kèm tệp tải xuống.
+
+**Mốc 2013 thì khác và phải xử lý.** Hai bên 2010 đều là DN của DMSP, cùng đơn vị. Hai bên
+2014 là DN và nW/cm²/sr — hai đơn vị khác nhau; vẽ liền trên một trục là vẽ hai đại lượng
+khác nhau thành một đường. Vì vậy: **khoảng nào bắc qua 2013 thì biểu đồ dùng cột `_cal`**,
+mọi điểm về cùng thang VIIRS. Đường liền mạch thật, không phải liền giả.
+
+**Nhãn trục của 2010 và 2014 in màu nhấn.** Không cắt đường, chỉ đánh dấu ở trục — đủ để
+người xem dừng lại một nhịp mà không thêm chữ nào lên biểu đồ.
+
+**Chuỗi tháng vẽ `sol_ma3` làm mặc định**, số thô là tuỳ chọn. 156 tháng số thô là một hàng
+răng cưa do mây, không đọc được gì.
+
+**Điểm mang cờ `U` vẽ rỗng ruột** thay vì đặc. Giữ được số mà vẫn nói rằng điểm đó ít tin cậy.
+
+**Ô thiếu số tạo khoảng đứt**, không nối qua. `connectNulls: false`.
+
+### 8.4. Giới hạn số đường
+
+Tick cả 63 tỉnh rồi bấm Biểu đồ sẽ ra 63 đường chồng nhau, vô dụng. Quá **8 tỉnh** thì chỉ
+vẽ tỉnh đang tô sáng cộng đường trung bình cả nước, kèm một dòng nói còn bao nhiêu tỉnh nữa.
+Chặn trước tốt hơn là vẽ ra một mớ rồi để người dùng tự hiểu.
+
+---
+
+## 9. Trạng thái rỗng và lỗi
 
 | Tình huống | Cờ | Hiển thị |
 |---|---|---|
@@ -570,7 +634,7 @@ Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **c�
 
 ---
 
-## 9. Không làm trong phạm vi này
+## 10. Không làm trong phạm vi này
 
 - Cấp huyện, cấp xã. Cô xác nhận lại là **63 tỉnh**.
 - Hiệu chỉnh mốc 2010 (đã chốt giữ nguyên).
@@ -580,11 +644,12 @@ Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **c�
 
 ---
 
-## 10. Thứ tự triển khai
+## 11. Thứ tự triển khai
 
 | # | Việc | Phụ thuộc |
 |---|---|---|
 | 0 | Cột `obs_status` trong `derive.py` + chạy lại chỉ số | **chốt trước** |
+| 4b | Công tắc `Bảng \| Biểu đồ` + hai biểu đồ (mục 8) | 3 |
 | 1 | Nạp `ntl_monthly` vào SQLite, tăng `SCHEMA_VERSION` | không |
 | 2 | Bảng ánh xạ chỉ số × cách biểu diễn trong `store.INDICATORS` | không |
 | 3 | `store.panel()` nhận bước thời gian và cách biểu diễn; `/api/panel` + `.csv` | 1, 2 |
@@ -607,7 +672,7 @@ thêm cờ là phải sửa lại cả giao diện lẫn API.
 
 ---
 
-## 11. Cột `obs_status` — thiết kế
+## 12. Cột `obs_status` — thiết kế
 
 Một ký tự mỗi dòng, theo `CL_OBS_STATUS` của IMF (chi tiết ở `docs/THAM_KHAO_FAS_IMF.md`).
 Chỉ dùng bảy mã trong số 25 mã của IMF, vì bảy mã đó là tất cả những gì bộ dữ liệu này
