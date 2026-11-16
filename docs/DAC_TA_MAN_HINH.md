@@ -163,8 +163,15 @@ và **số đã chọn**, như DataBank:
 - `Khoảng có sẵn: 2004–2025` ở đầu nhóm.
 - `XEM GẦN ĐÂY  5 · 10 · 15 · 20` — bấm là tick nhanh N năm gần nhất.
 - **Năm từ 2014 trở đi có mũi tên `▸` mở ra 12 tháng.** Chỉ mũi tên, không kèm chữ.
-  Tick năm = tick cả 12 tháng;
-  tick vài tháng thì ô của năm thành trạng thái nửa chọn (`indeterminate`).
+- **Mốc năm và mốc tháng chọn ĐỘC LẬP nhau** (sửa 16/11/2026, đảo lại thiết kế cha–con
+  ban đầu). Tick năm chỉ lấy **dòng theo năm** (`month = 0`); muốn xem tháng thì mở mũi
+  tên và tick từng tháng, hoặc bấm `cả 12 tháng` trong lưới.
+  Lý do: dòng năm và dòng tháng mang những chỉ số **khác nhau** — `sol_change_pct` chỉ có
+  ở dòng năm, còn `sol_change_mom_pct`, `sol_change_yoy_pct`, `sol_ma3` chỉ có ở dòng
+  tháng. Thiết kế cũ (tick năm = tick cả 12 tháng, năm nửa chọn khi tick vài tháng) làm
+  người dùng chọn một chỉ số theo năm lại nhận về bảng trống toàn dấu `–`, không hiểu vì sao.
+- Vì ô tick năm không còn phản ánh trạng thái các tháng, mỗi năm có một **nhãn đếm**
+  (`3 tháng`) bên phải để biết năm đó đang chọn mấy tháng khi lưới đang gập.
 - Năm 2004–2013 **không** có mũi tên: DMSP là ảnh tổng hợp năm, NOAA không phát hành
   theo tháng. Không bày ra rồi báo lỗi.
 - Bỏ hẳn hai nút `Theo năm` / `Theo tháng` của bản trước: cây thời gian đã nói rõ hơn.

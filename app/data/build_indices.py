@@ -184,12 +184,15 @@ def rows_theo_thang(records, want):
     return out
 
 
-def load_table(connection, root, table, candidates, monthly):
+def load_table(connection, root, table, candidates, monthly, repo_fallback=True):
     want = columns(connection, table)
     connection.execute(f'DELETE FROM {table}')
     for relative in candidates:
         path = Path(root) / relative
-        if not path.exists():
+        # economy.csv do người dùng soạn tay nên nằm trong repo chứ không nằm trên ổ dữ
+        # liệu; vì vậy phải dò cả hai chỗ. repo_fallback=False để test dựng db ở thư mục
+        # tạm không nhặt phải CSV thật trong repo — đã có lần test đỏ chỉ vì máy có dữ liệu.
+        if not path.exists() and repo_fallback:
             path = REPO / relative
         if not path.exists():
             continue
@@ -224,11 +227,11 @@ def load_table(connection, root, table, candidates, monthly):
             'cot_bang_thieu_trong_csv': [], 'cot_csv_khong_dung': [], 'khong_doc_duoc': None}
 
 
-def build(root, db):
+def build(root, db, repo_fallback=True):
     connection = mo(db)
     report = {'province': load_provinces(connection)}
     for table, (candidates, monthly) in SOURCES.items():
-        report[table] = load_table(connection, root, table, candidates, monthly)
+        report[table] = load_table(connection, root, table, candidates, monthly, repo_fallback)
     connection.commit()
     connection.close()
     return report

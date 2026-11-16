@@ -144,6 +144,14 @@ button.nho:hover{border-color:var(--nhan);color:var(--nhan)}
   margin:4px 0 7px 22px;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--chu-mo)}
 .thang-luoi label{display:flex;gap:4px;align-items:center;cursor:pointer}
 .thang-luoi input{accent-color:var(--nhan);width:12px;height:12px}
+/* Mốc năm và mốc tháng chọn độc lập nhau, nên ô tick năm không nói gì về tháng.
+   Nhãn này là chỗ duy nhất cho biết năm đó đang chọn mấy tháng khi lưới đang gập. */
+.dem-thang{margin-left:auto;font-family:ui-monospace,monospace;font-size:.66rem;
+  color:var(--nhan);border:1px solid rgba(255,200,87,.35);border-radius:9px;padding:0 6px}
+.ca-nam{grid-column:1/-1;justify-self:start;margin-top:3px;cursor:pointer;
+  background:none;border:0;padding:0;color:var(--chu-mo);font-size:.68rem;
+  font-family:inherit;text-decoration:underline dotted}
+.ca-nam:hover{color:var(--nhan)}
 .canh-nho{font-size:.72rem;color:var(--chu-mo)}
 
 /* ---------- bảng số liệu ---------- */

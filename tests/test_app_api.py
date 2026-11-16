@@ -22,7 +22,7 @@ def fresh_database(case):
     case.addCleanup(directory.cleanup)
     from app.data import build_indices
     db = Path(directory.name) / 'vngis.db'
-    report = build_indices.build(directory.name, db)
+    report = build_indices.build(directory.name, db, repo_fallback=False)
     os.environ['VNGIS_DB'] = str(db)
     case.addCleanup(os.environ.pop, 'VNGIS_DB', None)
     from fastapi.testclient import TestClient
@@ -38,7 +38,7 @@ class ApiTest(unittest.TestCase):
         cls.directory = tempfile.TemporaryDirectory()
         from app.data import build_indices
         cls.db = Path(cls.directory.name) / 'vngis.db'
-        cls.report = build_indices.build(cls.directory.name, cls.db)
+        cls.report = build_indices.build(cls.directory.name, cls.db, repo_fallback=False)
         os.environ['VNGIS_DB'] = str(cls.db)
         from fastapi.testclient import TestClient
         from app.api.main import app

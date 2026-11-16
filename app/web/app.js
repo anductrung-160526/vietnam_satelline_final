@@ -405,15 +405,20 @@ function cayThoiGian(){
       const th = THANG_VN.map(m =>
         `<label><input type="checkbox" data-thang="${y}-${m}">${m}</label>`).join('');
       hang.push(`<li><div class="nam-hang">${o}<label for="y${y}">${y}</label>`
+        + `<span class="dem-thang" data-dem-thang="${y}"></span>`
         + `<button class="mo-thang" type="button" aria-expanded="false"`
         + ` aria-label="Mở 12 tháng của năm ${y}">▸</button></div>`
-        + `<div class="thang-luoi" hidden>${th}</div></li>`);
+        + `<div class="thang-luoi" hidden>${th}`
+        + `<button type="button" class="ca-nam" data-thang-nam="${y}">cả 12 tháng</button>`
+        + `</div></li>`);
     }else{
       hang.push(`<li><div class="nam-hang">${o}<label for="y${y}">${y}</label></div></li>`);
     }
   }
   return `<p class="canh-nho">Khoảng có sẵn: <b>${NAM_DAU}–${NAM_CUOI}</b> · theo tháng chỉ`
-    + ` từ ${NAM_CO_THANG}. DMSP là ảnh tổng hợp năm, NOAA không phát hành theo tháng.</p>`
+    + ` từ ${NAM_CO_THANG}. DMSP là ảnh tổng hợp năm, NOAA không phát hành theo tháng.<br>`
+    + `Tick vào <b>năm</b> là lấy dòng theo năm; muốn xem theo tháng thì mở mũi tên ▸ và`
+    + ` tick từng tháng. Hai loại dòng này mang những chỉ số khác nhau.</p>`
     + `<p class="nhanh">XEM GẦN ĐÂY ${[5,10,15,20].map(n =>
         `<button type="button" data-gan-day="${n}">${n}</button>`).join('')}</p>`
     + `<ul class="cay" id="cay-thoi-gian">${hang.join('')}</ul>`;
@@ -443,25 +448,17 @@ function dungLoc(hop){
     if(o.dataset.tinh)  o.checked ? chon.tinh.add(o.dataset.tinh)  : chon.tinh.delete(o.dataset.tinh);
     if(o.dataset.chiso) o.checked ? chon.chiSo.add(o.dataset.chiso): chon.chiSo.delete(o.dataset.chiso);
     if(o.dataset.ham)   o.checked ? chon.ham.add(o.dataset.ham)    : chon.ham.delete(o.dataset.ham);
+    /* Mốc năm và mốc tháng là HAI dòng dữ liệu khác nhau, không phải cha–con:
+       dòng năm có month = 0 và mang những chỉ số chỉ tính theo năm (sol_change_pct),
+       dòng tháng mang những chỉ số chỉ tính theo tháng (sol_change_mom_pct, sol_ma3).
+       Vì vậy tick năm KHÔNG kéo theo 12 tháng — làm thế thì chọn một chỉ số theo năm
+       sẽ ra bảng trống toàn dấu gạch. Muốn xem tháng thì mở mũi tên và tick tháng. */
     if(o.dataset.nam){
-      const y = o.dataset.nam;
-      o.checked ? chon.moc.add(y) : chon.moc.delete(y);
-      /* Tick một năm có tháng = tick cả 12 tháng của năm đó, đúng như DataBank. */
-      hop.querySelectorAll(`[data-thang^="${y}-"]`).forEach(t => {
-        t.checked = o.checked;
-        o.checked ? chon.moc.add(t.dataset.thang) : chon.moc.delete(t.dataset.thang);
-      });
-      if(o.checked) hop.querySelectorAll(`[data-thang^="${y}-"]`).forEach(
-        t => chon.moc.delete(y));
+      o.checked ? chon.moc.add(o.dataset.nam) : chon.moc.delete(o.dataset.nam);
     }
     if(o.dataset.thang){
       o.checked ? chon.moc.add(o.dataset.thang) : chon.moc.delete(o.dataset.thang);
-      const y = o.dataset.thang.slice(0,4);
-      chon.moc.delete(y);
-      const con = [...hop.querySelectorAll(`[data-thang^="${y}-"]`)];
-      const nam = hop.querySelector(`[data-nam="${y}"]`);
-      nam.checked = con.every(t => t.checked);
-      nam.indeterminate = !nam.checked && con.some(t => t.checked);
+      danhDauCoThang(hop, o.dataset.thang.slice(0,4));
     }
     capNhatDem(hop); napBang();
   });
@@ -483,10 +480,21 @@ function dungLoc(hop){
       hop.querySelectorAll('[data-thang]').forEach(t => { t.checked = false; });
       hop.querySelectorAll('[data-nam]').forEach(t => {
         const y = Number(t.dataset.nam);
-        t.indeterminate = false;
         t.checked = y > NAM_CUOI - n2;
         if(t.checked) chon.moc.add(t.dataset.nam);
       });
+      hop.querySelectorAll('[data-nam]').forEach(t => danhDauCoThang(hop, t.dataset.nam));
+      capNhatDem(hop); napBang(); return;
+    }
+    if(n.dataset.thangNam){                       // "chọn cả 12 tháng" của một năm
+      const y = n.dataset.thangNam;
+      const con = [...hop.querySelectorAll(`[data-thang^="${y}-"]`)];
+      const bat = !con.every(t => t.checked);
+      con.forEach(t => {
+        t.checked = bat;
+        bat ? chon.moc.add(t.dataset.thang) : chon.moc.delete(t.dataset.thang);
+      });
+      danhDauCoThang(hop, y);
       capNhatDem(hop); napBang(); return;
     }
     const tatCa = n.dataset.tatCa, boHet = n.dataset.boHet;
@@ -516,7 +524,18 @@ function dungLoc(hop){
 function dongBoCay(hop){
   hop.querySelectorAll('[data-nam]').forEach(o => {
     o.checked = chon.moc.has(o.dataset.nam);
+    danhDauCoThang(hop, o.dataset.nam);
   });
+}
+
+/* Ô tick năm không còn phản ánh trạng thái các tháng, nên phải có chỗ khác cho biết
+   năm này đang chọn mấy tháng — nếu không, tháng đã tick rồi gập lại là mất dấu. */
+function danhDauCoThang(hop, nam){
+  const o = hop.querySelector(`[data-dem-thang="${nam}"]`);
+  if(!o) return;
+  const so = [...hop.querySelectorAll(`[data-thang^="${nam}-"]`)].filter(t => t.checked).length;
+  o.textContent = so ? `${so} tháng` : '';
+  o.hidden = !so;
 }
 
 function capNhatDem(hop){
