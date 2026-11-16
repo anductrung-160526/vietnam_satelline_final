@@ -42,8 +42,9 @@ Dặn thêm trong ghi âm:
 5. **Tách "đo cái gì" khỏi "biểu diễn thế nào".** `sol`, `sol_density`, `sol_per_capita`
    không phải ba chỉ số: chúng là **một** chỉ số với ba mẫu số. Bộ lọc vì thế có hai ô
    chọn chứ không phải một danh sách dài dần mãi.
-6. Mọi bảng và tệp tải xuống bắc qua **năm 2010** hoặc **mốc 2013** đều phải mang cảnh báo
-   tương ứng (`store.MOC_2010`, cảnh báo DMSP→VIIRS) **và** cờ `B` trên chính những dòng đó.
+6. Mọi **tệp tải xuống** bắc qua **năm 2010** hoặc **mốc 2013** đều phải mang cảnh báo
+   tương ứng và cờ `B` trên chính những dòng đó. Trên **màn hình** thì không — xem
+   mục 6.7 Lưu ý.
 
 ---
 
@@ -307,9 +308,8 @@ cột lọc                   bảng
 │ ▾ Chỉ số    14 · 1  │  │ An Giang 12.431 38.900 40.112 …  9.902 │
 │ ▾ Thời gian 286 · 8 │  │ Bắc Kạn   —      9.515  9.903 …  2.221 │
 │ ▸ Hàm thời gian     │  │ …                                      │
-│ ⚠ bắc qua 2010      │  └────────────────────────────────────────┘
-│ ⚠ bắc qua 2013      │  [ Tải CSV ]
-└─────────────────────┘
+└─────────────────────┘  └────────────────────────────────────────┘
+                         [ Tải CSV ]
 ```
 
 - Hàng = tỉnh đã tick (mặc định cả 63, xếp A–Z).
@@ -320,8 +320,7 @@ cột lọc                   bảng
   chỉ là **tooltip** khi rê chuột lên ô. Chú giải đầy đủ đi kèm tệp tải xuống trong
   `ghi_chu_phuong_phap.md`.
 - Dưới bảng **chỉ có nút Tải CSV**, không có dòng ghi chú nào.
-- Hai cảnh báo mốc đổi vệ tinh nằm **cuối cột lọc**, cạnh chính cái đang chọn ra khoảng
-  thời gian gây ra chúng. Bảng sạch chữ, nhưng người dùng vẫn không thể bỏ sót chúng.
+- Màn hình **không hiện cảnh báo mốc đổi vệ tinh** — xem mục 6.7.
 - Chọn một tỉnh ở cột lọc → bảng vẫn hiện đủ 63 tỉnh nhưng **tô sáng hàng của tỉnh đó**.
   Cô cần so sánh giữa các tỉnh, lọc còn một hàng là mất mục đích.
 
@@ -399,6 +398,35 @@ Hiện `build_indices` chỉ nạp `ntl_annual`. Cần:
   mang cờ `B`.
 - Chọn chỉ số chỉ có theo năm → nút `Theo tháng` mờ đi, có lời giải thích.
 - Chọn `Tổng SOL` + `Trên đầu người` khi chưa có dân số → ô thứ hai không bày lựa chọn đó.
+
+---
+
+### 6.7. Lưu ý — màn hình không hiện cảnh báo mốc đổi vệ tinh
+
+**Quyết định (16/11/2026, theo yêu cầu của người dùng).** Màn Chỉ số đêm và màn Chỉ số
+kinh tế đêm **không** hiện hai cảnh báo về mốc 2010 và mốc 2013. Bảng chỉ có số; dưới bảng
+chỉ có nút tải.
+
+Cảnh báo đi đâu:
+
+| Nơi | Có cảnh báo? |
+|---|---|
+| Bảng trên màn hình | ❌ không |
+| Tooltip khi rê chuột lên ô có cờ | ✅ có |
+| Cột `obs_status` trong dữ liệu và trong CSV | ✅ có, cờ `B` |
+| `ghi_chu_phuong_phap.md` kèm mọi gói tải xuống | ✅ có, đầy đủ |
+| `/api/panel` trường `canh_bao[]` | ✅ vẫn trả về |
+| `CLAUDE.md` và `docs/THAM_KHAO_FAS_IMF.md` | ✅ có |
+
+**Rủi ro còn lại, ghi ra để sau này không ai ngạc nhiên.** Người mở app, chọn khoảng
+2008–2015 và nhìn bảng sẽ thấy con số năm 2010 gấp ba năm 2009 mà **không có gì trên màn
+hình nói vì sao**. Nếu họ chụp màn hình đưa vào báo cáo thì cảnh báo không đi theo.
+
+Ba lớp bảo vệ còn lại là tooltip, cờ `B` trong CSV, và `ghi_chu_phuong_phap.md`. Cả ba đều
+yêu cầu người dùng chủ động — rê chuột, mở tệp tải về, đọc tài liệu. Không lớp nào chặn
+được việc chụp màn hình.
+
+Nếu về sau có người đọc nhầm con số 2010, đây là chỗ cần xem lại trước tiên.
 
 ---
 
