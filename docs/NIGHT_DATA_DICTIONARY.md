@@ -52,3 +52,27 @@
 | Hiệu chỉnh từ thống kê | `sol_density_cal` | — | Mật độ sau hiệu chỉnh bằng `sol_cal / area_km2`; module tính lại hiện chưa tính cột này. | Processed |
 | Hiệu chỉnh từ thống kê | `sol_change_cal_pct` | — | Biến động SOL năm trên chuỗi đã hiệu chỉnh DMSP–VIIRS; không khắc phục mốc đổi DMSP F16–F18 năm 2010. Module tính lại hiện chưa tính cột này. | Processed |
 | Hiệu chỉnh từ thống kê | `calibration` | — | Tên hoặc trạng thái hiệu chỉnh; module tính lại hiện ghi `PENDING`. | Processed |
+
+## Night Economy
+
+| Nhóm | Trường dữ liệu | Tên trong Task 3 | Ý nghĩa | Note |
+|---|---|---|---|---|
+| Định danh | `province_code` | — | Mã thống kê tỉnh trước sáp nhập, dùng ghép bảng ánh sáng và bảng kinh tế. | Raw |
+| Định danh | `province_name` | `NAME_1` | Tên tỉnh, thành phố. | Raw |
+| Thời gian | `year` | `YEAR` | Năm của số liệu ánh sáng và kinh tế được ghép. | Raw |
+| Đầu vào kinh tế | `population` | — | Dân số của địa bàn trong năm, đơn vị người; lấy từ số liệu thống kê cung cấp riêng, không trích từ ảnh. | Raw |
+| Đầu vào kinh tế | `gdp` | — | GDP theo tên trường trong tài liệu nguồn; ở cấp tỉnh dùng GRDP. Cần xác định đơn vị tiền tệ, quy mô đơn vị và năm giá so sánh của bộ số liệu. | Raw |
+| Đầu vào kinh tế | `grdp` | — | Tổng sản phẩm trên địa bàn tỉnh; tên trường hiện tại trong app, ưu tiên dùng khi có cả `grdp` và `gdp`. | Raw |
+| Đầu vào kinh tế | `grdp_price_basis` | — | Cơ sở giá của GRDP: `so_sanh` hoặc `hien_hanh`; phân tích tăng trưởng trong tài liệu yêu cầu giá so sánh. | Raw |
+| Nguồn | `source` | — | Nguồn cung cấp số liệu kinh tế, khác nguồn ảnh trong bảng chỉ số đêm. | Raw |
+| Đầu vào ánh sáng đã tính | `sol` | — | Tổng ánh sáng sau loại nền, lấy từ bảng chỉ số đêm; dùng cùng một thang đo khi so sánh giữa các tỉnh hoặc năm. | Processed |
+| Đầu vào ánh sáng đã tính | `sol_cal` | — | Tổng ánh sáng đã quy DMSP sang thang VIIRS; dùng cho các công thức ghép kinh tế trong tài liệu nguồn. Không xử lý đứt gãy DMSP năm 2010. | Processed |
+| Đầu vào ánh sáng đã tính | `lit_sol` | `LIT_POP_PROXY` | Tổng bức xạ trên vùng đạt ngưỡng sáng, dùng tính cường độ vùng sáng. | Processed |
+| Đầu vào ánh sáng đã tính | `lit_area_km2` | — | Diện tích vùng đạt ngưỡng sáng, đơn vị km²; dùng làm mẫu số khi tính cường độ vùng sáng. | Processed |
+| Chỉ số cốt lõi — đề xuất | `sol_bq_dau_nguoi` | — | Ánh sáng bình quân đầu người theo tài liệu: `sol_cal / population`, đơn vị bức xạ/người; dùng làm biến đại diện mức sống. App hiện có trường `sol_per_capita = sol / population`, dùng SOL gốc trong giai đoạn VIIRS. | Processed |
+| Chỉ số cốt lõi — đề xuất | `do_co_gian_sol_gdp` | — | Tỷ số phần trăm thay đổi ánh sáng trên phần trăm thay đổi GDP/GRDP: `%Δ sol_cal / %Δ gdp`, không thứ nguyên; không xác định nếu tăng trưởng GDP bằng 0. Đây là công thức trong tài liệu, khác chiều với β của mô hình app `ln(GRDP) = α + β·ln(SOL)`. | Processed |
+| Chỉ số cốt lõi — đề xuất | `gdp_du_bao_tu_anh` | — | GDP/GRDP dự báo từ hồi quy `ln(gdp) ~ ln(sol_cal)` trên dữ liệu tỉnh; đầu ra cùng đơn vị tiền tệ và cơ sở giá với GDP/GRDP dùng để khớp mô hình. | Processed |
+| Chỉ số bổ sung — đề xuất | `chenh_lech_gdp_anh` | — | Chênh lệch tương đối giữa GDP/GRDP thống kê và dự báo: `(gdp − gdp_du_bao_tu_anh) / gdp_du_bao_tu_anh × 100`, đơn vị %; không xác định khi giá trị dự báo bằng 0. | Processed |
+| Chỉ số bổ sung — đề xuất | `sol_tren_gdp` | — | Cường độ ánh sáng trên một đơn vị GDP/GRDP: `sol_cal / gdp`; đơn vị bức xạ trên đơn vị tiền tệ được quy định trong dữ liệu kinh tế. | Processed |
+| Chỉ số bổ sung — đề xuất | `cuong_do_vung_sang` | — | Cường độ bức xạ tại vùng sáng: `lit_sol / lit_area_km2`, đơn vị bức xạ/km²; không xác định khi diện tích sáng bằng 0. | Processed |
+| Chỉ số bổ sung — đề xuất | `ty_trong_sol_quoc_gia` | — | Tỷ trọng ánh sáng tỉnh: `sol tỉnh / tổng sol cả nước × 100`, đơn vị %; tổng cả nước phải cùng mốc thời gian, cùng thang đo và đủ phạm vi tỉnh. | Processed |
