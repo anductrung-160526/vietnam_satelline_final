@@ -1,78 +1,53 @@
 # Night Data Dictionary
 
+## 1. Night Data — Task 3
+
 | Nhóm | Trường dữ liệu | Tên trong Task 3 | Ý nghĩa | Note |
 |---|---|---|---|---|
-| Băng ảnh đầu vào | `avg_rad` | `avg_rad` | Bức xạ ánh sáng đêm tại từng pixel của sản phẩm VIIRS tháng, đơn vị nW/cm²/sr; sản phẩm đã được tổng hợp tháng, không phải tín hiệu thô của cảm biến. | Raw |
+| Băng ảnh đầu vào | `avg_rad` | `avg_rad` | Bức xạ ánh sáng đêm tại từng pixel của sản phẩm VIIRS tháng, đơn vị nW/cm²/sr. Đây là đầu vào của Task 3, đã được nhà cung cấp tổng hợp tháng. | Raw |
 | Băng ảnh đầu vào | `cf_cvg` | `cf_cvg` | Số lượt quan sát sạch mây tại từng pixel của sản phẩm VIIRS tháng, đơn vị lượt. | Raw |
-| Băng ảnh đầu vào | `stable_lights` | — | Giá trị ánh sáng đêm DMSP theo năm, thang DN 0–63; có trong dự án, không dùng trong Task 3. | Raw |
-| Định danh | `province_code` | — | Mã thống kê của tỉnh trước sáp nhập trong app; khác hệ mã GADM `GID_1`. | Raw |
-| Định danh | `province_name` | `NAME_1` | Tên tỉnh, thành phố. | Raw |
-| Định danh | `GID_1` | `GID_1` | Mã tỉnh theo GADM; Task 3 xuất trường này, app dùng `province_code`. | Raw |
-| Định danh | `GID_3` | `GID_3` | Mã xã theo GADM trong Task 3; bộ chỉ số hiện tại của app ở cấp tỉnh. | Raw |
-| Định danh | `NAME_3` | `NAME_3` | Tên xã, phường được chọn trong Task 3. | Raw |
-| Thời gian | `year` | `YEAR` | Năm của quan sát. | Raw |
-| Thời gian | `month` | `MONTH` | Tháng của quan sát; app dùng 0 cho dòng theo năm. | Raw |
-| Thời gian | `period` | `TIME` | Mốc thời gian dạng YYYY-MM với dòng tháng, YYYY với dòng năm. | Processed |
-| Thời gian | `frequency` | — | Tần suất của dòng dữ liệu: `annual` hoặc `monthly`. | Processed |
-| Nguồn | `source` | — | Nguồn ảnh DMSP hoặc VIIRS đối với bảng chỉ số đêm. | Raw |
-| Đầu vào tính toán | `path` | — | Đường dẫn ảnh đã lọc theo tỉnh trong danh sách ảnh đầu vào; không phải chỉ số trích từ pixel. | Raw |
-| Tham số xử lý | `background_threshold` | — | Ngưỡng loại nền khỏi tổng SOL: VIIRS 0,5 nW/cm²/sr, DMSP 0 DN. | Raw |
-| Tham số xử lý | `lit_threshold` | Hằng số `1.5` | Ngưỡng xác định pixel sáng: VIIRS 1,5 nW/cm²/sr; DMSP 5 DN trong dự án. | Raw |
-| Tính từ ranh giới | `area_km2` | — | Diện tích tự nhiên tỉnh tính từ ranh giới GADM 4.1 trong EPSG:6933, đơn vị km²; không phải diện tích pixel có dữ liệu. | Processed |
-| Tính từ ranh giới | `COMMUNE_AREA_HA` | `COMMUNE_AREA_HA` | Diện tích tự nhiên xã trong Task 3, tính từ hình học GEE và đổi sang ha; không phải diện tích tỉnh `area_km2`. | Processed |
-| Thống kê từ ảnh | `valid_pixels` | Biến `total_pixels`, từ `avg_rad_count` | Số pixel có dữ liệu hợp lệ trong địa bàn; Task 3 dùng làm mẫu số nhưng không xuất thành cột CSV. | Processed |
-| Thống kê từ ảnh | `sol_raw` | `TNL`, từ `avg_rad_sum` | Tổng bức xạ pixel hợp lệ trước bước loại nền của module tính chỉ số. Task 3 cộng trực tiếp `avg_rad`; số có thể khác app nếu ảnh đầu vào đã qua các bước lọc khác nhau. | Processed |
-| Thống kê từ ảnh | `sol` | — | Tổng bức xạ pixel hợp lệ sau loại nền: pixel dưới `background_threshold` đóng góp 0; không lấy bức xạ từng pixel trừ đi ngưỡng. Đơn vị nW/cm²/sr với VIIRS, DN với DMSP. | Processed |
-| Thống kê từ ảnh | `background_pixels` | — | Số pixel hợp lệ dưới ngưỡng nền. | Processed |
-| Thống kê từ ảnh | `rad_mean` | `MEAN_RAD`, từ `avg_rad_mean` | Bức xạ trung bình trên pixel hợp lệ; có tính pixel dưới ngưỡng nền. | Processed |
-| Thống kê từ ảnh | `rad_std` | `STD_RAD`, từ `avg_rad_stdDev` | Độ lệch chuẩn bức xạ trên pixel hợp lệ, cùng đơn vị với bức xạ; module hiện tại tính độ lệch chuẩn tổng thể. | Processed |
-| Thống kê từ ảnh | `rad_min` | `MIN_RAD`, từ `avg_rad_min` | Giá trị bức xạ nhỏ nhất trên pixel hợp lệ. | Processed |
-| Thống kê từ ảnh | `rad_max` | `MAX_RAD`, từ `avg_rad_max` | Giá trị bức xạ lớn nhất trên pixel hợp lệ. | Processed |
-| Thống kê từ ảnh | `cloud_free_obs` | `CLOUD_FREE_OBS` | Trung bình số lượt quan sát sạch mây trong địa bàn. Task 3 tính từ băng `cf_cvg`; module hiện tại đọc thẻ `CF_CVG_MEAN` trên ảnh đã lọc, thiếu thẻ thì để trống. | Processed |
-| Xử lý theo ngưỡng | `is_lit` | Lớp trung gian `is_lit` | Mặt nạ pixel sáng khi `avg_rad ≥ 1,5` trong Task 3; không được xuất thành cột CSV. | Processed |
-| Xử lý theo ngưỡng | `lit_rad` | Lớp trung gian `lit_rad` | Bức xạ chỉ giữ tại pixel đạt ngưỡng sáng trong Task 3; không được xuất thành cột CSV. | Processed |
-| Xử lý theo ngưỡng | `lit_pixels` | `LIT_PIXELS` | Số pixel hợp lệ đạt ngưỡng sáng. | Processed |
-| Xử lý theo ngưỡng | `lit_sol` | `LIT_POP_PROXY` | Tổng bức xạ trên các pixel đạt ngưỡng sáng; tên proxy trong Task 3 không có nghĩa là số dân được đo trực tiếp. | Processed |
-| Tính toán từ thống kê | `rad_cv` | `SPATIAL_CV` | Hệ số biến thiên không gian bằng `rad_std / rad_mean`, không thứ nguyên; app để trống nếu trung bình không dương, Task 3 đặt 0. | Processed |
-| Tính toán từ thống kê | `sol_density` | — | Mật độ ánh sáng bằng `sol / area_km2`, đơn vị bức xạ trên km². | Processed |
-| Tính toán từ thống kê | `lit_area_km2` | — | Diện tích các pixel đạt ngưỡng sáng trong module hiện tại, tính theo lưới ảnh và hệ tọa độ, đơn vị km². | Processed |
-| Tính toán từ thống kê | `LIT_AREA_HA` | `LIT_AREA_HA` | Diện tích sáng xấp xỉ trong Task 3 bằng `LIT_PIXELS × 25 ha`; không đồng nhất với cách tính theo lưới ảnh của `lit_area_km2`. | Processed |
-| Tính toán từ thống kê | `lit_area_pct` | — | Tỷ lệ diện tích sáng bằng `lit_area_km2 / area_km2 × 100`, đơn vị %. | Processed |
-| Tính toán từ thống kê | `lit_pixel_pct` | `ELECTRIFICATION_RATIO_PCT` | Tỷ lệ pixel sáng bằng `lit_pixels / valid_pixels × 100`, đơn vị %; không phải tỷ lệ hộ dân được tiếp cận điện được đo trực tiếp. | Processed |
-| Tính toán theo thời gian | `sol_change_pct` | — | Biến động SOL so với năm liền trước, đơn vị %; chỉ tính khi hai năm có dữ liệu và cùng nguồn ảnh, để trống tại mốc DMSP–VIIRS 2014. | Processed |
-| Tính toán theo thời gian | `sol_change_yoy_pct` | — | Biến động SOL tháng so với cùng tháng năm trước, đơn vị %. | Processed |
-| Tính toán theo thời gian | `sol_change_mom_pct` | `TNL_MOM_GROWTH_PCT` | Biến động tháng so với tháng trước, đơn vị %. App yêu cầu hai tháng lịch liền nhau; Task 3 dùng `pct_change()` trên các dòng có dữ liệu nên có thể so qua tháng bị thiếu. | Processed |
-| Tính toán theo thời gian | `sol_ma3` | `TNL_MA3` | Trung bình trượt SOL trong ba tháng lịch của module hiện tại, dùng các giá trị có số trong cửa sổ. Task 3 lấy trung bình tối đa ba dòng gần nhất của TNL, có thể vượt khoảng ba tháng lịch nếu thiếu tháng. | Processed |
-| Xử lý chất lượng | `status` | — | Trạng thái xử lý dữ liệu; module tính lại trả `OK` khi có pixel hợp lệ, `INSUFFICIENT_QUALITY` khi ảnh không có pixel hợp lệ. | Processed |
-| Xử lý chất lượng | `obs_status` | — | Cờ quan sát: A bình thường, B mốc đổi vệ tinh của chuỗi năm, L có ảnh nhưng không có pixel hợp lệ, U ít lượt sạch mây; bảng pipeline còn dùng O khi thiếu ảnh. | Processed |
-| Xử lý chất lượng | `note` | — | Ghi chú về mốc đổi nguồn ảnh, như DMSP sang VIIRS. | Processed |
-| Dữ liệu cho hiệu chỉnh | `sol_dmsp` | — | Tổng SOL DMSP năm 2013 của địa bàn, dùng lập cặp chồng lấn để khớp mô hình hiệu chỉnh. | Processed |
-| Dữ liệu cho hiệu chỉnh | `sol_viirs` | — | Tổng SOL VIIRS năm 2013 của cùng địa bàn, dùng lập cặp với `sol_dmsp`. | Processed |
-| Hiệu chỉnh từ thống kê | `sol_cal` | — | SOL sau khi quy DMSP sang thang VIIRS; VIIRS giữ nguyên. Module tính lại hiện chưa tính cột này. | Processed |
-| Hiệu chỉnh từ thống kê | `sol_density_cal` | — | Mật độ sau hiệu chỉnh bằng `sol_cal / area_km2`; module tính lại hiện chưa tính cột này. | Processed |
-| Hiệu chỉnh từ thống kê | `sol_change_cal_pct` | — | Biến động SOL năm trên chuỗi đã hiệu chỉnh DMSP–VIIRS; không khắc phục mốc đổi DMSP F16–F18 năm 2010. Module tính lại hiện chưa tính cột này. | Processed |
-| Hiệu chỉnh từ thống kê | `calibration` | — | Tên hoặc trạng thái hiệu chỉnh; module tính lại hiện ghi `PENDING`. | Processed |
+| Định danh | `GID_1` | `GID_1` | Mã tỉnh theo GADM. | Raw |
+| Định danh | `NAME_1` | `NAME_1` | Tên tỉnh, thành phố. | Raw |
+| Định danh | `GID_3` | `GID_3` | Mã xã, phường theo GADM. | Raw |
+| Định danh | `NAME_3` | `NAME_3` | Tên xã, phường được chọn để trích xuất dữ liệu. | Raw |
+| Thời gian | `YEAR` | `YEAR` | Năm của quan sát. | Raw |
+| Thời gian | `MONTH` | `MONTH` | Tháng của quan sát, từ 1 đến 12. | Raw |
+| Thời gian | `TIME` | `TIME` | Mốc thời gian được ghép từ năm và tháng, dạng YYYY-MM. | Processed |
+| Tính từ ranh giới | `COMMUNE_AREA_HA` | `COMMUNE_AREA_HA` | Diện tích tự nhiên xã tính từ hình học ranh giới trên GEE, đơn vị ha. | Processed |
+| Thống kê từ ảnh | `total_pixels` | Biến `total_pixels`, từ `avg_rad_count` | Số pixel có dữ liệu trong địa bàn; biến trung gian dùng tính tỷ lệ pixel sáng, không xuất thành cột CSV. | Processed |
+| Thống kê từ ảnh | `TNL` | `TNL` | Tổng bức xạ `avg_rad` trong địa bàn; Task 3 không áp dụng ngưỡng loại nền riêng cho tổng này. | Processed |
+| Thống kê từ ảnh | `MEAN_RAD` | `MEAN_RAD` | Bức xạ trung bình trên các pixel có dữ liệu trong địa bàn, đơn vị nW/cm²/sr. | Processed |
+| Thống kê từ ảnh | `STD_RAD` | `STD_RAD` | Độ lệch chuẩn bức xạ trong địa bàn, đơn vị nW/cm²/sr. | Processed |
+| Thống kê từ ảnh | `MIN_RAD` | `MIN_RAD` | Bức xạ nhỏ nhất trong địa bàn, đơn vị nW/cm²/sr. | Processed |
+| Thống kê từ ảnh | `MAX_RAD` | `MAX_RAD` | Bức xạ lớn nhất trong địa bàn, đơn vị nW/cm²/sr. | Processed |
+| Thống kê từ ảnh | `CLOUD_FREE_OBS` | `CLOUD_FREE_OBS` | Trung bình băng `cf_cvg` trên địa bàn, đơn vị lượt quan sát sạch mây. | Processed |
+| Xử lý theo ngưỡng | `is_lit` | Lớp trung gian `is_lit` | Mặt nạ pixel sáng khi `avg_rad ≥ 1,5 nW/cm²/sr`; không xuất thành cột CSV. | Processed |
+| Xử lý theo ngưỡng | `lit_rad` | Lớp trung gian `lit_rad` | Bức xạ chỉ giữ ở pixel đạt ngưỡng sáng; không xuất thành cột CSV. | Processed |
+| Xử lý theo ngưỡng | `LIT_PIXELS` | `LIT_PIXELS` | Số pixel đạt ngưỡng sáng 1,5 nW/cm²/sr. | Processed |
+| Xử lý theo ngưỡng | `LIT_POP_PROXY` | `LIT_POP_PROXY` | Tổng bức xạ trên các pixel đạt ngưỡng sáng; là biến đại diện, không phải số dân đo trực tiếp. | Processed |
+| Tính toán từ thống kê | `SPATIAL_CV` | `SPATIAL_CV` | Hệ số biến thiên không gian bằng `STD_RAD / MEAN_RAD`, không thứ nguyên; Task 3 đặt 0 nếu bức xạ trung bình không dương. | Processed |
+| Tính toán từ thống kê | `LIT_AREA_HA` | `LIT_AREA_HA` | Diện tích sáng xấp xỉ bằng `LIT_PIXELS × 25 ha`, theo giả định pixel 500 m × 500 m. | Processed |
+| Tính toán từ thống kê | `ELECTRIFICATION_RATIO_PCT` | `ELECTRIFICATION_RATIO_PCT` | Tỷ lệ pixel sáng bằng `LIT_PIXELS / total_pixels × 100`, đơn vị %; không phải tỷ lệ hộ dân tiếp cận điện đo trực tiếp. | Processed |
+| Tính toán theo thời gian | `TNL_MA3` | `TNL_MA3` | Trung bình trượt tối đa ba dòng TNL gần nhất, tối thiểu một dòng; có thể vượt ba tháng lịch khi thiếu tháng. | Processed |
+| Tính toán theo thời gian | `TNL_MOM_GROWTH_PCT` | `TNL_MOM_GROWTH_PCT` | Phần trăm thay đổi TNL so với dòng quan sát trước, tính bằng `pct_change() × 100`; có thể so qua tháng bị thiếu. | Processed |
 
-## Night Economy
+## 2. Night Economy — CHI_SO_KINH_TE_DEM
 
 | Nhóm | Trường dữ liệu | Tên trong Task 3 | Ý nghĩa | Note |
 |---|---|---|---|---|
-| Định danh | `province_code` | — | Mã thống kê tỉnh trước sáp nhập, dùng ghép bảng ánh sáng và bảng kinh tế. | Raw |
-| Định danh | `province_name` | `NAME_1` | Tên tỉnh, thành phố. | Raw |
-| Thời gian | `year` | `YEAR` | Năm của số liệu ánh sáng và kinh tế được ghép. | Raw |
-| Đầu vào kinh tế | `population` | — | Dân số của địa bàn trong năm, đơn vị người; lấy từ số liệu thống kê cung cấp riêng, không trích từ ảnh. | Raw |
-| Đầu vào kinh tế | `gdp` | — | GDP theo tên trường trong tài liệu nguồn; ở cấp tỉnh dùng GRDP. Cần xác định đơn vị tiền tệ, quy mô đơn vị và năm giá so sánh của bộ số liệu. | Raw |
-| Đầu vào kinh tế | `grdp` | — | Tổng sản phẩm trên địa bàn tỉnh; tên trường hiện tại trong app, ưu tiên dùng khi có cả `grdp` và `gdp`. | Raw |
-| Đầu vào kinh tế | `grdp_price_basis` | — | Cơ sở giá của GRDP: `so_sanh` hoặc `hien_hanh`; phân tích tăng trưởng trong tài liệu yêu cầu giá so sánh. | Raw |
-| Nguồn | `source` | — | Nguồn cung cấp số liệu kinh tế, khác nguồn ảnh trong bảng chỉ số đêm. | Raw |
-| Đầu vào ánh sáng đã tính | `sol` | — | Tổng ánh sáng sau loại nền, lấy từ bảng chỉ số đêm; dùng cùng một thang đo khi so sánh giữa các tỉnh hoặc năm. | Processed |
-| Đầu vào ánh sáng đã tính | `sol_cal` | — | Tổng ánh sáng đã quy DMSP sang thang VIIRS; dùng cho các công thức ghép kinh tế trong tài liệu nguồn. Không xử lý đứt gãy DMSP năm 2010. | Processed |
-| Đầu vào ánh sáng đã tính | `lit_sol` | `LIT_POP_PROXY` | Tổng bức xạ trên vùng đạt ngưỡng sáng, dùng tính cường độ vùng sáng. | Processed |
-| Đầu vào ánh sáng đã tính | `lit_area_km2` | — | Diện tích vùng đạt ngưỡng sáng, đơn vị km²; dùng làm mẫu số khi tính cường độ vùng sáng. | Processed |
-| Chỉ số cốt lõi — đề xuất | `sol_bq_dau_nguoi` | — | Ánh sáng bình quân đầu người theo tài liệu: `sol_cal / population`, đơn vị bức xạ/người; dùng làm biến đại diện mức sống. App hiện có trường `sol_per_capita = sol / population`, dùng SOL gốc trong giai đoạn VIIRS. | Processed |
-| Chỉ số cốt lõi — đề xuất | `do_co_gian_sol_gdp` | — | Tỷ số phần trăm thay đổi ánh sáng trên phần trăm thay đổi GDP/GRDP: `%Δ sol_cal / %Δ gdp`, không thứ nguyên; không xác định nếu tăng trưởng GDP bằng 0. Đây là công thức trong tài liệu, khác chiều với β của mô hình app `ln(GRDP) = α + β·ln(SOL)`. | Processed |
-| Chỉ số cốt lõi — đề xuất | `gdp_du_bao_tu_anh` | — | GDP/GRDP dự báo từ hồi quy `ln(gdp) ~ ln(sol_cal)` trên dữ liệu tỉnh; đầu ra cùng đơn vị tiền tệ và cơ sở giá với GDP/GRDP dùng để khớp mô hình. | Processed |
-| Chỉ số bổ sung — đề xuất | `chenh_lech_gdp_anh` | — | Chênh lệch tương đối giữa GDP/GRDP thống kê và dự báo: `(gdp − gdp_du_bao_tu_anh) / gdp_du_bao_tu_anh × 100`, đơn vị %; không xác định khi giá trị dự báo bằng 0. | Processed |
-| Chỉ số bổ sung — đề xuất | `sol_tren_gdp` | — | Cường độ ánh sáng trên một đơn vị GDP/GRDP: `sol_cal / gdp`; đơn vị bức xạ trên đơn vị tiền tệ được quy định trong dữ liệu kinh tế. | Processed |
-| Chỉ số bổ sung — đề xuất | `cuong_do_vung_sang` | — | Cường độ bức xạ tại vùng sáng: `lit_sol / lit_area_km2`, đơn vị bức xạ/km²; không xác định khi diện tích sáng bằng 0. | Processed |
-| Chỉ số bổ sung — đề xuất | `ty_trong_sol_quoc_gia` | — | Tỷ trọng ánh sáng tỉnh: `sol tỉnh / tổng sol cả nước × 100`, đơn vị %; tổng cả nước phải cùng mốc thời gian, cùng thang đo và đủ phạm vi tỉnh. | Processed |
+| Đầu vào kinh tế | `population` | — | Dân số của địa bàn trong năm, đơn vị người; lấy từ số liệu thống kê cung cấp riêng. | Raw |
+| Đầu vào kinh tế | `gdp` | — | GDP theo tên trường trong tài liệu nguồn; ở cấp tỉnh dùng GRDP, thống nhất đơn vị tiền tệ và giá so sánh khi phân tích tăng trưởng. | Raw |
+| Chỉ số ánh sáng | `sol` | — | Quy mô ánh sáng sau loại nền: tổng bức xạ pixel hợp lệ, pixel dưới ngưỡng nền đóng góp 0. Khác TNL của Task 3 vì có bước loại nền; ngưỡng VIIRS 0,5 nW/cm²/sr, DMSP 0 DN. | Processed |
+| Chỉ số ánh sáng | `sol_density` | — | Mật độ ánh sáng bằng `sol / diện tích tự nhiên địa bàn (km²)`, đơn vị bức xạ/km². | Processed |
+| Chỉ số ánh sáng | `sol_change_pct` | — | Phần trăm thay đổi SOL so với năm liền trước, chỉ so trong cùng nguồn ảnh; khác biến động tháng `TNL_MOM_GROWTH_PCT` ở bảng 1. | Processed |
+| Hiệu chỉnh liên vệ tinh | `sol_cal` | — | SOL sau khi quy DMSP sang thang VIIRS bằng mô hình khớp trên năm chồng lấn 2013; VIIRS giữ nguyên. Không sửa mốc đổi DMSP F16–F18 năm 2010. | Processed |
+| Hiệu chỉnh liên vệ tinh | `sol_density_cal` | — | Mật độ ánh sáng sau hiệu chỉnh bằng `sol_cal / diện tích tự nhiên địa bàn (km²)`. | Processed |
+| Hiệu chỉnh liên vệ tinh | `sol_change_cal_pct` | — | Phần trăm thay đổi SOL năm trên chuỗi đã hiệu chỉnh DMSP–VIIRS, bao gồm mốc 2013–2014; không khắc phục đứt gãy năm 2010. | Processed |
+| Chỉ số vùng sáng | `lit_area_pct` | — | Tỷ lệ diện tích sáng trên diện tích tự nhiên địa bàn, đơn vị %. Khác `ELECTRIFICATION_RATIO_PCT` ở bảng 1 vì mẫu số là diện tích tự nhiên, không phải số pixel có dữ liệu. | Processed |
+| Chỉ số cốt lõi — đề xuất | `sol_bq_dau_nguoi` | — | Ánh sáng bình quân đầu người bằng `sol_cal / population`, đơn vị bức xạ/người; biến đại diện mức sống. | Processed |
+| Chỉ số cốt lõi — đề xuất | `do_co_gian_sol_gdp` | — | Tỷ số phần trăm thay đổi ánh sáng trên phần trăm thay đổi GDP/GRDP: `%Δ sol_cal / %Δ gdp`, không thứ nguyên; không xác định khi tăng trưởng GDP bằng 0. | Processed |
+| Chỉ số cốt lõi — đề xuất | `gdp_du_bao_tu_anh` | — | GDP/GRDP dự báo từ hồi quy `ln(gdp) ~ ln(sol_cal)` trên dữ liệu tỉnh; cùng đơn vị tiền tệ và cơ sở giá với dữ liệu dùng khớp mô hình. | Processed |
+| Chỉ số bổ sung — đề xuất | `chenh_lech_gdp_anh` | — | Chênh lệch tương đối giữa GDP/GRDP thống kê và dự báo: `(gdp − gdp_du_bao_tu_anh) / gdp_du_bao_tu_anh × 100`, đơn vị %. | Processed |
+| Chỉ số bổ sung — đề xuất | `sol_tren_gdp` | — | Cường độ ánh sáng trên một đơn vị GDP/GRDP bằng `sol_cal / gdp`, đơn vị bức xạ trên đơn vị tiền tệ của dữ liệu kinh tế. | Processed |
+| Chỉ số bổ sung — đề xuất | `cuong_do_vung_sang` | — | Tổng bức xạ vùng sáng chia diện tích vùng sáng theo km²; tài liệu dùng `lit_sol / lit_area_km2`. Task 3 cung cấp đại lượng tương ứng qua `LIT_POP_PROXY` và `LIT_AREA_HA` (đổi ha sang km² trước khi chia). | Processed |
+| Chỉ số bổ sung — đề xuất | `ty_trong_sol_quoc_gia` | — | Tỷ trọng ánh sáng tỉnh bằng `sol tỉnh / tổng sol cả nước × 100`, đơn vị %; các giá trị phải cùng mốc thời gian, cùng thang đo và đủ phạm vi tỉnh. | Processed |
