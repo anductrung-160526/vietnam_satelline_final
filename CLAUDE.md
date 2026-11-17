@@ -1,10 +1,12 @@
 # Quy tắc dự án (bắt buộc, áp dụng cho mọi phiên làm việc)
 
-> **Nhánh `night-app` — chỉ chứa ứng dụng.** Luồng tải ảnh và mã tính chỉ số nằm ở
-> nhánh `inspriring-newton`. Mọi quy tắc dưới đây về cách TẠO ra số liệu (nguồn ảnh,
+> **Nhánh `night-app` — ứng dụng và tính lại chỉ số từ ảnh tỉnh đã lọc.**
+> Theo yêu cầu bổ sung, `backend/data/calculate_ntl.py` tính CSV khi chạy tay;
+> API vẫn chỉ đọc. Xem `docs/TINH_LAI_CHI_SO_DEM.md`. Luồng tải ảnh và bộ xử lý
+> đầy đủ vẫn nằm ở nhánh `inspriring-newton`. Mọi quy tắc dưới đây về cách TẠO ra số liệu (nguồn ảnh,
 > ngưỡng, hiệu chỉnh, mười luồng Earth Engine) vẫn là hợp đồng mà bảng số liệu phải
-> tuân theo, nhưng mã thực hiện chúng không còn trên nhánh này. Ở đây chúng là mô tả
-> dữ liệu mà app đọc, không phải việc phải làm.
+> tuân theo. Module tính lại chỉ nhận ảnh tỉnh đã lọc, không thực hiện tải ảnh
+> hoặc thay thế toàn bộ pipeline.
 >
 > Phạm vi dự án đã thu lại **chỉ còn kinh tế đêm** (16/11/2026). Các mục về ảnh ngày
 > (Landsat, Sentinel-2), lớp phủ và chỉ số ngày bên dưới **chưa sửa theo phạm vi mới**

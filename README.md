@@ -3,9 +3,10 @@
 Nguyên mẫu web đọc chỉ số ánh sáng ban đêm của **63 tỉnh Việt Nam trước sáp nhập,
 2004–2025**, và ước lượng hệ số co giãn ánh sáng–GRDP.
 
-Nhánh `night-app` **chỉ chứa ứng dụng**. Luồng tải ảnh từ Earth Engine, mã tính chỉ
-số và các công cụ chẩn đoán dữ liệu nằm ở nhánh `inspriring-newton`; nhánh này đọc
-kết quả của chúng chứ không chạy chúng. Xem mục "Nhánh này đã bỏ gì" ở cuối.
+Nhánh `night-app` chứa ứng dụng và bước tính lại chỉ số từ ảnh tỉnh đã lọc.
+Xem `docs/TINH_LAI_CHI_SO_DEM.md` và `backend/data/calculate_ntl.py`.
+Luồng tải ảnh từ Earth Engine, bộ xử lý đầy đủ và công cụ chẩn đoán dữ liệu
+vẫn nằm ở nhánh `inspriring-newton`. Xem mục "Nhánh này đã bỏ gì" ở cuối.
 
 ## Cấu trúc
 
@@ -20,6 +21,7 @@ backend/                  Python — không có tệp nào phục vụ trình du
 │   ├── nguon.py          tên hai gói dữ liệu trên ổ dữ liệu
 │   └── ranh_gioi/        dựng ranh giới 63 tỉnh từ GADM 4.1
 └── data/                 các bước chuẩn bị dữ liệu, chạy tay rồi mới chạy app
+    ├── calculate_ntl.py      ảnh tỉnh đã lọc -> CSV chỉ số đêm
     ├── build_indices.py      CSV  -> SQLite
     ├── build_boundaries.py   GADM -> provinces.geojson
     ├── build_cogs.py         ảnh năm  -> COG cho bản đồ
@@ -100,8 +102,8 @@ phải kết quả nghiên cứu**.
 
 ## Nguyên tắc: đây là lớp chỉ đọc
 
-API **không tính chỉ số**. Mọi con số do nhánh pipeline tính và ghi ra
-`data_processed/*.csv`. `backend/core/chi_so.py` chỉ giữ các công thức mà màn hình
+API **không tính chỉ số**. Số liệu do nhánh pipeline hoặc bước chạy tay
+`backend.data.calculate_ntl` tính và ghi ra `data_processed/*.csv`. `backend/core/chi_so.py` chỉ giữ các công thức mà màn hình
 gọi trực tiếp (β, hàm thời gian) và CODEBOOK.
 
 Đổi công thức ở đây mà không đổi ở nhánh pipeline thì cột trong bảng và con số trên
