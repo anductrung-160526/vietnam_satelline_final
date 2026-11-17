@@ -4,7 +4,7 @@ Nguyên mẫu web đọc chỉ số ánh sáng ban đêm của **63 tỉnh Việ
 2004–2025**, và ước lượng hệ số co giãn ánh sáng–GRDP.
 
 Nhánh `night-app` chứa ứng dụng và bước tính lại chỉ số từ ảnh tỉnh đã lọc.
-Xem `docs/TINH_LAI_CHI_SO_DEM.md` và `backend/data/calculate_ntl.py`.
+Xem `docs/NIGHT_DATA_DICTIONARY.md` và `backend/data/calculate_ntl.py`.
 Luồng tải ảnh từ Earth Engine, bộ xử lý đầy đủ và công cụ chẩn đoán dữ liệu
 vẫn nằm ở nhánh `inspriring-newton`. Xem mục "Nhánh này đã bỏ gì" ở cuối.
 

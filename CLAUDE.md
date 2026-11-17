@@ -2,7 +2,7 @@
 
 > **Nhánh `night-app` — ứng dụng và tính lại chỉ số từ ảnh tỉnh đã lọc.**
 > Theo yêu cầu bổ sung, `backend/data/calculate_ntl.py` tính CSV khi chạy tay;
-> API vẫn chỉ đọc. Xem `docs/TINH_LAI_CHI_SO_DEM.md`. Luồng tải ảnh và bộ xử lý
+> API vẫn chỉ đọc. Xem `docs/NIGHT_DATA_DICTIONARY.md`. Luồng tải ảnh và bộ xử lý
 > đầy đủ vẫn nằm ở nhánh `inspriring-newton`. Mọi quy tắc dưới đây về cách TẠO ra số liệu (nguồn ảnh,
 > ngưỡng, hiệu chỉnh, mười luồng Earth Engine) vẫn là hợp đồng mà bảng số liệu phải
 > tuân theo. Module tính lại chỉ nhận ảnh tỉnh đã lọc, không thực hiện tải ảnh
