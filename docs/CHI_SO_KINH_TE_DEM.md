@@ -9,7 +9,7 @@ Khoá chính mọi bảng: `province_code + nam` (63 tỉnh trước sáp nhập
 
 ## 1. Nhóm A — đã tính xong, thuần từ ảnh vệ tinh
 
-Nguồn: `task_pipeline/derive.py`, bảng `data_processed/ntl_annual.csv`.
+Nguồn: `backend/core/chi_so.py`, bảng `data_processed/ntl_annual.csv`.
 
 ### 1.1. Ba chỉ số kế hoạch quản lý dữ liệu bắt buộc
 
@@ -141,7 +141,7 @@ hoặc thu nhập thấp, nên giới hạn ở giai đoạn VIIRS 2014–2025 v
 | Nhóm B | ⬜ chưa làm — chờ dân số và GDP |
 | Bảng `economy` | ⬜ rỗng — giảng viên cung cấp |
 
-Khi có số liệu kinh tế: bảy chỉ số nhóm B tính trong `task_pipeline/derive.py`, app chỉ
+Khi có số liệu kinh tế: bảy chỉ số nhóm B tính trong `backend/core/chi_so.py`, app chỉ
 đọc — đúng nguyên tắc dự án là không tính chỉ số trong API.
 
 ---

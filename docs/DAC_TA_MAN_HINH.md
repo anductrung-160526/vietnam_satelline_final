@@ -33,7 +33,7 @@ Dặn thêm trong ghi âm:
 
 1. **Bản đồ đêm là chủ đạo.** Màn 1 mở mặc định. Giao diện lùi lại phía sau ảnh.
 2. **Nhẹ và dễ dùng.** Không thêm biểu đồ, số liệu hay ghi chú nào ngoài đặc tả này.
-3. **Không tính chỉ số trong API.** Mọi công thức thuộc `task_pipeline/derive.py`.
+3. **Không tính chỉ số trong API.** Mọi công thức thuộc `backend/core/chi_so.py`.
    Ngoại lệ duy nhất được phép: **phép cộng** trên các chỉ số đã tính sẵn (tổng toàn quốc),
    vì đó không phải công thức mới. Thấy cần một phép tính khác thì thêm vào `derive.py`.
 4. **Ô trống là một trạng thái hợp lệ**, phải hiển thị rõ chứ không được tô 0.
@@ -190,7 +190,7 @@ Theo *Create Time Function* của DataBank.
 Hàm đã thêm hiện thành **một cột phụ** bên phải bảng, không thay thế các cột mốc thời gian.
 
 > **Công thức vẫn thuộc `derive.py`.** Hàm thời gian tính trên khoảng do người dùng chọn
-> nên không tiền tính được, nhưng công thức đặt ở `task_pipeline/derive.py: ham_thoi_gian`
+> nên không tiền tính được, nhưng công thức đặt ở `backend/core/chi_so.py: ham_thoi_gian`
 > và API chỉ gọi. Nguyên tắc là "không viết công thức trong API", không phải "không tính
 > lúc có yêu cầu".
 >
@@ -410,7 +410,7 @@ hai ngưỡng khác nhau giữa hai cảm biến, và câu `lit_area_km2` là c�
 
 Hiện `build_indices` chỉ nạp `ntl_annual`. Cần:
 
-1. Thêm bảng `ntl_monthly` vào `app/data/schema.sql` (khoá `province_code + year + month`).
+1. Thêm bảng `ntl_monthly` vào `backend/data/schema.sql` (khoá `province_code + year + month`).
 2. Nạp `ntl_monthly.csv` trong `build_indices`, tăng `SCHEMA_VERSION`.
 3. `store.panel()` nhận thêm tham số bước thời gian và cách biểu diễn.
 4. Cột `obs_status` trong `derive.py` — xem mục 12.
@@ -478,7 +478,7 @@ Bảng `economy`, khoá `province_code + year`:
 > không phản ứng với giá. App phải hiện cảnh báo đỏ khi giá trị là `hien_hanh`, và tài liệu
 > báo cáo phải ghi rõ.
 
-Chuẩn bị sẵn tệp mẫu `app/data/kinh_te_mau.csv` đúng cột, để khi cô gửi là nạp được ngay.
+Chuẩn bị sẵn tệp mẫu `backend/data/kinh_te_mau.csv` đúng cột, để khi cô gửi là nạp được ngay.
 
 ### 7.3. Chỉ số
 
@@ -498,7 +498,7 @@ Mô tả đầy đủ ở `docs/CHI_SO_KINH_TE_DEM.md`.
 
 ### 7.4. Hồi quy
 
-Hàm mới trong `task_pipeline/derive.py` (không đặt trong API):
+Hàm mới trong `backend/core/chi_so.py` (không đặt trong API):
 
 ```
 ln(GRDP) = α + β · ln(SOL)
@@ -566,7 +566,7 @@ Bảng `economy` rỗng → trả `200` với mảng rỗng và một câu giả
 tra cứu bản đồ và tải CSV. Cô cũng nói mục đích là "theo dõi độ dịch chuyển, sự thay đổi
 về kinh tế qua các giai đoạn" — đó chính là việc của biểu đồ.
 
-Thư viện: **ECharts 5.5.1**, đã nằm sẵn ở `app/web/vendor/echarts.min.js` từ đầu dự án.
+Thư viện: **ECharts 5.5.1**, đã nằm sẵn ở `frontend/vendor/echarts.min.js` từ đầu dự án.
 Không thêm phụ thuộc mới.
 
 ### 8.1. Không tách tab riêng
@@ -660,7 +660,7 @@ Chặn trước tốt hơn là vẽ ra một mớ rồi để người dùng t�
 | Mốc đổi vệ tinh (2010, 2014) | `B` | số vẫn hiện, chấm vàng |
 | Tháng quá ít pixel hợp lệ | `U` | số vẫn hiện, chấm xám |
 | Bảng `economy` rỗng | — | Lời giải thích đang chờ số liệu của cô |
-| Chưa có ranh giới GADM | — | Lệnh `python -m app.data.build_boundaries --tai-gadm` |
+| Chưa có ranh giới GADM | — | Lệnh `python -m backend.data.build_boundaries --tai-gadm` |
 | TiTiler chưa chạy | — | Ảnh nền không hiện, bản đồ vẫn dùng được, có lời giải thích |
 
 Nguyên tắc chung: mỗi trạng thái rỗng phải nói **vì sao** và **cần chạy gì**.

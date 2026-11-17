@@ -13,7 +13,7 @@ import numpy as np
 import rasterio
 from affine import Affine
 
-from app.data import build_monthly_cogs as ghep_thang
+from backend.data import build_monthly_cogs as ghep_thang
 
 RES = 0.02
 NODATA = -9999.0
@@ -112,7 +112,7 @@ class CatalogueTest(unittest.TestCase):
 
     def test_annual_and_monthly_live_side_by_side(self):
         """Khoá chính là (kind, year, month): ảnh năm 2016 và ảnh 07/2016 không đè nhau."""
-        from app.data.build_cogs import record
+        from backend.data.build_cogs import record
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
             record(db, 'cog_image',
@@ -127,8 +127,8 @@ class CatalogueTest(unittest.TestCase):
 
     def test_the_store_separates_the_two_time_steps(self):
         import os
-        from app.data.build_cogs import record
-        from app.api import store
+        from backend.data.build_cogs import record
+        from backend.api import store
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
             record(db, 'cog_image',

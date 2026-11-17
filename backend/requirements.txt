@@ -1,0 +1,21 @@
+# Phụ thuộc của lớp web. Tách khỏi requirements.txt của đường ống để ảnh container nhẹ.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+# Phục vụ ô bản đồ đọc trực tiếp COG. Bỏ dòng này thì API vẫn chạy, chỉ thiếu bản đồ.
+titiler.core==0.19.2
+rio-tiler==7.2.0
+
+# Chỉ các script chuẩn bị dữ liệu trong backend/data/ cần, API không dùng:
+# build_boundaries.py đọc ranh giới GADM qua backend.core.ranh_gioi.boundaries.
+# Giữ chung một file để chỉ phải chạy một lệnh pip; gói này nhẹ (~2 MB).
+shapely>=2.0,<3
+# build_cogs.py đổi ảnh đêm sang COG bằng rasterio khi máy không có gdal_translate
+# (thường là Windows). rio-tiler vốn đã kéo theo rasterio, nhưng khai báo thẳng ra
+# để phụ thuộc không phụ thuộc vào chuỗi phụ thuộc của gói khác.
+rasterio>=1.3
+
+# backend/core/ranh_gioi/prepare_gadm.py tải GADM 4.1 một lần rồi dựng 63 tỉnh:
+# requests để tải, numpy để chiếu toạ độ khi tính diện tích. Chỉ chạy lúc --tai-gadm,
+# API không đụng tới, nhưng vẫn phải khai báo vì chúng được import thật.
+requests>=2.31
+numpy>=1.24
