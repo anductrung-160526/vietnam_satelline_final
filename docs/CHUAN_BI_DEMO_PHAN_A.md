@@ -4,7 +4,7 @@ Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 
 ## 1. Kết quả từ lần chạy Windows đã nhận
 
-Đã nhận `preparation_report.json`, `coverage_province_year.csv`, `image_errors.csv` của lần chạy 21/11/2026. Chưa nhận `image_inventory.csv` chứa chi tiết kiểm tra mask/pixel.
+Đã nhận `preparation_report.json`, `coverage_province_year.csv`, `image_errors.csv` của lần chạy 21/11/2026. Đã nhận tiếp `image_inventory.csv` và xác định vấn đề mask ở các mốc mẫu; còn chờ kiểm tra hai quy tắc biên pixel.
 
 | Mục trong kế hoạch A | Bằng chứng hiện có | Kết luận |
 |---|---|---|
@@ -31,6 +31,30 @@ Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 
 Các mốc trên trùng đúng nhóm tỉnh/năm được kiểm tra pixel sâu. Cần xem cột `issues`, `pixel_audit` và `annual_pixel_check` trước khi kết luận ảnh hỏng, thiếu ảnh hoặc cần tính lại. Không bỏ kiểm tra để làm đẹp độ phủ.
 
+### Chẩn đoán từ image_inventory.csv đã nhận
+
+Đã xác định 6 ảnh năm đều là float32, EPSG:4326, NoData=-9999, scale=1, offset=0 và khai báo `MEDIAN_OF_FILTERED_VIIRS_MONTHS`. Cả 6 bị chặn bởi `VALID_PIXELS_OUTSIDE_PROVINCE` theo quy tắc tâm pixel.
+
+| Tỉnh | Năm | Pixel hợp lệ | Pixel có tâm ngoài tỉnh | Tỷ lệ |
+|---|---|---|---|---|
+| Hà Nội | 2020 và 2024 (mỗi năm) | 14.967 | 514 | 3,43% |
+| Lào Cai | 2020 và 2024 (mỗi năm) | 28.271 | 637 | 2,25% |
+| Bắc Ninh | 2020 và 2024 (mỗi năm) | 3.737 | 199 | 5,33% |
+
+72 ảnh tháng đã lọc của nhóm mẫu có khai báo FILTER đúng chuỗi xử lý dự kiến; không còn giá trị âm trong các ảnh này. Ảnh thô hai băng chưa lọc không có tag FILTER là điều có thể xảy ra; không đồng nhất chúng với ảnh đã lọc bị hỏng.
+
+Các con số lặp lại giữa hai năm gợi ý cần kiểm tra quy tắc raster hóa ranh giới. Chưa có tọa độ pixel trong CSV nên chưa thể khẳng định chúng chỉ là pixel giao mép hay thực sự nằm hoàn toàn ngoài tỉnh. Không nới điều kiện để tự đưa các ảnh đó vào manifest.
+
+Bản công cụ mới kiểm tra riêng hai nhóm: `boundary_fringe_valid_pixels` (tâm ngoài nhưng pixel giao tỉnh) và `outside_touched_valid_pixels` (nằm ngoài mặt nạ all_touched). Đồng thời kiểm tra phép tổng hợp năm độc lập với lỗi mask, để không bỏ qua chẩn đoán ảnh năm.
+
+Chạy lại riêng 150 ảnh mẫu từ inventory cũ, không quét lại toàn bộ ổ:
+
+```powershell
+python -m backend.data.prepare_demo --root "E:\SatelliteData" --review-inventory "E:\SatelliteData\_demo_preparation\20261121_184926_606622\image_inventory.csv"
+```
+
+Lần chạy này có scope `SAMPLES_ONLY`, không được dùng để kết luận độ phủ toàn quốc. Gửi lại `sample_image_checks.csv` và `preparation_report.json` trong thư mục kết quả mới. Công cụ chỉ đọc ảnh, không sửa mask hoặc giá trị nguồn.
+
 ### Sửa phân loại lỗi của công cụ
 
 15.973 dòng trong image_errors.csv của bản cũ đều thuộc ngoài phạm vi ảnh tỉnh ban đêm:
@@ -45,7 +69,7 @@ Các mốc trên trùng đúng nhóm tỉnh/năm được kiểm tra pixel sâu.
 
 Bản sửa đưa các file này vào `excluded_images.csv`, không báo như lỗi ảnh tỉnh ban đêm. File ảnh đêm chưa nhận dạng hoặc không mở được vẫn vào `image_errors.csv`. Một số TIFF ảnh ngày có lỗi đọc thật trong báo cáo cũ, nhưng không thuộc dữ liệu demo kinh tế đêm cần xử lý ở bước này.
 
-**Phần A chưa hoàn tất:** còn kiểm tra sâu 6 mốc, xác nhận ảnh năm và chốt bộ ảnh chính thức. Trước mắt gửi `sample_image_checks.csv` từ bản mới hoặc lọc nhóm mẫu từ image_inventory.csv cũ, chưa cần gửi ảnh lớn.
+**Phần A chưa hoàn tất:** còn phân biệt pixel giao biên/ngoài tỉnh ở 6 mốc, xác nhận ảnh năm và chốt bộ ảnh chính thức. Trước mắt gửi `sample_image_checks.csv` từ bản mới hoặc lọc nhóm mẫu từ image_inventory.csv cũ, chưa cần gửi ảnh lớn.
 
 ## 2. Chạy trên Antigravity / PowerShell
 

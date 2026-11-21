@@ -146,3 +146,46 @@ def test_excluded_rasters_are_not_corrupt_province_images(tmp_path):
     assert result['excluded_files'] == 1 and result['errors'] == 1
     assert 'DAYTIME_IMAGE' in (output/'excluded_images.csv').read_text(encoding='utf-8-sig')
     assert 'unknown.tif' in (output/'image_errors.csv').read_text(encoding='utf-8-sig')
+
+
+def test_boundary_fringe_separate_from_fully_outside(tmp_path):
+    from backend.data.prepare_demo import audit_pixels
+    path = tmp_path/'01_VIIRS_2020.tif'
+    make_image(path, [[1, 2, 3]])
+    # Second pixel intersects the polygon but its center is outside; third fully outside.
+    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.012,21.99],[105.012,22],[105,22],[105,21.99]]]}}
+    with rasterio.open(path) as ds:
+        result = audit_pixels(ds, feature)
+    assert result['outside_valid_pixels'] == 2
+    assert result['boundary_fringe_valid_pixels'] == 1
+    assert result['outside_touched_valid_pixels'] == 1
+
+
+def test_mask_failure_does_not_prevent_annual_median_diagnosis(tmp_path):
+    root = tmp_path/'data'
+    first = root/'01_VIIRS_2020-01.tif'
+    second = root/'01_VIIRS_2020-02.tif'
+    annual = root/'01_VIIRS_2020.tif'
+    make_image(first, [[1, 4]], month=1)
+    make_image(second, [[3, 6]], month=2)
+    make_image(annual, [[2, 5]])
+    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.01,21.99],[105.01,22],[105,22],[105,21.99]]]}}
+    output = tmp_path/'report'; output.mkdir()
+    summary = inventory(root, output, {'01': provinces()[0]}, {'01': feature}, {'01': 10}, [2020], {'01'})
+    assert summary['manifest_candidates'] == 0  # Mask failure is not waived.
+    assert summary['annual_pixel_checks'] == {'PASS_PIXEL_MEDIAN_FOR_DISCOVERED_MONTHS': 1}
+
+
+def test_targeted_review_only_opens_selected_paths(tmp_path):
+    from backend.data.prepare_demo import sample_paths_from_inventory
+    root = tmp_path/'data'
+    first = root/'01_VIIRS_2020-01.tif'
+    make_image(first, [[1, 2]], month=1)
+    unselected = root/'broken.tif'; unselected.write_bytes(b'broken')
+    old = tmp_path/'old.csv'
+    old.write_text('province_code,year,path\n01,2020,'+str(first)+'\n02,2020,'+str(unselected)+'\n')
+    selected = sample_paths_from_inventory(old, root, {'01'}, [2020])
+    assert selected == [first.resolve()]
+    output = tmp_path/'report'; output.mkdir()
+    summary = inventory(root, output, {'01': provinces()[0]}, {}, {'01':10}, [2020], set(), selected)
+    assert summary['files'] == 1 and summary['errors'] == 0

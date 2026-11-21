@@ -114,7 +114,8 @@ def audit_pixels(image, feature):
     """Kiểm tra mọi pixel của ảnh mẫu: vùng ngoài tỉnh, zero hợp lệ, NoData, số âm."""
     polygon = transform_geom('EPSG:4326', image.crs, feature['geometry'])
     result = dict(valid_pixels=0, outside_valid_pixels=0, outside_zero_pixels=0,
-                  valid_zero_pixels=0, negative_pixels=0, nonfinite_unmasked_pixels=0)
+                  valid_zero_pixels=0, negative_pixels=0, nonfinite_unmasked_pixels=0,
+                  boundary_fringe_valid_pixels=0, outside_touched_valid_pixels=0)
     for window in windows(image.height, image.width):
         values = image.read(1, window=window)
         unmasked = image.read_masks(1, window=window).astype(bool)
@@ -122,6 +123,11 @@ def audit_pixels(image, feature):
         valid = unmasked & finite & (values != -9999)
         inside = geometry_mask([polygon], out_shape=values.shape,
                                transform=image.window_transform(window), invert=True)
+        # Tâm pixel ngoài tỉnh không có nghĩa cả pixel ở ngoài: kiểm tra thêm all_touched.
+        touching = geometry_mask([polygon], out_shape=values.shape,
+                                 transform=image.window_transform(window), invert=True, all_touched=True)
+        result['boundary_fringe_valid_pixels'] += int((valid & ~inside & touching).sum())
+        result['outside_touched_valid_pixels'] += int((valid & ~touching).sum())
         result['valid_pixels'] += int(valid.sum())
         result['outside_valid_pixels'] += int((valid & ~inside).sum())
         result['outside_zero_pixels'] += int((valid & ~inside & (values == 0)).sum())
@@ -184,9 +190,11 @@ def excluded_raster_reason(path):
     return None
 
 
-def inventory(root, output, catalog, geometries, areas, years, sample_codes):
+def inventory(root, output, catalog, geometries, areas, years, sample_codes, input_paths=None):
     records, errors, excluded = [], [], []
-    if root.is_dir():
+    if input_paths is not None:
+        files = sorted(set(input_paths))
+    elif root.is_dir():
         files = sorted(p for p in root.rglob('*') if p.is_file() and p.suffix.lower() in ('.tif', '.tiff', '.vrt')
                        and '_demo_preparation' not in p.parts)
     else:
@@ -242,7 +250,8 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
                         row['pixel_audit'] = json.dumps(counts)
                         if counts['outside_valid_pixels']:
                             issues.append('VALID_PIXELS_OUTSIDE_PROVINCE')
-                        if counts['negative_pixels']:
+                        processed = bool(row['filter_evidence']) or row['annual_evidence'] == 'MEDIAN_OF_FILTERED_VIIRS_MONTHS'
+                        if counts['negative_pixels'] and processed:
                             issues.append('NEGATIVE_RADIANCE_IN_PROCESSED_IMAGE')
                         if counts['nonfinite_unmasked_pixels']:
                             issues.append('NONFINITE_UNMASKED_PIXELS')
@@ -266,16 +275,23 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
         elif len(clean) > 1:
             for row in clean:
                 row['issues'] = 'DUPLICATE_CANDIDATE'
-    for row in candidates:
+    # Kiểm tra phép tổng hợp năm độc lập với kết quả mask; không cho mask lỗi vào manifest.
+    review_rows = []
+    for group in groups.values():
+        structural = [r for r in group if set(filter(None, r['issues'].split(';')))
+                      <= {'VALID_PIXELS_OUTSIDE_PROVINCE'}]
+        if len(structural) == 1:
+            review_rows.append(structural[0])
+    for row in review_rows:
         if row['source'] == 'VIIRS' and not row['month'] and row['province_code'] in sample_codes and row['year'] in {min(years), max(years)}:
-            months = [r['path'] for r in candidates if r['source'] == 'VIIRS' and r['province_code'] == row['province_code']
+            months = [r['path'] for r in review_rows if r['source'] == 'VIIRS' and r['province_code'] == row['province_code']
                       and r['year'] == row['year'] and r['month']]
             try:
                 row['annual_pixel_check'] = verify_annual(row['path'], months)
             except Exception as error:
                 row['annual_pixel_check'] = 'PENDING: '+str(error)
             if row['annual_pixel_check'].startswith('FAIL'):
-                row['issues'] = row['annual_pixel_check']
+                row['issues'] = ';'.join(filter(None, [row['issues'], row['annual_pixel_check']]))
     fields = list(records[0]) if records else ['path', 'province_code', 'year', 'month', 'issues']
     write_csv(output/'image_inventory.csv', records, fields)
     write_csv(output/'image_errors.csv', errors, ['path', 'reason'])
@@ -307,9 +323,28 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
             'annual_pixel_checks': dict(Counter(r['annual_pixel_check'] for r in records if r['annual_pixel_check'] != 'NOT_SAMPLED'))}
 
 
+
+def sample_paths_from_inventory(path, root, codes, years):
+    """Chỉ lấy đường dẫn các mẫu, mọi metadata/kết quả pixel sẽ được đọc lại từ ảnh thật."""
+    import csv
+    selected = []
+    with Path(path).open(encoding='utf-8-sig', newline='') as stream:
+        for row in csv.DictReader(stream):
+            if row['province_code'] not in codes or row['year'] not in {str(min(years)), str(max(years))}:
+                continue
+            image = Path(row['path']).resolve()
+            if not image.is_relative_to(root.resolve()):
+                raise ValueError(f'Đường dẫn ảnh nằm ngoài --root: {image}')
+            selected.append(image)
+    if not selected:
+        raise ValueError('Inventory không có mẫu theo tỉnh/năm đã chọn.')
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True, help='Ổ dữ liệu, ví dụ E:\\SatelliteData')
+    parser.add_argument('--review-inventory', type=Path, help='Kiểm tra lại riêng nhóm mẫu từ inventory cũ, không quét toàn ổ')
     parser.add_argument('--grdp', type=Path, help='Tự tìm đúng tên Excel trong root nếu không chỉ định')
     parser.add_argument('--boundaries', type=Path)
     parser.add_argument('--boundary-metadata', type=Path)
@@ -352,10 +387,15 @@ def main():
         report['grdp'] = prepare_grdp(grdp_files[0], output)
     except Exception as error:
         report['blockers'].append('GRDP: '+str(error))
-    report['images'] = inventory(args.root, output, catalog, found, areas, args.years, set(args.sample_codes))
+    paths = (sample_paths_from_inventory(args.review_inventory, args.root, set(args.sample_codes), args.years)
+             if args.review_inventory else None)
+    report['images'] = inventory(args.root, output, catalog, found, areas, args.years, set(args.sample_codes), paths)
+    report['images']['scope'] = 'SAMPLES_ONLY' if args.review_inventory else 'GLOBAL_SCAN'
     if not report['images']['files']:
         report['blockers'].append('NO_REAL_NIGHT_IMAGES_ACCESSIBLE')
-    if report['images']['annual_candidate_province_years'] < report['images']['expected_province_years']:
+    if args.review_inventory:
+        report['blockers'].append('SAMPLE_REVIEW_ONLY_NOT_GLOBAL_COVERAGE')
+    elif report['images']['annual_candidate_province_years'] < report['images']['expected_province_years']:
         report['blockers'].append('DEMO_ANNUAL_COVERAGE_INCOMPLETE')
     # Tháng đã lọc chỉ được nhận diện qua tags; chưa kiểm chứng lại với ảnh thô.
     report['limitations'] = ['Chưa kiểm chứng thuật toán lọc từng ảnh tháng với ảnh thô nguồn.',
