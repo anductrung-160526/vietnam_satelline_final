@@ -70,16 +70,16 @@ Các mốc dưới đây là thứ tự các phiên làm việc, không phải g
 
 ### A. Chuẩn bị dữ liệu và môi trường
 
-Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Đã giải thích 6 mốc bị chặn cũ: pixel giao biên, không có pixel ngoài mặt nạ all_touched trong 150 ảnh mẫu; 6 ảnh năm đạt median từng pixel. Còn xuất lại manifest/độ phủ toàn kho theo quy tắc biên đã ghi rõ.
+Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Báo cáo GLOBAL_SCAN trên Windows lúc 22:48 ngày 21/11 xác nhận không còn blocker: 4.095 ứng viên (315 ảnh năm + 3.780 ảnh tháng), đủ 315/315 tỉnh–năm 2020–2024. Đã có thể chuyển sang phần B và các bước tích hợp; kết quả này là mức sẵn sàng đầu vào demo, chưa thay thế kiểm chứng số liệu toàn bộ.
 
-- [x] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo. Báo cáo Windows xác nhận HEAD f7e5b18 khớp remote tại thời điểm chạy, Python 3.12.6 và đủ thư viện; lần pull sau cần đối chiếu lại phiên bản.
-- [ ] Sao lưu chỉnh sửa cục bộ trước khi cập nhật; đóng tab có nội dung cũ để tránh lưu đè bản vừa kéo về.
-- [ ] Lập manifest ảnh: mã tỉnh, năm, tháng, nguồn, đường dẫn, diện tích tự nhiên tỉnh.
+- [x] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo. Báo cáo Windows xác nhận HEAD d303ff0 khớp remote tại thời điểm chạy, Python 3.12.6 và đủ thư viện; lần pull sau cần đối chiếu lại phiên bản.
+- [ ] Sao lưu chỉnh sửa cục bộ trước khi cập nhật; đóng tab có nội dung cũ để tránh lưu đè bản vừa kéo về. Báo cáo đã tạo git_backup, không có tracked changes; province_pipeline/ untracked chưa sao lưu và trạng thái tab IDE còn cần người dùng xác nhận.
+- [x] Lập manifest ảnh: mã tỉnh, năm, tháng, nguồn, đường dẫn, diện tích tự nhiên tỉnh. Lần chạy toàn kho mới đã xuất 4.095 ứng viên trong manifest_candidates.csv; dùng đúng bộ kết quả 20261121_224811_221282, giữ nhãn ứng viên trước kiểm chứng chỉ số chính thức.
 - [x] Kiểm tra mẫu ảnh: tên băng, số băng, hệ tọa độ, kích thước pixel, NoData và hệ số scale/offset. Đã nhận báo cáo 150 mẫu trên Windows; băng phù hợp, EPSG:4326, NoData=-9999, scale=1, offset=0.
 - [x] Kiểm tra ngoài ranh giới là NoData/mask, không bị điền 0 như pixel tối hợp lệ. Đã xác minh 150 mẫu theo mặt nạ all_touched: không có pixel hợp lệ hoàn toàn ngoài tỉnh; giữ cảnh báo và giới hạn diện tích ở pixel giao biên.
-- [ ] Xác nhận ảnh tháng đã lọc và ảnh năm được tổng hợp ở cấp pixel; không lấy trung vị SOL tháng thay cho SOL ảnh năm.
-- [x] Chuẩn hóa tên/mã 63 tỉnh, gồm cách viết TP.Hồ Chí Minh; không tự áp mã sau sáp nhập. Đã đối chiếu danh mục và hai sheet GRDP; tên ảnh còn chờ kiểm kê trên Windows.
-- [ ] Lập bảng độ phủ tỉnh–năm; chọn bộ dữ liệu chính và vài tỉnh để kiểm chứng chi tiết.
+- [x] Xác nhận ở mức kiểm tra chuẩn bị: 72 ảnh tháng lọc mẫu có FILTER đúng quy trình, không còn số âm; 6 ảnh năm mẫu khớp median từng pixel. Chưa tái tính toàn bộ bộ lọc từ ảnh thô hoặc kiểm tra từng pixel của toàn kho.
+- [x] Chuẩn hóa tên/mã 63 tỉnh, gồm cách viết TP.Hồ Chí Minh; không tự áp mã sau sáp nhập. Đã đối chiếu danh mục, hai sheet GRDP và độ phủ đủ 63 mã tỉnh trên Windows.
+- [x] Lập bảng độ phủ tỉnh–năm; chọn bộ chính 2020–2024: 63 tỉnh × 5 năm, mỗi mốc có 1 ứng viên ảnh năm và 12 ứng viên ảnh tháng. Nhóm kiểm chứng sâu: Hà Nội, Bắc Ninh, Lào Cai tại 2020 và 2024.
 - [x] Đánh dấu năm 2024 sơ bộ và các điểm GRDP cần rà soát. Đã kiểm tra file gốc; các điểm nghi ngờ được giữ số gốc và gắn cờ.
 
 **Đạt khi:** biết chính xác ảnh nào có thể tính và GRDP nào có thể ghép; không còn đường dẫn dựa trên suy đoán.

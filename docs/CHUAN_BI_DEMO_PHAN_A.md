@@ -4,7 +4,7 @@ Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 
 ## 1. Kết luận từ báo cáo Windows mới nhất
 
-Đã nhận báo cáo toàn kho ban đầu và lần kiểm tra riêng 150 ảnh mẫu trên Windows (HEAD `69dd233`, Python 3.12.6). Ảnh nguồn không bị sửa trong quá trình kiểm tra.
+Đã nhận báo cáo GLOBAL_SCAN mới nhất lúc 22:48 ngày 21/11/2026 theo giờ Việt Nam (HEAD `d303ff0`, Python 3.12.6), sau lần kiểm tra riêng 150 ảnh mẫu. Ảnh nguồn không bị sửa trong quá trình kiểm tra.
 
 | Hạng mục | Kết quả đã xác minh | Giới hạn |
 |---|---|---|
@@ -16,7 +16,7 @@ Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 | 72 ảnh tháng đã lọc trong mẫu | Có FILTER đúng chuỗi dự kiến, không còn số âm, không có NaN/Inf còn unmasked | Chưa tính lại toàn bộ thuật toán lọc từ ảnh thô để đối chiếu |
 | 6 ảnh năm mẫu | Cả 6 đạt PASS_PIXEL_MEDIAN_FOR_DISCOVERED_MONTHS | Đối chiếu các tháng tìm được, đúng MONTHS_USED; không tự chứng minh nguồn có đủ mọi tháng quan sát |
 | GRDP | 1.260 dòng, 1.259 số hợp lệ, 2024 sơ bộ, 15 cờ rà soát | Chưa tự sửa điểm nghi ngờ |
-| Manifest và độ phủ | Lần toàn kho cũ có 4.017 ứng viên và 309/315 mốc năm | Cần xuất lại manifest toàn kho theo quy tắc giao pixel đã xác minh; báo cáo SAMPLES_ONLY không thay thế độ phủ toàn kho |
+| Manifest và độ phủ | GLOBAL_SCAN mới: 4.095 ứng viên, đủ 315/315 tỉnh–năm, không blocker hoặc lỗi đọc/nhận dạng trong phạm vi kiểm kê ảnh tỉnh đêm | 315 ảnh năm + 3.780 ảnh tháng; là ứng viên đầu vào, không phải xác nhận mọi chỉ số đã chính xác |
 
 ### Sáu mốc đã được giải thích
 
@@ -45,9 +45,30 @@ Với hai báo cáo đã nhận, 78 ảnh đã xử lý của nhóm mẫu (72 th
 
 15.973 dòng trong image_errors.csv ban đầu gồm: 15.742 ảnh ngày, 167 COG/preview, 34 tile toàn quốc, 22 mosaic toàn quốc và 8 file tạm/control. Bản mới chuyển chúng sang `excluded_images.csv`, không coi là lỗi ảnh tỉnh đêm. File ảnh đêm chưa nhận dạng hoặc không mở được vẫn vào `image_errors.csv`.
 
+### Bộ đầu vào đã xuất thành công
+
+Thư mục trên máy demo:
+
+```text
+E:\SatelliteData\_demo_preparation\20261121_224811_221282\
+```
+
+| Năm | Tỉnh | Ứng viên ảnh năm | Ứng viên ảnh tháng |
+|---|---|---|---|
+| 2020 | 63 | 63 | 756 |
+| 2021 | 63 | 63 | 756 |
+| 2022 | 63 | 63 | 756 |
+| 2023 | 63 | 63 | 756 |
+| 2024 | 63 | 63 | 756 |
+| Tổng | 63 tỉnh, 315 mốc tỉnh–năm | 315 | 3.780 |
+
+`blockers=[]`, `errors=0`, `scope=GLOBAL_SCAN`, `manifest_candidates=4095`. Danh sách 15.973 file ngoài phạm vi được tách riêng; không tính chúng thành lỗi ảnh tỉnh đêm.
+
+Không cần chạy lại riêng nhóm mẫu hoặc tải lại ảnh để xử lý vấn đề giao biên này. Dùng manifest và GRDP trong thư mục trên cho bước tính/đối chiếu tiếp theo. Cần kiểm tra lại nếu đổi ảnh, ranh giới hoặc phương pháp.
+
 ### Bước tiếp theo
 
-Cập nhật code và chạy lại kiểm kê toàn kho theo mục 2 để xuất manifest/coverage mới. Không cần tải lại hoặc tính lại ảnh do vấn đề giao biên này. Có thể dự kiến thêm lại các ứng viên bị chặn cũ, nhưng chỉ báo đủ 315/315 sau khi kết quả toàn kho mới xác nhận.
+Có thể chuyển sang phần B về giao diện Raw trước Processed và phần tích hợp dữ liệu. Giữ công việc kiểm chứng chỉ số thật ở các bước D–G. Chưa có dân số trong file GRDP nên chỉ số đầu người còn thiếu đầu vào. Trạng thái tab IDE và sao lưu thư mục untracked còn cần người dùng tự xác nhận.
 
 ## 2. Chạy trên Antigravity / PowerShell
 
@@ -133,14 +154,14 @@ Chưa nạp `grdp_all_prices.csv` vào bộ đọc kinh tế hiện tại: bộ 
 
 ## 5. Cách xác nhận hoàn tất A sau lần chạy Windows
 
-- [ ] `environment.json` đúng máy demo, repo và nhánh `night-app`; HEAD đã cập nhật.
+- [x] `environment.json` đúng máy demo, repo và nhánh `night-app`; HEAD d303ff0 khớp remote tại thời điểm chạy.
 - [ ] Bản sao sửa đổi cục bộ còn giữ được; các tab chưa lưu đã được xử lý.
-- [ ] Ranh giới gốc có đủ 63 mã, checksum đạt; diện tích không lấy từ polygon web rút gọn.
+- [x] Ranh giới gốc có đủ 63 mã, checksum đạt; diện tích không lấy từ polygon web rút gọn.
 - [ ] Metadata ảnh, scale/offset và các ảnh trùng đã được rà soát; không bỏ qua lỗi nhận dạng.
 - [x] 150 ảnh mẫu không có pixel hợp lệ ngoài mặt nạ all_touched; pixel giao biên được ghi cảnh báo, không tự xóa. Zero hợp lệ trong tỉnh vẫn được giữ.
 - [ ] Bộ lọc tháng có metadata và 72 ảnh lọc mẫu không còn số âm; 6 ảnh năm đã đạt median từng pixel. Chưa kiểm chứng lại toàn bộ bước lọc từ ảnh thô.
 - [ ] Manifest ứng viên đã được rà soát trước khi dùng làm manifest chính thức.
-- [ ] Bảng độ phủ ảnh thật đủ cho khoảng năm demo đã chọn; đã xác nhận nhóm tỉnh kiểm chứng.
-- [ ] Hai loại GRDP và nhãn sơ bộ/cờ rà soát được giữ nguyên.
+- [x] Bảng độ phủ có ứng viên ảnh cho toàn bộ 315 tỉnh–năm 2020–2024; đã xác nhận nhóm tỉnh kiểm chứng.
+- [x] Hai loại GRDP và nhãn sơ bộ/cờ rà soát được giữ nguyên.
 
 Để đối chiếu lần chạy trên máy demo, gửi lại `preparation_report.json`, `image_errors.csv` và `coverage_province_year.csv`. Không cần gửi toàn bộ ảnh lớn ở bước đầu.
