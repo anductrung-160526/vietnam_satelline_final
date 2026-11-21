@@ -2,21 +2,50 @@
 
 Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 
-## 1. Kết quả thực hiện đến hiện tại
+## 1. Kết quả từ lần chạy Windows đã nhận
 
-| Mục trong kế hoạch A | Đã làm | Phần còn phải xác nhận trên máy demo |
+Đã nhận `preparation_report.json`, `coverage_province_year.csv`, `image_errors.csv` của lần chạy 21/11/2026. Chưa nhận `image_inventory.csv` chứa chi tiết kiểm tra mask/pixel.
+
+| Mục trong kế hoạch A | Bằng chứng hiện có | Kết luận |
 |---|---|---|
-| Repo, nhánh, Python | Đã kiểm tra workspace Codex: repo `anductrung-160526/vietnam_satelline_final`, nhánh `night-app`; bộ chuẩn bị tự ghi HEAD, remote SHA, Python và phiên bản thư viện | Máy Windows/Antigravity có thể khác workspace; cần chạy lệnh ở mục 2 |
-| Sao lưu trước cập nhật, đóng tab cũ | Công cụ lưu patch nhị phân của tracked changes, staged changes và Git status, không reset/pull/đổi nhánh | Tab chưa lưu phải tự lưu thành bản sao hoặc đóng; không thể xác nhận từ Codex. File untracked chỉ được liệt kê, chưa được sao lưu |
-| Manifest ảnh | Có bộ sinh `manifest_candidates.csv` đúng cột mà file tính chỉ số nhận | Workspace không truy cập được ổ E: nên chưa có manifest ảnh thật |
-| Băng, CRS, kích thước pixel, NoData, scale/offset | Có công cụ đọc metadata tất cả raster và xuất `image_inventory.csv` | Chưa chạy trên ảnh thật ở máy demo |
-| NoData/mask ngoài tỉnh | Có kiểm tra toàn bộ pixel của các ảnh mẫu, đếm riêng zero hợp lệ trong tỉnh và zero còn hợp lệ ngoài tỉnh | Chưa có kết quả ảnh thật; không coi pixel ngoài tỉnh điền 0 là đạt |
-| Ảnh tháng đã lọc, ảnh năm tổng hợp pixel | Công cụ ghi bằng chứng FILTER; kiểm tra ảnh năm mẫu bằng trung vị từng pixel của các ảnh tháng tìm được, cùng lưới và đúng MONTHS_USED | FILTER chỉ là khai báo metadata, chưa thay thế việc kiểm chứng thuật toán lọc với ảnh thô. Ảnh thiếu bằng chứng không được mặc nhiên coi đã lọc |
-| Chuẩn hóa 63 tỉnh | Đã xác minh đủ 63 mã thống kê trước sáp nhập, mã GADM và ánh xạ hai sheet GRDP; xử lý đúng `TP.Hồ Chí Minh` | Tên file ảnh không có mã tỉnh rõ ràng sẽ được đưa vào báo cáo lỗi, không fuzzy-match |
-| Độ phủ tỉnh–năm, tỉnh kiểm chứng | Có bộ tạo 315 ô tỉnh–năm cho 2020–2024; nhóm mẫu đề xuất Hà Nội, Bắc Ninh, Lào Cai ở năm đầu/cuối | Chưa xác nhận độ phủ ảnh thật; nếu tỉnh mẫu thiếu ảnh phải chọn thay và ghi rõ |
-| GRDP 2024 sơ bộ, điểm rà soát | Đã đọc Excel gốc và giữ nhãn sơ bộ 2024; tạo dữ liệu chuẩn hóa và bảng cờ kiểm tra | Các cờ rà soát chưa có căn cứ để tự sửa giá trị nguồn |
+| Repo, nhánh, Python | Windows 10, Python 3.12.6, nhánh night-app; HEAD f7e5b18 khớp remote tại thời điểm chạy; đủ thư viện | Đã xác minh môi trường máy demo cho phiên bản đó; cần pull bản sửa công cụ mới |
+| Sao lưu, tab cũ | Có đường dẫn git_backup; Git status không có tracked changes, còn province_pipeline/ untracked | Không có tracked changes cần sao lưu tại thời điểm chạy; không xác nhận được tab chưa lưu, thư mục untracked chưa sao lưu |
+| Ranh giới/mã tỉnh | Đủ 63 tỉnh, SHA-256 khớp bộ GADM gốc | Đã xác minh checksum và ánh xạ mã; không phải chứng nhận pháp lý ranh giới |
+| Manifest | 4.017 ứng viên trong 2020–2024 | Chưa đủ điều kiện chốt manifest chính thức |
+| Metadata và pixel ảnh | 37.715 raster đã được quét trong bản cũ; 150 raster được kiểm tra pixel mẫu | Bản quét gồm cả ảnh ngày/file ngoài phạm vi; cần đọc chi tiết mẫu chưa đạt |
+| Ảnh tháng đã lọc | Có các ứng viên vượt kiểm tra khai báo metadata | Chưa kiểm chứng lại toàn bộ thuật toán lọc từ ảnh thô |
+| Ảnh năm tổng hợp pixel | annual_pixel_checks rỗng | Chưa có bằng chứng kiểm tra median ảnh năm trong lần chạy này |
+| Độ phủ | 309/315 tỉnh–năm có ứng viên ảnh năm | Thiếu điều kiện chấp nhận ở 6 mốc; đây không phải xác nhận thiếu file vật lý |
+| GRDP | 1.260 dòng, 1.259 số hợp lệ, 2024 sơ bộ, 15 cờ rà soát | Đã chuẩn hóa và đánh dấu, chưa tự sửa số nguồn |
 
-**Chưa đánh dấu toàn bộ A hoàn thành:** dữ liệu ảnh và IDE nằm trên máy Windows, không phải workspace Codex. Phần ảnh phải dựa vào báo cáo sau khi chạy trên `E:\SatelliteData`.
+### Sáu mốc cần xem thêm chi tiết
+
+| Mã tỉnh | Tỉnh | Năm | Số file được ghi nhận | Ứng viên ảnh năm | Ứng viên ảnh tháng |
+|---|---|---|---|---|---|
+| 01 | Hà Nội | 2020 | 25 | 0 | 0 |
+| 01 | Hà Nội | 2024 | 25 | 0 | 0 |
+| 10 | Lào Cai | 2020 | 25 | 0 | 0 |
+| 10 | Lào Cai | 2024 | 25 | 0 | 0 |
+| 27 | Bắc Ninh | 2020 | 25 | 0 | 0 |
+| 27 | Bắc Ninh | 2024 | 25 | 0 | 0 |
+
+Các mốc trên trùng đúng nhóm tỉnh/năm được kiểm tra pixel sâu. Cần xem cột `issues`, `pixel_audit` và `annual_pixel_check` trước khi kết luận ảnh hỏng, thiếu ảnh hoặc cần tính lại. Không bỏ kiểm tra để làm đẹp độ phủ.
+
+### Sửa phân loại lỗi của công cụ
+
+15.973 dòng trong image_errors.csv của bản cũ đều thuộc ngoài phạm vi ảnh tỉnh ban đêm:
+
+| Loại | Số file |
+|---|---|
+| Ảnh ngày | 15.742 |
+| COG hiển thị/preview | 167 |
+| Tile ảnh toàn quốc | 34 |
+| Mosaic toàn quốc | 22 |
+| File tạm/control | 8 |
+
+Bản sửa đưa các file này vào `excluded_images.csv`, không báo như lỗi ảnh tỉnh ban đêm. File ảnh đêm chưa nhận dạng hoặc không mở được vẫn vào `image_errors.csv`. Một số TIFF ảnh ngày có lỗi đọc thật trong báo cáo cũ, nhưng không thuộc dữ liệu demo kinh tế đêm cần xử lý ở bước này.
+
+**Phần A chưa hoàn tất:** còn kiểm tra sâu 6 mốc, xác nhận ảnh năm và chốt bộ ảnh chính thức. Trước mắt gửi `sample_image_checks.csv` từ bản mới hoặc lọc nhóm mẫu từ image_inventory.csv cũ, chưa cần gửi ảnh lớn.
 
 ## 2. Chạy trên Antigravity / PowerShell
 
@@ -77,7 +106,9 @@ Không dùng `backend/data/provinces.geojson` rút gọn cho web để tính di�
 | `province_catalog.csv` | 63 mã thống kê, tên tỉnh, mã GADM và slug |
 | `province_areas.csv` | Diện tích tự nhiên từ ranh giới gốc, EPSG:6933, km² |
 | `image_inventory.csv` | Mỗi raster một dòng: metadata, bằng chứng xử lý, kiểm tra pixel mẫu, lỗi và điểm chờ xác nhận |
-| `image_errors.csv` | Ảnh không mở được hoặc chưa xác định được tỉnh/năm/nguồn |
+| `image_errors.csv` | Ảnh tỉnh đêm không mở được hoặc chưa xác định được tỉnh/năm/nguồn |
+| `excluded_images.csv` | Ảnh ngày, file tạm, COG, tile/mosaic toàn quốc nằm ngoài phạm vi; không xóa file nguồn |
+| `sample_image_checks.csv` | Báo cáo gọn metadata và kiểm tra pixel ở các mốc mẫu |
 | `manifest_candidates.csv` | Ứng viên đầu vào tính chỉ số; chưa tự coi là bộ dữ liệu đã kiểm chứng hoàn toàn |
 | `coverage_province_year.csv` | Từng tỉnh–năm: số file có mặt, số ảnh năm/tháng đủ điều kiện metadata và trạng thái sẵn sàng |
 | `grdp_all_prices.csv` | Cả hai loại giá, khóa tỉnh–năm–cơ sở giá, đơn vị và nguồn |

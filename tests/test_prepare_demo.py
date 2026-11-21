@@ -128,3 +128,21 @@ def test_environment_snapshot_preserves_staged_and_worktree(tmp_path, monkeypatc
     assert file.read_text() == 'worktree\n'
     assert b'+worktree' in (output/'git_backup/working_changes.patch').read_bytes()
     assert b'+staged' in (output/'git_backup/staged_changes.patch').read_bytes()
+
+
+def test_excluded_rasters_are_not_corrupt_province_images(tmp_path):
+    from backend.data.prepare_demo import excluded_raster_reason
+    assert excluded_raster_reason(r'E:\SatelliteData\VN_LandCover_Panel_2004_2025\raw_data\DAY\VN_SENTINEL2_2024\tiles\r000_10.tif') == 'DAYTIME_IMAGE'
+    assert excluded_raster_reason(r'E:\SatelliteData\cog\VIIRS_2024_cog.tif') == 'DISPLAY_COG_OR_PREVIEW'
+    assert excluded_raster_reason(r'E:\SatelliteData\VN_NTL_Panel_2004_2025\raw_data\NTL\VIIRS\VN_VIIRS_2024\tiles\r000_10.tif') == 'NATIONAL_TILE_NOT_PROVINCE_IMAGE'
+    assert excluded_raster_reason(r'E:\SatelliteData\_control\001_011\.work\image.tif') == 'TEMPORARY_OR_CONTROL_FILE'
+    assert excluded_raster_reason(r'E:\SatelliteData\VN_NTL_Panel_2004_2025\data_intermediate\VIIRS_MONTHLY\01_ha_noi\01_ha_noi_VIIRS_2024-01_filtered.tif') is None
+    root = tmp_path/'images'
+    day = root/'VN_LandCover_Panel_2004_2025/raw_data/DAY/invalid.tif'
+    day.parent.mkdir(parents=True); day.write_bytes(b'not a TIFF')
+    unexpected = root/'unknown.tif'; unexpected.write_bytes(b'not a TIFF')
+    output = tmp_path/'report'; output.mkdir()
+    result = inventory(root, output, {'01': provinces()[0]}, {}, {}, [2024], set())
+    assert result['excluded_files'] == 1 and result['errors'] == 1
+    assert 'DAYTIME_IMAGE' in (output/'excluded_images.csv').read_text(encoding='utf-8-sig')
+    assert 'unknown.tif' in (output/'image_errors.csv').read_text(encoding='utf-8-sig')

@@ -70,9 +70,9 @@ Các mốc dưới đây là thứ tự các phiên làm việc, không phải g
 
 ### A. Chuẩn bị dữ liệu và môi trường
 
-Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Phần ảnh chưa được xác nhận hoàn thành khi chưa có báo cáo từ ổ E: trên Windows.
+Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Đã nhận báo cáo Windows: 309/315 mốc có ứng viên ảnh năm; còn 6 mốc cần xem chi tiết kiểm tra pixel, chưa chốt phần ảnh hoàn thành.
 
-- [ ] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo.
+- [x] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo. Báo cáo Windows xác nhận HEAD f7e5b18 khớp remote tại thời điểm chạy, Python 3.12.6 và đủ thư viện; lần pull sau cần đối chiếu lại phiên bản.
 - [ ] Sao lưu chỉnh sửa cục bộ trước khi cập nhật; đóng tab có nội dung cũ để tránh lưu đè bản vừa kéo về.
 - [ ] Lập manifest ảnh: mã tỉnh, năm, tháng, nguồn, đường dẫn, diện tích tự nhiên tỉnh.
 - [ ] Kiểm tra mẫu ảnh: tên băng, số băng, hệ tọa độ, kích thước pixel, NoData và hệ số scale/offset.

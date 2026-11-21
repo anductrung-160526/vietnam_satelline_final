@@ -164,8 +164,28 @@ def verify_annual(annual_path, month_paths):
     return 'PASS_PIXEL_MEDIAN_FOR_DISCOVERED_MONTHS'
 
 
+
+def excluded_raster_reason(path):
+    """Phân loại ngoài phạm vi, không báo ảnh ngày/ảnh toàn quốc như lỗi ảnh tỉnh."""
+    text = str(path).replace('\\', '/').lower()
+    parts = text.split('/')
+    name = parts[-1]
+    if '_control' in parts or '.work' in parts or '.part.' in name or '.masked.' in name:
+        return 'TEMPORARY_OR_CONTROL_FILE'
+    if ('vn_landcover_panel_2004_2025' in parts or 'day' in parts
+            or 'landsat' in text or 'sentinel2' in text):
+        return 'DAYTIME_IMAGE'
+    if 'cog' in parts or 'cogs' in parts or name.startswith('preview_'):
+        return 'DISPLAY_COG_OR_PREVIEW'
+    if 'tiles' in parts:
+        return 'NATIONAL_TILE_NOT_PROVINCE_IMAGE'
+    if re.match(r'^vn_.*(?:viirs|dmsp)', name):
+        return 'NATIONAL_MOSAIC_NOT_PROVINCE_IMAGE'
+    return None
+
+
 def inventory(root, output, catalog, geometries, areas, years, sample_codes):
-    records, errors = [], []
+    records, errors, excluded = [], [], []
     if root.is_dir():
         files = sorted(p for p in root.rglob('*') if p.is_file() and p.suffix.lower() in ('.tif', '.tiff', '.vrt')
                        and '_demo_preparation' not in p.parts)
@@ -173,7 +193,11 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
         files = []
         errors.append({'path': str(root), 'reason': 'DATA_ROOT_NOT_ACCESSIBLE'})
     for path in files:
-        # File không nhận dạng được cũng vào báo cáo; không bỏ sót âm thầm.
+        # Ghi riêng ảnh ngoài phạm vi; file chưa nhận dạng vẫn phải báo lỗi.
+        reason = excluded_raster_reason(path)
+        if reason:
+            excluded.append({'path': str(path), 'reason': reason})
+            continue
         row = {'path': str(path.resolve()), 'province_code': '', 'province_name': '',
                'year': '', 'month': '', 'source': '', 'area_km2': '', 'issues': '',
                'crs': '', 'band_names': '', 'band_count': '', 'pixel_size': '', 'nodata': '',
@@ -255,6 +279,11 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
     fields = list(records[0]) if records else ['path', 'province_code', 'year', 'month', 'issues']
     write_csv(output/'image_inventory.csv', records, fields)
     write_csv(output/'image_errors.csv', errors, ['path', 'reason'])
+    write_csv(output/'excluded_images.csv', excluded, ['path', 'reason'])
+    # Báo cáo nhỏ để chẩn đoán các mẫu bị loại, không cần gửi lại toàn bộ inventory.
+    sampled = [r for r in records if r['province_code'] in sample_codes
+               and r['year'] in {min(years), max(years)}]
+    write_csv(output/'sample_image_checks.csv', sampled, fields)
     # Manifest CANDIDATES là kết quả kiểm kê; tags là khai báo, chưa chứng minh thuật toán lọc.
     fields = ['province_code', 'province_name', 'year', 'month', 'source', 'path', 'area_km2']
     candidates = [r for r in candidates if not r['issues'] and r['year'] in years]
@@ -269,7 +298,9 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes):
                              'monthly_candidates': len({r['month'] for r in selected if r['month']}),
                              'status': 'CANDIDATE_AVAILABLE' if any(r['month'] == 0 for r in selected) else 'NOT_READY'})
     write_csv(output/'coverage_province_year.csv', coverage, list(coverage[0]))
-    return {'files': len(records), 'manifest_candidates': len(candidates), 'errors': len(errors),
+    return {'files': len(records), 'excluded_files': len(excluded),
+            'excluded_reasons': dict(Counter(r['reason'] for r in excluded)),
+            'manifest_candidates': len(candidates), 'errors': len(errors),
             'annual_candidate_province_years': sum(r['annual_candidates'] > 0 for r in coverage),
             'expected_province_years': len(coverage),
             'sampled_rasters': sum(r['pixel_audit'].startswith('{') for r in records),
