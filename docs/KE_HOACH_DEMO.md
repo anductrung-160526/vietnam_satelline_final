@@ -70,15 +70,17 @@ Các mốc dưới đây là thứ tự các phiên làm việc, không phải g
 
 ### A. Chuẩn bị dữ liệu và môi trường
 
+Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Phần ảnh chưa được xác nhận hoàn thành khi chưa có báo cáo từ ổ E: trên Windows.
+
 - [ ] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo.
 - [ ] Sao lưu chỉnh sửa cục bộ trước khi cập nhật; đóng tab có nội dung cũ để tránh lưu đè bản vừa kéo về.
 - [ ] Lập manifest ảnh: mã tỉnh, năm, tháng, nguồn, đường dẫn, diện tích tự nhiên tỉnh.
 - [ ] Kiểm tra mẫu ảnh: tên băng, số băng, hệ tọa độ, kích thước pixel, NoData và hệ số scale/offset.
 - [ ] Kiểm tra ngoài ranh giới là NoData/mask, không bị điền 0 như pixel tối hợp lệ.
 - [ ] Xác nhận ảnh tháng đã lọc và ảnh năm được tổng hợp ở cấp pixel; không lấy trung vị SOL tháng thay cho SOL ảnh năm.
-- [ ] Chuẩn hóa tên/mã 63 tỉnh, gồm cách viết TP.Hồ Chí Minh; không tự áp mã sau sáp nhập.
+- [x] Chuẩn hóa tên/mã 63 tỉnh, gồm cách viết TP.Hồ Chí Minh; không tự áp mã sau sáp nhập. Đã đối chiếu danh mục và hai sheet GRDP; tên ảnh còn chờ kiểm kê trên Windows.
 - [ ] Lập bảng độ phủ tỉnh–năm; chọn bộ dữ liệu chính và vài tỉnh để kiểm chứng chi tiết.
-- [ ] Đánh dấu năm 2024 sơ bộ và các điểm GRDP cần rà soát.
+- [x] Đánh dấu năm 2024 sơ bộ và các điểm GRDP cần rà soát. Đã kiểm tra file gốc; các điểm nghi ngờ được giữ số gốc và gắn cờ.
 
 **Đạt khi:** biết chính xác ảnh nào có thể tính và GRDP nào có thể ghép; không còn đường dẫn dựa trên suy đoán.
 
