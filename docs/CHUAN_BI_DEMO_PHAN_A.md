@@ -2,74 +2,52 @@
 
 Ngày kiểm tra: 21/11/2026. Nhánh: `night-app`.
 
-## 1. Kết quả từ lần chạy Windows đã nhận
+## 1. Kết luận từ báo cáo Windows mới nhất
 
-Đã nhận `preparation_report.json`, `coverage_province_year.csv`, `image_errors.csv` của lần chạy 21/11/2026. Đã nhận tiếp `image_inventory.csv` và xác định vấn đề mask ở các mốc mẫu; còn chờ kiểm tra hai quy tắc biên pixel.
+Đã nhận báo cáo toàn kho ban đầu và lần kiểm tra riêng 150 ảnh mẫu trên Windows (HEAD `69dd233`, Python 3.12.6). Ảnh nguồn không bị sửa trong quá trình kiểm tra.
 
-| Mục trong kế hoạch A | Bằng chứng hiện có | Kết luận |
+| Hạng mục | Kết quả đã xác minh | Giới hạn |
 |---|---|---|
-| Repo, nhánh, Python | Windows 10, Python 3.12.6, nhánh night-app; HEAD f7e5b18 khớp remote tại thời điểm chạy; đủ thư viện | Đã xác minh môi trường máy demo cho phiên bản đó; cần pull bản sửa công cụ mới |
-| Sao lưu, tab cũ | Có đường dẫn git_backup; Git status không có tracked changes, còn province_pipeline/ untracked | Không có tracked changes cần sao lưu tại thời điểm chạy; không xác nhận được tab chưa lưu, thư mục untracked chưa sao lưu |
-| Ranh giới/mã tỉnh | Đủ 63 tỉnh, SHA-256 khớp bộ GADM gốc | Đã xác minh checksum và ánh xạ mã; không phải chứng nhận pháp lý ranh giới |
-| Manifest | 4.017 ứng viên trong 2020–2024 | Chưa đủ điều kiện chốt manifest chính thức |
-| Metadata và pixel ảnh | 37.715 raster đã được quét trong bản cũ; 150 raster được kiểm tra pixel mẫu | Bản quét gồm cả ảnh ngày/file ngoài phạm vi; cần đọc chi tiết mẫu chưa đạt |
-| Ảnh tháng đã lọc | Có các ứng viên vượt kiểm tra khai báo metadata | Chưa kiểm chứng lại toàn bộ thuật toán lọc từ ảnh thô |
-| Ảnh năm tổng hợp pixel | annual_pixel_checks rỗng | Chưa có bằng chứng kiểm tra median ảnh năm trong lần chạy này |
-| Độ phủ | 309/315 tỉnh–năm có ứng viên ảnh năm | Thiếu điều kiện chấp nhận ở 6 mốc; đây không phải xác nhận thiếu file vật lý |
-| GRDP | 1.260 dòng, 1.259 số hợp lệ, 2024 sơ bộ, 15 cờ rà soát | Đã chuẩn hóa và đánh dấu, chưa tự sửa số nguồn |
+| Môi trường | Đúng repo, nhánh night-app, HEAD khớp remote tại thời điểm chạy; đủ thư viện | Tab chưa lưu trong IDE không thể kiểm tra từ Git |
+| Sao lưu | Git status chỉ có province_pipeline/ untracked; có thư mục backup | Untracked chỉ được liệt kê, chưa sao lưu; không xóa thư mục này |
+| Ranh giới | Đủ 63 tỉnh, checksum và crosswalk khớp | Ranh giới GADM nghiên cứu, không chứng nhận pháp lý |
+| Metadata mẫu | EPSG:4326, NoData=-9999, scale=1, offset=0; băng ảnh đúng các bước xử lý | Chỉ nhóm mẫu được kiểm tra sâu từng pixel |
+| Mask của 150 ảnh mẫu | Không có pixel hợp lệ nằm ngoài mặt nạ all_touched; các pixel có tâm ngoài đều giao mép tỉnh | Không suy rộng kiểm tra sâu này thành toàn bộ tỉnh/năm |
+| 72 ảnh tháng đã lọc trong mẫu | Có FILTER đúng chuỗi dự kiến, không còn số âm, không có NaN/Inf còn unmasked | Chưa tính lại toàn bộ thuật toán lọc từ ảnh thô để đối chiếu |
+| 6 ảnh năm mẫu | Cả 6 đạt PASS_PIXEL_MEDIAN_FOR_DISCOVERED_MONTHS | Đối chiếu các tháng tìm được, đúng MONTHS_USED; không tự chứng minh nguồn có đủ mọi tháng quan sát |
+| GRDP | 1.260 dòng, 1.259 số hợp lệ, 2024 sơ bộ, 15 cờ rà soát | Chưa tự sửa điểm nghi ngờ |
+| Manifest và độ phủ | Lần toàn kho cũ có 4.017 ứng viên và 309/315 mốc năm | Cần xuất lại manifest toàn kho theo quy tắc giao pixel đã xác minh; báo cáo SAMPLES_ONLY không thay thế độ phủ toàn kho |
 
-### Sáu mốc cần xem thêm chi tiết
+### Sáu mốc đã được giải thích
 
-| Mã tỉnh | Tỉnh | Năm | Số file được ghi nhận | Ứng viên ảnh năm | Ứng viên ảnh tháng |
-|---|---|---|---|---|---|
-| 01 | Hà Nội | 2020 | 25 | 0 | 0 |
-| 01 | Hà Nội | 2024 | 25 | 0 | 0 |
-| 10 | Lào Cai | 2020 | 25 | 0 | 0 |
-| 10 | Lào Cai | 2024 | 25 | 0 | 0 |
-| 27 | Bắc Ninh | 2020 | 25 | 0 | 0 |
-| 27 | Bắc Ninh | 2024 | 25 | 0 | 0 |
+Các con số sau giống nhau ở 2020 và 2024 của từng tỉnh:
 
-Các mốc trên trùng đúng nhóm tỉnh/năm được kiểm tra pixel sâu. Cần xem cột `issues`, `pixel_audit` và `annual_pixel_check` trước khi kết luận ảnh hỏng, thiếu ảnh hoặc cần tính lại. Không bỏ kiểm tra để làm đẹp độ phủ.
-
-### Chẩn đoán từ image_inventory.csv đã nhận
-
-Đã xác định 6 ảnh năm đều là float32, EPSG:4326, NoData=-9999, scale=1, offset=0 và khai báo `MEDIAN_OF_FILTERED_VIIRS_MONTHS`. Cả 6 bị chặn bởi `VALID_PIXELS_OUTSIDE_PROVINCE` theo quy tắc tâm pixel.
-
-| Tỉnh | Năm | Pixel hợp lệ | Pixel có tâm ngoài tỉnh | Tỷ lệ |
+| Tỉnh | Pixel hợp lệ mỗi ảnh năm | Pixel có tâm ngoài nhưng giao biên | Pixel ngoài mặt nạ all_touched | Kiểm tra median từng pixel |
 |---|---|---|---|---|
-| Hà Nội | 2020 và 2024 (mỗi năm) | 14.967 | 514 | 3,43% |
-| Lào Cai | 2020 và 2024 (mỗi năm) | 28.271 | 637 | 2,25% |
-| Bắc Ninh | 2020 và 2024 (mỗi năm) | 3.737 | 199 | 5,33% |
+| Hà Nội | 14.967 | 514 | 0 | Đạt cả 2 năm |
+| Lào Cai | 28.271 | 637 | 0 | Đạt cả 2 năm |
+| Bắc Ninh | 3.737 | 199 | 0 | Đạt cả 2 năm |
 
-72 ảnh tháng đã lọc của nhóm mẫu có khai báo FILTER đúng chuỗi xử lý dự kiến; không còn giá trị âm trong các ảnh này. Ảnh thô hai băng chưa lọc không có tag FILTER là điều có thể xảy ra; không đồng nhất chúng với ảnh đã lọc bị hỏng.
+Đây là khác biệt giữa quy tắc lấy **tâm pixel trong tỉnh** và quy tắc **pixel giao với tỉnh**, không phải bằng chứng thiếu file hoặc hỏng ảnh.
 
-Các con số lặp lại giữa hai năm gợi ý cần kiểm tra quy tắc raster hóa ranh giới. Chưa có tọa độ pixel trong CSV nên chưa thể khẳng định chúng chỉ là pixel giao mép hay thực sự nằm hoàn toàn ngoài tỉnh. Không nới điều kiện để tự đưa các ảnh đó vào manifest.
+### Quy tắc biên được ghi rõ trong bản công cụ cập nhật
 
-Bản công cụ mới kiểm tra riêng hai nhóm: `boundary_fringe_valid_pixels` (tâm ngoài nhưng pixel giao tỉnh) và `outside_touched_valid_pixels` (nằm ngoài mặt nạ all_touched). Đồng thời kiểm tra phép tổng hợp năm độc lập với lỗi mask, để không bỏ qua chẩn đoán ảnh năm.
+- Giữ mask và giá trị ảnh gốc, nhận pixel giao biên theo quy tắc `intersecting_pixel`.
+- Pixel có tâm ngoài nhưng thuộc mặt nạ all_touched: ghi `BOUNDARY_INTERSECTION_PIXELS_INCLUDED` trong cột warnings, không loại ảnh chỉ vì lý do này.
+- Pixel hợp lệ nằm ngoài mặt nạ all_touched: vẫn bị chặn bởi `VALID_PIXELS_OUTSIDE_PROVINCE`.
+- Không nới sai số theo một tỷ lệ tùy ý; vẫn xuất số lượng pixel của cả hai nhóm.
+- Diện tích sáng đang cộng toàn bộ diện tích pixel giao biên, nên là một xấp xỉ có thể cao hơn diện tích phần giao thực. Một pixel có thể giao hai tỉnh; không khẳng định phép cộng tỉnh là diện tích hợp nhất toàn quốc chính xác.
+- Chưa thay đổi công thức SOL, mật độ hoặc tự phân bổ pixel theo phần diện tích giao. Nếu đổi quy tắc tính chính thức, phải tính lại nhất quán các năm và cập nhật công thức.
 
-Chạy lại riêng 150 ảnh mẫu từ inventory cũ, không quét lại toàn bộ ổ:
+Với hai báo cáo đã nhận, 78 ảnh đã xử lý của nhóm mẫu (72 tháng + 6 năm) đủ cơ sở gỡ chặn do tiêu chí tâm pixel cũ. Đây chưa phải số lượng manifest toàn kho đã được xuất mới.
 
-```powershell
-python -m backend.data.prepare_demo --root "E:\SatelliteData" --review-inventory "E:\SatelliteData\_demo_preparation\20261121_184926_606622\image_inventory.csv"
-```
+### Phân loại các file ngoài phạm vi
 
-Lần chạy này có scope `SAMPLES_ONLY`, không được dùng để kết luận độ phủ toàn quốc. Gửi lại `sample_image_checks.csv` và `preparation_report.json` trong thư mục kết quả mới. Công cụ chỉ đọc ảnh, không sửa mask hoặc giá trị nguồn.
+15.973 dòng trong image_errors.csv ban đầu gồm: 15.742 ảnh ngày, 167 COG/preview, 34 tile toàn quốc, 22 mosaic toàn quốc và 8 file tạm/control. Bản mới chuyển chúng sang `excluded_images.csv`, không coi là lỗi ảnh tỉnh đêm. File ảnh đêm chưa nhận dạng hoặc không mở được vẫn vào `image_errors.csv`.
 
-### Sửa phân loại lỗi của công cụ
+### Bước tiếp theo
 
-15.973 dòng trong image_errors.csv của bản cũ đều thuộc ngoài phạm vi ảnh tỉnh ban đêm:
-
-| Loại | Số file |
-|---|---|
-| Ảnh ngày | 15.742 |
-| COG hiển thị/preview | 167 |
-| Tile ảnh toàn quốc | 34 |
-| Mosaic toàn quốc | 22 |
-| File tạm/control | 8 |
-
-Bản sửa đưa các file này vào `excluded_images.csv`, không báo như lỗi ảnh tỉnh ban đêm. File ảnh đêm chưa nhận dạng hoặc không mở được vẫn vào `image_errors.csv`. Một số TIFF ảnh ngày có lỗi đọc thật trong báo cáo cũ, nhưng không thuộc dữ liệu demo kinh tế đêm cần xử lý ở bước này.
-
-**Phần A chưa hoàn tất:** còn phân biệt pixel giao biên/ngoài tỉnh ở 6 mốc, xác nhận ảnh năm và chốt bộ ảnh chính thức. Trước mắt gửi `sample_image_checks.csv` từ bản mới hoặc lọc nhóm mẫu từ image_inventory.csv cũ, chưa cần gửi ảnh lớn.
+Cập nhật code và chạy lại kiểm kê toàn kho theo mục 2 để xuất manifest/coverage mới. Không cần tải lại hoặc tính lại ảnh do vấn đề giao biên này. Có thể dự kiến thêm lại các ứng viên bị chặn cũ, nhưng chỉ báo đủ 315/315 sau khi kết quả toàn kho mới xác nhận.
 
 ## 2. Chạy trên Antigravity / PowerShell
 
@@ -159,8 +137,8 @@ Chưa nạp `grdp_all_prices.csv` vào bộ đọc kinh tế hiện tại: bộ 
 - [ ] Bản sao sửa đổi cục bộ còn giữ được; các tab chưa lưu đã được xử lý.
 - [ ] Ranh giới gốc có đủ 63 mã, checksum đạt; diện tích không lấy từ polygon web rút gọn.
 - [ ] Metadata ảnh, scale/offset và các ảnh trùng đã được rà soát; không bỏ qua lỗi nhận dạng.
-- [ ] Ảnh mẫu không có pixel ngoài tỉnh còn hợp lệ; zero hợp lệ trong tỉnh vẫn được giữ.
-- [ ] Có bằng chứng nguồn cho bộ lọc tháng; ảnh năm mẫu đạt kiểm tra median từng pixel hoặc có giải trình cách tổng hợp khác.
+- [x] 150 ảnh mẫu không có pixel hợp lệ ngoài mặt nạ all_touched; pixel giao biên được ghi cảnh báo, không tự xóa. Zero hợp lệ trong tỉnh vẫn được giữ.
+- [ ] Bộ lọc tháng có metadata và 72 ảnh lọc mẫu không còn số âm; 6 ảnh năm đã đạt median từng pixel. Chưa kiểm chứng lại toàn bộ bước lọc từ ảnh thô.
 - [ ] Manifest ứng viên đã được rà soát trước khi dùng làm manifest chính thức.
 - [ ] Bảng độ phủ ảnh thật đủ cho khoảng năm demo đã chọn; đã xác nhận nhóm tỉnh kiểm chứng.
 - [ ] Hai loại GRDP và nhãn sơ bộ/cờ rà soát được giữ nguyên.

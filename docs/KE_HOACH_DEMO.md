@@ -70,13 +70,13 @@ Các mốc dưới đây là thứ tự các phiên làm việc, không phải g
 
 ### A. Chuẩn bị dữ liệu và môi trường
 
-Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Đã nhận báo cáo Windows: 309/315 mốc có ứng viên ảnh năm; còn 6 mốc cần xem chi tiết kiểm tra pixel, chưa chốt phần ảnh hoàn thành.
+Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_BI_DEMO_PHAN_A.md). Đã giải thích 6 mốc bị chặn cũ: pixel giao biên, không có pixel ngoài mặt nạ all_touched trong 150 ảnh mẫu; 6 ảnh năm đạt median từng pixel. Còn xuất lại manifest/độ phủ toàn kho theo quy tắc biên đã ghi rõ.
 
 - [x] Xác nhận repo, nhánh `night-app`, phiên bản code và Python trên máy demo. Báo cáo Windows xác nhận HEAD f7e5b18 khớp remote tại thời điểm chạy, Python 3.12.6 và đủ thư viện; lần pull sau cần đối chiếu lại phiên bản.
 - [ ] Sao lưu chỉnh sửa cục bộ trước khi cập nhật; đóng tab có nội dung cũ để tránh lưu đè bản vừa kéo về.
 - [ ] Lập manifest ảnh: mã tỉnh, năm, tháng, nguồn, đường dẫn, diện tích tự nhiên tỉnh.
-- [ ] Kiểm tra mẫu ảnh: tên băng, số băng, hệ tọa độ, kích thước pixel, NoData và hệ số scale/offset.
-- [ ] Kiểm tra ngoài ranh giới là NoData/mask, không bị điền 0 như pixel tối hợp lệ.
+- [x] Kiểm tra mẫu ảnh: tên băng, số băng, hệ tọa độ, kích thước pixel, NoData và hệ số scale/offset. Đã nhận báo cáo 150 mẫu trên Windows; băng phù hợp, EPSG:4326, NoData=-9999, scale=1, offset=0.
+- [x] Kiểm tra ngoài ranh giới là NoData/mask, không bị điền 0 như pixel tối hợp lệ. Đã xác minh 150 mẫu theo mặt nạ all_touched: không có pixel hợp lệ hoàn toàn ngoài tỉnh; giữ cảnh báo và giới hạn diện tích ở pixel giao biên.
 - [ ] Xác nhận ảnh tháng đã lọc và ảnh năm được tổng hợp ở cấp pixel; không lấy trung vị SOL tháng thay cho SOL ảnh năm.
 - [x] Chuẩn hóa tên/mã 63 tỉnh, gồm cách viết TP.Hồ Chí Minh; không tự áp mã sau sáp nhập. Đã đối chiếu danh mục và hai sheet GRDP; tên ảnh còn chờ kiểm kê trên Windows.
 - [ ] Lập bảng độ phủ tỉnh–năm; chọn bộ dữ liệu chính và vài tỉnh để kiểm chứng chi tiết.

@@ -58,7 +58,7 @@ def test_manifest_no_duplicate_choice_and_mask_failure(tmp_path):
     a = root/'01_ha_noi_VIIRS_2020-01_filtered.tif'
     make_image(a, [[0, 2]], month=1)
     # Polygon covers only the first pixel: zero inside valid, brightness outside invalid.
-    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.01,21.99],[105.01,22],[105,22],[105,21.99]]]}}
+    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.009,21.99],[105.009,22],[105,22],[105,21.99]]]}}
     output = tmp_path/'report'
     output.mkdir()
     catalog = {'01': provinces()[0]}
@@ -169,7 +169,7 @@ def test_mask_failure_does_not_prevent_annual_median_diagnosis(tmp_path):
     make_image(first, [[1, 4]], month=1)
     make_image(second, [[3, 6]], month=2)
     make_image(annual, [[2, 5]])
-    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.01,21.99],[105.01,22],[105,22],[105,21.99]]]}}
+    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.009,21.99],[105.009,22],[105,22],[105,21.99]]]}}
     output = tmp_path/'report'; output.mkdir()
     summary = inventory(root, output, {'01': provinces()[0]}, {'01': feature}, {'01': 10}, [2020], {'01'})
     assert summary['manifest_candidates'] == 0  # Mask failure is not waived.
@@ -189,3 +189,26 @@ def test_targeted_review_only_opens_selected_paths(tmp_path):
     output = tmp_path/'report'; output.mkdir()
     summary = inventory(root, output, {'01': provinces()[0]}, {}, {'01':10}, [2020], set(), selected)
     assert summary['files'] == 1 and summary['errors'] == 0
+
+
+def test_intersecting_border_pixels_are_warnings_not_dropped(tmp_path):
+    root = tmp_path/'data'
+    first = root/'01_VIIRS_2020-01.tif'
+    second = root/'01_VIIRS_2020-02.tif'
+    annual = root/'01_VIIRS_2020.tif'
+    make_image(first, [[1, 4]], month=1)
+    make_image(second, [[3, 6]], month=2)
+    make_image(annual, [[2, 5]])
+    before = annual.read_bytes()
+    feature = {'geometry': {'type': 'Polygon', 'coordinates': [[[105,21.99],[105.012,21.99],[105.012,22],[105,22],[105,21.99]]]}}
+    output = tmp_path/'report'; output.mkdir()
+    summary = inventory(root, output, {'01': provinces()[0]}, {'01': feature}, {'01':10}, [2020], {'01'})
+    assert summary['manifest_candidates'] == 3
+    assert summary['sampled_boundary_warnings'] == 3
+    assert summary['annual_pixel_checks'] == {'PASS_PIXEL_MEDIAN_FOR_DISCOVERED_MONTHS': 1}
+    assert annual.read_bytes() == before
+    with (output/'image_inventory.csv').open(encoding='utf-8-sig') as f:
+        rows = list(csv.DictReader(f))
+    assert all(not r['issues'] and r['warnings'] == 'BOUNDARY_INTERSECTION_PIXELS_INCLUDED' for r in rows)
+    with (output/'manifest_candidates.csv').open(encoding='utf-8-sig') as f:
+        assert all(r['boundary_rule'] == 'intersecting_pixel' for r in csv.DictReader(f))

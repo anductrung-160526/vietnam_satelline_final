@@ -208,10 +208,11 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes, inp
             continue
         row = {'path': str(path.resolve()), 'province_code': '', 'province_name': '',
                'year': '', 'month': '', 'source': '', 'area_km2': '', 'issues': '',
+               'warnings': '', 'boundary_rule': 'intersecting_pixel',
                'crs': '', 'band_names': '', 'band_count': '', 'pixel_size': '', 'nodata': '',
                'scales': '', 'offsets': '', 'dtype': '', 'unit': '', 'filter_evidence': '', 'annual_evidence': '',
                'pixel_audit': 'NOT_SAMPLED', 'annual_pixel_check': 'NOT_SAMPLED'}
-        issues = []
+        issues, notes = [], []
         try:
             with rasterio.open(path) as image:
                 tags = image.tags()
@@ -248,8 +249,12 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes, inp
                     if code in geometries and image.crs:
                         counts = audit_pixels(image, geometries[code])
                         row['pixel_audit'] = json.dumps(counts)
-                        if counts['outside_valid_pixels']:
+                        # Ảnh nguồn giữ pixel giao biên: phù hợp báo cáo 150 mẫu đã xác minh.
+                        # Không đổi mask, không bỏ pixel; diện tích biên tính cả pixel là cận trên.
+                        if counts['outside_touched_valid_pixels']:
                             issues.append('VALID_PIXELS_OUTSIDE_PROVINCE')
+                        if counts['boundary_fringe_valid_pixels']:
+                            notes.append('BOUNDARY_INTERSECTION_PIXELS_INCLUDED')
                         processed = bool(row['filter_evidence']) or row['annual_evidence'] == 'MEDIAN_OF_FILTERED_VIIRS_MONTHS'
                         if counts['negative_pixels'] and processed:
                             issues.append('NEGATIVE_RADIANCE_IN_PROCESSED_IMAGE')
@@ -261,6 +266,7 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes, inp
             issues.append('READ_OR_IDENTITY_ERROR')
             errors.append({'path': str(path), 'reason': str(error)})
         row['issues'] = ';'.join(issues)
+        row['warnings'] = ';'.join(notes)
         records.append(row)
     # Các file trùng tỉnh/năm/tháng/nguồn phải chọn có căn cứ; không tự lấy file đầu tiên.
     groups = defaultdict(list)
@@ -301,7 +307,7 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes, inp
                and r['year'] in {min(years), max(years)}]
     write_csv(output/'sample_image_checks.csv', sampled, fields)
     # Manifest CANDIDATES là kết quả kiểm kê; tags là khai báo, chưa chứng minh thuật toán lọc.
-    fields = ['province_code', 'province_name', 'year', 'month', 'source', 'path', 'area_km2']
+    fields = ['province_code', 'province_name', 'year', 'month', 'source', 'path', 'area_km2', 'boundary_rule']
     candidates = [r for r in candidates if not r['issues'] and r['year'] in years]
     write_csv(output/'manifest_candidates.csv', [{k: r[k] for k in fields} for r in candidates], fields)
     coverage = []
@@ -320,6 +326,8 @@ def inventory(root, output, catalog, geometries, areas, years, sample_codes, inp
             'annual_candidate_province_years': sum(r['annual_candidates'] > 0 for r in coverage),
             'expected_province_years': len(coverage),
             'sampled_rasters': sum(r['pixel_audit'].startswith('{') for r in records),
+            'boundary_rule': 'intersecting_pixel',
+            'sampled_boundary_warnings': sum(bool(r['warnings']) for r in records),
             'annual_pixel_checks': dict(Counter(r['annual_pixel_check'] for r in records if r['annual_pixel_check'] != 'NOT_SAMPLED'))}
 
 
@@ -398,7 +406,9 @@ def main():
     elif report['images']['annual_candidate_province_years'] < report['images']['expected_province_years']:
         report['blockers'].append('DEMO_ANNUAL_COVERAGE_INCOMPLETE')
     # Tháng đã lọc chỉ được nhận diện qua tags; chưa kiểm chứng lại với ảnh thô.
-    report['limitations'] = ['Chưa kiểm chứng thuật toán lọc từng ảnh tháng với ảnh thô nguồn.',
+    report['limitations'] = ['Pixel giao biên được giữ theo mask nguồn; cộng toàn bộ diện tích pixel có thể làm diện tích sáng thành cận trên.',
+                              'Chỉ nhóm mẫu được kiểm tra mask pixel; các tỉnh/năm khác mới kiểm tra metadata.',
+                              'Chưa kiểm chứng thuật toán lọc từng ảnh tháng với ảnh thô nguồn.',
                               'Manifest là ứng viên; kiểm tra image_inventory.csv trước khi tính chính thức.',
                               'Không thể kiểm tra tab chưa lưu trong IDE; phải đóng chúng trước khi cập nhật Git.']
     (output/'preparation_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
