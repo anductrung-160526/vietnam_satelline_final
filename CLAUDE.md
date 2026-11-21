@@ -1,5 +1,18 @@
 # Quy tắc dự án (bắt buộc, áp dụng cho mọi phiên làm việc)
 
+> **Nhánh `night-app` — ứng dụng và tính lại chỉ số từ ảnh tỉnh đã lọc.**
+> Theo yêu cầu bổ sung, `backend/data/calculate_ntl.py` tính CSV khi chạy tay;
+> API vẫn chỉ đọc. Xem `docs/NIGHT_DATA_DICTIONARY.md`. Luồng tải ảnh và bộ xử lý
+> đầy đủ vẫn nằm ở nhánh `inspriring-newton`. Mọi quy tắc dưới đây về cách TẠO ra số liệu (nguồn ảnh,
+> ngưỡng, hiệu chỉnh, mười luồng Earth Engine) vẫn là hợp đồng mà bảng số liệu phải
+> tuân theo. Module tính lại chỉ nhận ảnh tỉnh đã lọc, không thực hiện tải ảnh
+> hoặc thay thế toàn bộ pipeline.
+>
+> Phạm vi dự án đã thu lại **chỉ còn kinh tế đêm** (16/11/2026). Các mục về ảnh ngày
+> (Landsat, Sentinel-2), lớp phủ và chỉ số ngày bên dưới **chưa sửa theo phạm vi mới**
+> — giữ nguyên để không tự ý đổi thứ đã chốt với cô. Cần quyết: bỏ hẳn, hay giữ phần
+> ảnh ngày minh họa như cô đã dặn.
+
 ## Nguồn ảnh và giai đoạn
 - **Ảnh ngày: Landsat CHỈ 2004–2014; Sentinel-2 từ 2015–2025.** Không lấy Landsat sau 2014,
   không lấy Sentinel-2 trước 2015. Mỗi năm chỉ có một nguồn ảnh ngày.
@@ -30,7 +43,7 @@
   đổi cảm biến, không phải kinh tế. **`sol_ntl_hc` KHÔNG sửa mốc này**, nó chỉ xử lý
   mốc DMSP→VIIRS năm 2013.
   Mọi so sánh bắc qua 2010 là không hợp lệ, kể cả trên cột `_hc`. Giai đoạn VIIRS
-  2014–2025 không có mốc nối nào nên sạch. `app/api/store.py: MOC_2010` cảnh báo trên API;
+  2014–2025 không có mốc nối nào nên sạch. `backend/api/store.py: MOC_2010` cảnh báo trên API;
   `scripts/kiem_tra_chi_so_dem.py` nhắc lại khi soi bảng.
 - **CÓ trừ ánh sáng nền theo ngưỡng** (chốt 09/11/2026). Pixel dưới ngưỡng vẫn hợp lệ nhưng đóng
   góp 0 vào `sol_ntl`. Ngưỡng nền: VIIRS 0,5 nW/cm²/sr (bằng mặc định `lit_threshold_viirs` của
@@ -46,9 +59,9 @@
 
 ## Bảng mô tả trường dữ liệu (một bảng duy nhất cho mọi bảng số liệu)
 
-Tên cột trong `data_processed/*.csv` và trong `app/data/schema.sql` **bằng tiếng Anh**.
+Tên cột trong `data_processed/*.csv` và trong `backend/data/schema.sql` **bằng tiếng Anh**.
 Khoá chung: `province_code` + `year` + `month` (`month` = 0 với dòng ghi theo năm).
-Bảng này sinh ra từ `task_pipeline/derive.py: CODEBOOK` — sửa ở đó rồi chạy lại,
+Bảng này sinh ra từ `backend/core/chi_so.py: CODEBOOK` — sửa ở đó rồi chạy lại,
 đừng sửa tay ở đây; `tests/test_app_api.py` kiểm hai nơi khớp nhau.
 
 | Cột | Ý nghĩa | Kiểu | Đơn vị |
@@ -155,4 +168,4 @@ Xem `task_pipeline/SETUP_LUONG_GEE_VI.md` để biết các bước thiết lậ
   chọn xem theo từng tỉnh (độ sáng, diện tích sáng); một nút Export tải ra gồm ảnh đêm +
   chỉ số ngày + chỉ số đêm + chỉ số kinh tế; chỉ số kinh tế (dân số, GDP) do cô cung cấp.
 - Lớp web nằm trong `app/`, **chỉ đọc** `data_processed/*.csv` và các COG. Không tính chỉ
-  số trong API: mọi phép tính thuộc `task_pipeline/derive.py`.
+  số trong API: mọi phép tính thuộc `backend/core/chi_so.py`.

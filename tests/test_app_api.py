@@ -20,13 +20,13 @@ def fresh_database(case):
     """Một cơ sở dữ liệu riêng cho mỗi test cần ghi, trả về (đường dẫn, client)."""
     directory = tempfile.TemporaryDirectory()
     case.addCleanup(directory.cleanup)
-    from app.data import build_indices
+    from backend.data import build_indices
     db = Path(directory.name) / 'vngis.db'
     report = build_indices.build(directory.name, db, repo_fallback=False)
     os.environ['VNGIS_DB'] = str(db)
     case.addCleanup(os.environ.pop, 'VNGIS_DB', None)
     from fastapi.testclient import TestClient
-    from app.api.main import app
+    from backend.api.main import app
     return db, TestClient(app), report
 
 
@@ -36,12 +36,12 @@ class ApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
-        from app.data import build_indices
+        from backend.data import build_indices
         cls.db = Path(cls.directory.name) / 'vngis.db'
         cls.report = build_indices.build(cls.directory.name, cls.db, repo_fallback=False)
         os.environ['VNGIS_DB'] = str(cls.db)
         from fastapi.testclient import TestClient
-        from app.api.main import app
+        from backend.api.main import app
         cls.client = TestClient(app)
 
     @classmethod
@@ -102,7 +102,8 @@ class ApiTest(unittest.TestCase):
     def test_the_province_list_is_loaded_from_the_pipelines_own_file(self):
         """Không có danh sách tỉnh thứ hai trong app: nó phải đến từ task_pipeline."""
         self.assertEqual(self.report['province'], 63)
-        self.assertTrue((REPO / 'task_pipeline' / 'provinces.json').exists())
+        self.assertTrue((REPO / 'backend' / 'core' / 'ranh_gioi' / 'config'
+                         / 'danh_muc_tinh.json').exists())
 
     def test_the_indicator_catalogue_reports_real_coverage(self):
         """Giao diện phải biết chỉ số nào còn trống để nói ra, thay vì vẽ bảng rỗng."""
@@ -188,7 +189,7 @@ class WritableDatabaseTest(unittest.TestCase):
     def test_the_toa_warning_rides_along_with_any_2015_2018_day_row(self):
         """Sentinel-2 2015–2018 là TOA; ai tải dữ liệu cũng phải đọc được cảnh báo đó."""
         import sqlite3
-        from app.api import store
+        from backend.api import store
         with sqlite3.connect(self.db) as connection:
             connection.execute(
                 'INSERT OR REPLACE INTO day_annual(province_code,year,source,NDVI_mean) VALUES(?,?,?,?)',
@@ -233,11 +234,11 @@ class DeclaredDependenciesTest(unittest.TestCase):
     khai báo, nên cài xong vẫn chạy không được. Test này bắt đúng lớp lỗi đó.
     """
 
-    NOI_BO = {'app', 'province_pipeline', 'task_pipeline', 'pipeline_core', 'tests'}
+    NOI_BO = {'backend', 'frontend', 'tests'}
 
     def _declared(self):
         names = set()
-        for line in (REPO / 'app' / 'requirements.txt').read_text(encoding='utf-8').splitlines():
+        for line in (REPO / 'backend' / 'requirements.txt').read_text(encoding='utf-8').splitlines():
             line = line.split('#')[0].strip()
             if not line:
                 continue
@@ -248,7 +249,7 @@ class DeclaredDependenciesTest(unittest.TestCase):
 
     def _imported(self):
         found = set()
-        for path in sorted((REPO / 'app').rglob('*.py')):
+        for path in sorted((REPO / 'backend').rglob('*.py')):
             tree = ast.parse(path.read_text(encoding='utf-8'), str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -277,23 +278,23 @@ class StaticAndSchemaTest(unittest.TestCase):
 
     def test_health_reports_which_interface_files_are_being_served(self):
         """Khi màn hình không giống bản vừa sửa, phải biết ngay máy chủ dùng tệp nào."""
-        from app.api.main import dau_van_giao_dien, van_tay_tung_tep
+        from backend.api.main import dau_van_giao_dien, van_tay_tung_tep
         body = self.client.get('/api/health').json()
         self.assertEqual(body['dau_van_giao_dien'], dau_van_giao_dien())
-        self.assertTrue(body['thu_muc_giao_dien'].endswith('web'))
+        self.assertTrue(body['thu_muc_giao_dien'].endswith('frontend'))
         self.assertEqual(len(body['dau_van_giao_dien']), 12)
         self.assertEqual(set(body['van_tay_tung_tep']),
                          {'index.html', 'style.css', 'app.js'})
 
     def test_the_fingerprint_ignores_windows_line_endings(self):
         """Git trên Windows đổi LF thành CRLF; không chuẩn hoá thì phép so vô dụng."""
-        from app.api.main import _bam
+        from backend.api.main import _bam
         self.assertEqual(_bam(b'a\r\nb\r\n'), _bam(b'a\nb\n'))
         self.assertNotEqual(_bam(b'a\nb\n'), _bam(b'a\nc\n'))
 
     def test_the_sidebar_comes_before_the_map_in_the_markup_and_the_grid(self):
         """Cột lọc phải nằm BÊN TRÁI: ô lưới đầu tiên, và cũng là thẻ đầu tiên."""
-        web = REPO / 'app' / 'web'
+        web = REPO / 'frontend'
         html = (web / 'index.html').read_text(encoding='utf-8')
         self.assertLess(html.index('id="cot-loc"'), html.index('id="khung-ban-do"'))
         css = (web / 'style.css').read_text(encoding='utf-8')
@@ -312,7 +313,7 @@ class StaticAndSchemaTest(unittest.TestCase):
     def test_rebuilding_the_database_never_leaves_it_without_provinces(self):
         """build_cogs dựng lại DB khi schema đổi; thiếu bước nạp tỉnh là giao diện '0 tỉnh'."""
         import sqlite3
-        from app.data import build_indices
+        from backend.data import build_indices
         with sqlite3.connect(self.db) as connection:
             connection.execute('PRAGMA user_version = 1')       # giả lập schema cũ
         connection = build_indices.mo(self.db)
@@ -327,7 +328,7 @@ class StaticAndSchemaTest(unittest.TestCase):
 
     def test_build_cogs_alone_still_leaves_a_usable_database(self):
         import sqlite3
-        from app.data import build_cogs
+        from backend.data import build_cogs
         with sqlite3.connect(self.db) as connection:
             connection.execute('PRAGMA user_version = 1')
         build_cogs.record(self.db, 'cog_image',
@@ -336,7 +337,7 @@ class StaticAndSchemaTest(unittest.TestCase):
 
 
 class ColumnNamesMatchThePipelineTest(unittest.TestCase):
-    """Tên cột trong app phải trùng tên mà task_pipeline/derive.py thật sự ghi ra.
+    """Tên cột trong app phải trùng tên mà backend/core/chi_so.py thật sự ghi ra.
 
     Lệch tên thì build_indices vẫn nạp đủ dòng, API vẫn trả 200, giao diện vẫn vẽ —
     chỉ là mọi ô của cột đó trống. Không có gì báo lỗi. Đã xảy ra thật: app đi tìm
@@ -346,32 +347,37 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
     còn app dò 'CHUA_HIEU_CHINH'.
     """
 
-    def _derive_source(self):
-        # Cột _hc do task_pipeline/harmonize.py sinh ra sau bước merge, không phải derive.
-        return ((REPO / 'task_pipeline' / 'derive.py').read_text(encoding='utf-8')
-                + (REPO / 'task_pipeline' / 'harmonize.py').read_text(encoding='utf-8'))
+    def _ten_cot_hop_le(self):
+        """Tập tên cột mà bảng số liệu cam kết có, lấy từ CODEBOOK.
+
+        Trên nhánh pipeline, hai phép kiểm dưới đây dò thẳng trong mã derive.py và
+        harmonize.py. Nhánh night-app không có hai tệp đó, nên đối chiếu với CODEBOOK —
+        chính là hợp đồng in ra bảng mô tả trường trong CLAUDE.md, và cũng là thứ nhánh
+        pipeline phải tuân theo. Dòng `<KÊNH>_mean / _std` là một mục gộp cho sáu kênh
+        phổ và bốn chỉ số, nên phải trải ra.
+        """
+        from backend.core.chi_so import CODEBOOK
+        ten = {c[0] for c in CODEBOOK}
+        kenh = ('BLUE', 'GREEN', 'RED', 'NIR', 'SWIR1', 'SWIR2',
+                'NDVI', 'NDBI', 'MNDWI', 'BSI')
+        return ten | {f'{k}_{h}' for k in kenh for h in ('mean', 'std')}
 
     def test_every_night_field_appears_in_the_pipeline(self):
-        from app.api import store
-        nguon = self._derive_source()
-        thieu = [f for f in store.NIGHT_FIELDS
-                 if f not in ('year',) and f"'{f}'" not in nguon and f'{f}=' not in nguon]
-        self.assertEqual(thieu, [], f'Cột đêm không có trong derive.py: {thieu}')
+        from backend.api import store
+        hop_le = self._ten_cot_hop_le()
+        thieu = [f for f in store.NIGHT_FIELDS if f not in hop_le]
+        self.assertEqual(thieu, [], f'Cột đêm không có trong CODEBOOK: {thieu}')
 
     def test_every_day_field_appears_in_derive(self):
-        from app.api import store
-        nguon = self._derive_source()
-        # months_used do build_indices tạo khi gộp tháng lên năm, derive không có.
-        thieu = [f for f in store.DAY_FIELDS
-                 if f not in ('year', 'months_used')
-                 and f"'{f}'" not in nguon and f'{f}=' not in nguon
-                 and f"'{f.replace('_mean', '')}'" not in nguon
-                 and f"'{f.replace('_std', '')}'" not in nguon]
-        self.assertEqual(thieu, [], f'Cột ngày không có trong derive.py: {thieu}')
+        from backend.api import store
+        # months_used do build_indices tạo khi gộp tháng lên năm.
+        hop_le = self._ten_cot_hop_le() | {'months_used'}
+        thieu = [f for f in store.DAY_FIELDS if f not in hop_le]
+        self.assertEqual(thieu, [], f'Cột ngày không có trong CODEBOOK: {thieu}')
 
     def test_every_indicator_code_is_a_column_of_its_table(self):
         import sqlite3
-        from app.api import store
+        from backend.api import store
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
             for entry in store.INDICATORS:
@@ -381,17 +387,20 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
                     self.assertIn(entry['ma'], cot)
 
     def test_the_calibration_flag_derive_actually_writes_is_accepted(self):
-        """derive ghi calibration='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai."""
-        nguon = self._derive_source()
-        self.assertIn("'calibration']='PENDING'", nguon.replace(' ', ''))
-        store_source = (REPO / 'app' / 'api' / 'store.py').read_text(encoding='utf-8')
+        """Pipeline ghi calibration='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai.
+
+        Nhánh này không có mã pipeline để đối chiếu, nên chỉ kiểm được nửa phía app:
+        store phải chấp nhận CẢ HAI giá trị. Nếu không, cảnh báo DMSP-VIIRS sẽ tắt
+        lặng lẽ đúng như đã xảy ra một lần.
+        """
+        store_source = (REPO / 'backend' / 'api' / 'store.py').read_text(encoding='utf-8')
         self.assertIn("'PENDING'", store_source)
         self.assertIn("'CHUA_HIEU_CHINH'", store_source)
 
     def test_a_dmsp_to_viirs_series_always_carries_the_warning(self):
         """Chuỗi có cả hai nguồn thì cảnh báo phải hiện, dù cột calibration ghi gì."""
         import sqlite3
-        from app.api import store
+        from backend.api import store
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
             connection.executemany(
@@ -406,7 +415,7 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
 
     def test_a_series_entirely_inside_the_f18_years_carries_no_2010_warning(self):
         import sqlite3
-        from app.api import store
+        from backend.api import store
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
             connection.executemany(
@@ -420,7 +429,7 @@ class BuildBoundariesTest(unittest.TestCase):
     """Chỉ kiểm phần ghép nối. Việc tải GADM thật cần mạng, chạy trên máy người dùng."""
 
     def test_missing_boundaries_explain_the_one_command_that_fixes_it(self):
-        from app.data import build_boundaries
+        from backend.data import build_boundaries
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'c.json'
             config.write_text(json.dumps({
@@ -433,9 +442,9 @@ class BuildBoundariesTest(unittest.TestCase):
 
     def test_the_download_flag_reaches_prepare_gadm(self):
         """--tai-gadm phải gọi đúng prepare() của pipeline, không tự tải theo cách khác."""
-        from app.data import build_boundaries
+        from backend.data import build_boundaries
         goi = []
-        module = types.ModuleType('province_pipeline.prepare_gadm')
+        module = types.ModuleType('backend.core.ranh_gioi.prepare_gadm')
         module.prepare = lambda config: goi.append(config) or 63
         with tempfile.TemporaryDirectory() as directory:
             config = {'boundaries': str(Path(directory) / 'x.geojson'),
@@ -443,8 +452,8 @@ class BuildBoundariesTest(unittest.TestCase):
                       'boundary_policy': 'gadm41_research'}
             path = Path(directory) / 'c.json'
             path.write_text(json.dumps(config), encoding='utf-8')
-            with mock.patch.dict(sys.modules, {'province_pipeline.prepare_gadm': module}), \
-                 mock.patch('province_pipeline.boundaries.load_boundaries',
+            with mock.patch.dict(sys.modules, {'backend.core.ranh_gioi.prepare_gadm': module}), \
+                 mock.patch('backend.core.ranh_gioi.boundaries.load_boundaries',
                             return_value=({}, {'source': 'GADM', 'version': 'GADM 4.1',
                                                'sha256': 'x'})):
                 out, count, size = build_boundaries.build(path, Path(directory) / 'o.geojson',
@@ -456,22 +465,25 @@ class BuildBoundariesTest(unittest.TestCase):
             self.assertEqual(json.loads(out.read_text(encoding='utf-8'))['type'],
                              'FeatureCollection')
 
-    def test_the_default_config_matches_what_the_pipeline_writes(self):
-        """Chạy không --config phải trỏ đúng chỗ task_pipeline.local.prepare() đặt file."""
-        from app.data.build_boundaries import DEFAULT_CONFIG
-        self.assertEqual(DEFAULT_CONFIG['boundaries'],
-                         'province_pipeline/config/boundaries.geojson')
+    def test_the_default_config_points_inside_this_branch(self):
+        """Nhánh này không có gói pipeline, nên ranh giới phải nằm cạnh mã dựng ra nó.
+
+        Trước đây DEFAULT_CONFIG trỏ vào province_pipeline/config/ và được đối chiếu với
+        task_pipeline/local.py. Cả hai đã bị xoá khỏi nhánh night-app, nên phép đối chiếu
+        đó không còn nghĩa; thay bằng việc buộc đường dẫn nằm trong backend/.
+        """
+        from backend.data.build_boundaries import DEFAULT_CONFIG
         self.assertEqual(DEFAULT_CONFIG['boundary_policy'], 'gadm41_research')
-        local = (REPO / 'task_pipeline' / 'local.py').read_text(encoding='utf-8')
-        for value in DEFAULT_CONFIG.values():
-            self.assertIn(value, local)
+        for key in ('boundaries', 'boundary_metadata'):
+            self.assertTrue(DEFAULT_CONFIG[key].startswith('backend/core/ranh_gioi/'),
+                            DEFAULT_CONFIG[key])
 
 
 class BuildCogsTest(unittest.TestCase):
     """Phần tìm ảnh và ghi sổ phải đúng; việc gọi gdal chỉ chạy trên máy có gdal-bin."""
 
     def test_sources_are_found_by_year_for_both_naming_shapes(self):
-        from app.data import build_cogs
+        from backend.data import build_cogs
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'a').mkdir()
@@ -486,7 +498,7 @@ class BuildCogsTest(unittest.TestCase):
     def test_originals_are_recorded_but_never_treated_as_servable(self):
         """Ảnh gốc 24 GB chỉ được ghi sổ ở tầng lạnh, không bao giờ vào bảng cog_image."""
         import sqlite3
-        from app.data import build_cogs
+        from backend.data import build_cogs
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'x.db'
             build_cogs.record(db, 'cog_image',
@@ -505,7 +517,7 @@ class BuildCogsTest(unittest.TestCase):
 
     def test_the_illustrative_day_image_is_rgb_eight_bit_and_downsampled(self):
         """Lời cô dặn: ảnh ngày phải nén lại, mỗi năm một ảnh. Lệnh phải phản ánh đúng thế."""
-        from app.data import build_cogs
+        from backend.data import build_cogs
         seen = []
         original = build_cogs.run
         build_cogs.run = lambda command: seen.append([str(c) for c in command])
@@ -530,8 +542,8 @@ class TheProvincePickerIsSortedAndSearchable(unittest.TestCase):
     """Cô dặn: danh sách tỉnh xếp A-Z và gõ tìm được tên tỉnh."""
 
     def setUp(self):
-        self.js = (REPO / 'app' / 'web' / 'app.js').read_text(encoding='utf-8')
-        self.html = (REPO / 'app' / 'web' / 'index.html').read_text(encoding='utf-8')
+        self.js = (REPO / 'frontend' / 'app.js').read_text(encoding='utf-8')
+        self.html = (REPO / 'frontend' / 'index.html').read_text(encoding='utf-8')
 
     def test_the_list_is_sorted_with_vietnamese_collation(self):
         """localeCompare('vi') mới xếp đúng a < ă < â; sort() trần thì Bắc đứng trước Bạc."""
@@ -550,7 +562,7 @@ class TheProvincePickerIsSortedAndSearchable(unittest.TestCase):
 
     def test_the_api_keeps_the_official_order(self):
         """Sắp xếp là việc của giao diện. API giữ thứ tự mã thống kê vì nơi khác dựa vào."""
-        store_src = (REPO / 'app' / 'api' / 'store.py').read_text(encoding='utf-8')
+        store_src = (REPO / 'backend' / 'api' / 'store.py').read_text(encoding='utf-8')
         self.assertIn('ORDER BY t.number', store_src)
 
 
@@ -563,7 +575,7 @@ class AnOldTableIsNotReportedAsMissingData(unittest.TestCase):
 
     def _nap(self, header, dong):
         import csv
-        from app.data import build_indices
+        from backend.data import build_indices
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / 'VN_NTL_Panel_2004_2025' / 'data_processed'
             out.mkdir(parents=True)
@@ -581,7 +593,7 @@ class AnOldTableIsNotReportedAsMissingData(unittest.TestCase):
         self.assertIn('1 dòng', info['khong_doc_duoc'])
 
     def test_a_genuinely_absent_file_is_still_reported_as_absent(self):
-        from app.data import build_indices
+        from backend.data import build_indices
         with tempfile.TemporaryDirectory() as tmp:
             info = build_indices.build(tmp, Path(tmp) / 'x.db')['ntl_annual']
         self.assertEqual(info['rows'], 0)
@@ -601,7 +613,7 @@ class TheFieldTableInClaudeMdMatchesTheCodebook(unittest.TestCase):
         return (REPO / 'CLAUDE.md').read_text(encoding='utf-8')
 
     def test_every_documented_column_exists_in_the_codebook(self):
-        from task_pipeline.derive import CODEBOOK
+        from backend.core.chi_so import CODEBOOK
         ten = {c[0] for c in CODEBOOK}
         for name in ten:
             with self.subTest(cot=name):
@@ -610,7 +622,7 @@ class TheFieldTableInClaudeMdMatchesTheCodebook(unittest.TestCase):
 
     def test_the_night_table_columns_are_all_documented(self):
         """Mọi cột app đọc từ ntl_annual phải tra được trong CLAUDE.md."""
-        from app.api import store
+        from backend.api import store
         bang = self._bang()
         for name in store.NIGHT_FIELDS:
             with self.subTest(cot=name):
@@ -618,7 +630,7 @@ class TheFieldTableInClaudeMdMatchesTheCodebook(unittest.TestCase):
 
     def test_the_column_names_are_english(self):
         """Dấu hiệu sót lại của đợt đổi tên: cột vẫn mang tên tiếng Việt."""
-        from task_pipeline.derive import CODEBOOK
+        from backend.core.chi_so import CODEBOOK
         viet = ('ma_tinh', 'ten_tinh', 'nam', 'thang', 'sol_ntl', 'mat_do_ntl',
                 'thay_doi_ntl', 'cv_ntl', 'dt_sang_km2', 'nguon_anh', 'trang_thai',
                 'hieu_chinh', 'ghi_chu', 'dt_tu_nhien_km2')
@@ -640,7 +652,7 @@ class EconomyIndicatorDocTest(unittest.TestCase):
                'ty_trong_sol_quoc_gia', 'gdp_du_bao'}
 
     def test_the_three_mandated_indicators_are_documented_and_real(self):
-        from app.api import store
+        from backend.api import store
         text = self.DOC.read_text(encoding='utf-8')
         for ma in ('sol', 'sol_density', 'sol_change_pct'):
             with self.subTest(chi_so=ma):
@@ -649,12 +661,12 @@ class EconomyIndicatorDocTest(unittest.TestCase):
 
     def test_every_group_a_column_named_in_the_doc_exists_in_the_app(self):
         import re
-        from app.api import store
+        from backend.api import store
         text = self.DOC.read_text(encoding='utf-8')
         thuc = set(store.NIGHT_FIELDS) | {i['ma'] for i in store.INDICATORS}
         bo_qua = self.DE_XUAT | {
             'province_code', 'year', 'economy', 'population', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
-            'stable_lights', 'data_processed', 'metadata', 'task_pipeline', 'app', 'derive',
+            'stable_lights', 'data_processed', 'metadata', 'backend', 'derive',
             'ntl_annual', '_hc'}
         ten = {t for t in re.findall(r'`([a-z0-9_]+)`', text)
                if '.' not in t and '/' not in t}
@@ -674,7 +686,7 @@ class MonthlyIndicesLoadIntoTheDatabase(unittest.TestCase):
 
     def _nap(self, dong, header=None):
         import csv
-        from app.data import build_indices
+        from backend.data import build_indices
         header = header or list(dong[0])
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / 'VN_NTL_Panel_2004_2025' / 'data_processed'
@@ -730,7 +742,7 @@ class MonthlyIndicesLoadIntoTheDatabase(unittest.TestCase):
     def test_the_monthly_columns_the_charts_need_are_in_the_schema(self):
         """Ba cột này là lý do bảng tháng tồn tại; thiếu là biểu đồ tháng vô dụng."""
         import sqlite3
-        from app.data import build_indices
+        from backend.data import build_indices
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / 'x.db'
             build_indices.build(tmp, db)
@@ -805,7 +817,7 @@ class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
 
     def test_every_monthly_indicator_is_a_real_column_of_the_monthly_table(self):
         import sqlite3
-        from app.api import store
+        from backend.api import store
         with sqlite3.connect(self.db) as con:
             cot = {r[1] for r in con.execute('PRAGMA table_info(ntl_monthly)')}
         for entry in store.INDICATORS:
@@ -823,7 +835,7 @@ class DownloadingOneProvincesImage(unittest.TestCase):
         import numpy as np
         import rasterio
         from affine import Affine
-        from app.data.build_cogs import record
+        from backend.data.build_cogs import record
         thu_muc = tempfile.TemporaryDirectory()
         self.addCleanup(thu_muc.cleanup)
         goc = Path(thu_muc.name)
@@ -834,7 +846,7 @@ class DownloadingOneProvincesImage(unittest.TestCase):
                            transform=Affine(.1, 0, 105, 0, -.1, 22)) as ds:
             ds.write(np.full((1, 20, 20), 5.0, dtype='float32'))
         db = goc / 'x.db'
-        from app.data import build_indices
+        from backend.data import build_indices
         build_indices.build(thu_muc.name, db)
         record(db, 'cog_image', [('NTL', 2024, 7, str(anh), 'VIIRS', 10,
                                   105.0, 20.0, 107.0, 22.0)], theo_thang=True)
@@ -852,7 +864,7 @@ class DownloadingOneProvincesImage(unittest.TestCase):
         os.environ['VNGIS_DB'] = str(db)
         self.addCleanup(os.environ.pop, 'VNGIS_DB', None)
         from fastapi.testclient import TestClient
-        from app.api.main import app
+        from backend.api.main import app
         return TestClient(app)
 
     def test_the_clipped_image_is_smaller_than_the_national_one(self):
@@ -1055,14 +1067,14 @@ class TheNightEconomyScreen(unittest.TestCase):
 
     def test_the_sample_csv_has_the_columns_the_loader_expects(self):
         import csv
-        from app.data import build_indices
-        mau = REPO / 'app' / 'data' / 'economy_mau.csv'
+        from backend.data import build_indices
+        mau = REPO / 'backend' / 'data' / 'economy_mau.csv'
         self.assertTrue(mau.is_file(), 'tệp mẫu để cô điền số liệu')
         with mau.open(encoding='utf-8-sig') as f:
             cot = set(next(csv.reader(f)))
         _, _, _ = fresh_database(self)
         import sqlite3
-        from app.api import store
+        from backend.api import store
         with sqlite3.connect(store.database_path()) as con:
             that = {r[1] for r in con.execute('PRAGMA table_info(economy)')}
         self.assertTrue(cot <= that, f'cột thừa trong tệp mẫu: {cot - that}')
@@ -1076,7 +1088,7 @@ def test_ranh_gioi_doc_duoc_ca_khoa_cu(tmp_path, monkeypatch):
     Lỗi đã gặp: build_boundaries ghi 'ma_tinh' còn giao diện đọc 'province_code',
     nên chọn Hà Nội thì bản đồ không cắt theo ranh giới mà không báo lỗi gì rõ ràng.
     """
-    from app.api import main as api
+    from backend.api import main as api
     o = {'type': 'Polygon', 'coordinates': [[[105., 20.], [106., 20.], [106., 21.], [105., 20.]]]}
     cu = tmp_path / 'cu.geojson'
     cu.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
@@ -1094,8 +1106,8 @@ def test_ranh_gioi_doc_duoc_ca_khoa_cu(tmp_path, monkeypatch):
 
 
 def test_build_boundaries_ghi_khoa_tieng_anh():
-    """Bản dựng mới phải ghi đúng tên khoá mà app/web/app.js đang đọc."""
-    nguon = Path('app/data/build_boundaries.py').read_text(encoding='utf-8')
+    """Bản dựng mới phải ghi đúng tên khoá mà frontend/app.js đang đọc."""
+    nguon = Path('backend/data/build_boundaries.py').read_text(encoding='utf-8')
     assert "'province_code': code" in nguon
     assert "'ma_tinh': code" not in nguon
 
@@ -1108,10 +1120,10 @@ def test_gia_lap_kinh_te_khoi_phuc_dung_beta(tmp_path):
     """
     import importlib.util
     spec = importlib.util.spec_from_file_location(
-        'gia_lap', Path(__file__).resolve().parent.parent / 'scripts' / 'gia_lap_kinh_te.py')
+        'gia_lap', Path(__file__).resolve().parent.parent / 'backend' / 'data' / 'gia_lap_kinh_te.py')
     gia_lap = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gia_lap)
-    from task_pipeline.derive import do_co_gian
+    from backend.core.chi_so import do_co_gian
 
     import math
     import random
@@ -1128,38 +1140,3 @@ def test_gia_lap_kinh_te_khoi_phuc_dung_beta(tmp_path):
     ket = do_co_gian(dong, gia_so_sanh=True)
     assert abs(ket['beta'] - 0.45) < 0.06, f"beta lệch quá: {ket['beta']}"
     assert ket['n'] == 63 * 12
-
-
-def _nap_kiem_tra_thang():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        'kttt', Path(__file__).resolve().parent.parent / 'scripts' / 'kiem_tra_thang_thieu.py')
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def test_tach_duoc_thieu_anh_voi_may_che():
-    """Hai thứ trông giống nhau trên bảng (ô trống) nhưng xử lý ngược nhau.
-
-    Thiếu ảnh thì phải tải lại; mây che thì tải bao nhiêu lần cũng vẫn trống.
-    Nhầm hai cái này là đi tải lại vài trăm GB mà không được gì.
-    """
-    m = _nap_kiem_tra_thang()
-    khong_anh = {'status': 'CHUA_CO_ANH', 'obs': 'O', 'pix': None, 'sol': None, 'phu': None}
-    may_che = {'status': 'OK', 'obs': 'L', 'pix': 0, 'sol': None, 'phu': None}
-    thieu_phu = {'status': 'OK', 'obs': 'A', 'pix': 5000, 'sol': 1.0, 'phu': 0.3}
-    du = {'status': 'OK', 'obs': 'A', 'pix': 20000, 'sol': 1.0, 'phu': 0.99}
-    assert m.phan_loai(khong_anh) == 'a_khong_co_anh'
-    assert m.phan_loai(may_che) == 'b_khong_pixel'
-    assert m.phan_loai(thieu_phu) == 'c_phu_thieu'
-    assert m.phan_loai(du) == 'd_binh_thuong'
-
-
-def test_do_phu_lay_trung_vi_khong_lay_cuc_dai():
-    """Một tháng quang mây bất thường không được thành thước đo cho cả chuỗi."""
-    m = _nap_kiem_tra_thang()
-    dong = [{'ma': '01', 'pix': p} for p in (100, 100, 100, 100, 180)]
-    chuan = m.do_phu(dong)
-    assert chuan['01'] == 100, 'phải là trung vị 100, không phải cực đại 180'
-    assert dong[-1]['phu'] == 1.8

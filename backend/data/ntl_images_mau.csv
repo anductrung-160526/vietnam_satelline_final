@@ -1,0 +1,3 @@
+province_code,province_name,year,month,source,path,area_km2
+01,Hà Nội,2024,0,VIIRS,anh_da_loc/01_VIIRS_2024.tif,3358.6
+01,Hà Nội,2024,1,VIIRS,anh_da_loc/01_VIIRS_2024-01.tif,3358.6
