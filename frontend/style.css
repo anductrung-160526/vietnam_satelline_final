@@ -212,3 +212,33 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 .dien-giai{margin:8px 0 0;font-size:.88rem;color:var(--chu)}
 #o-chart-kt{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
 #o-chart-kt[hidden]{display:none}
+
+/* Phần B: định danh trước, Raw trước Processed, vùng cuộn không làm mất bộ lọc. */
+.shared-context{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:9px 16px;border-bottom:1px solid var(--vien);background:var(--nen-nhat)}
+.shared-context label{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--chu-mo)}
+.shared-context select{padding:5px 8px;max-width:240px}
+#context-summary{margin-left:auto;color:var(--nhan);font-size:.8rem}
+.vung-bang{overflow-y:auto}
+.detail-fields{margin-bottom:22px}
+.data-identity{display:flex;gap:8px 18px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--vien);margin-bottom:14px}
+.data-identity span{color:var(--chu-mo);font-size:.8rem}
+.data-group{border:1px solid var(--vien);border-radius:8px;padding:14px;margin:12px 0;background:var(--nen-nhat)}
+.data-group h2,.section-label{font-size:.95rem;margin:0 0 12px}
+.data-group.raw{border-top:3px solid var(--lam)}
+.data-group.processed{border-top:3px solid var(--nhan)}
+.data-group td small,.class-table small{display:block;color:var(--chu-mo);font-size:.73rem}
+.missing{color:var(--chu-mo)}
+.missing small{max-width:320px}
+.asset-link{display:inline-block;color:var(--lam);padding:5px 0}
+.badge{display:inline-block;margin:0 5px;padding:1px 6px;border-radius:4px;background:#34301b;color:var(--nhan);font-size:.72rem}
+.empty-state{padding:12px;color:var(--chu-mo);background:var(--nen-cao);border-radius:6px;font-size:.8rem}
+.fit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:16px}
+.fit-card{border:1px solid var(--vien);border-radius:6px;padding:12px}
+.fit-card h3{font-size:.86rem;margin:0 0 8px}
+.fit-card p{color:var(--nhan);font-family:ui-monospace,monospace}
+.class-table{font-size:.76rem;width:100%}
+.class-table i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+#loc-kinhte{padding:18px}
+#loc-kinhte label{display:block;margin-bottom:8px}
+#loc-kinhte select{width:100%}
+@media(max-width:860px){.shared-context{gap:8px}.shared-context label{flex:1}#context-summary{width:100%;margin:0}.data-group{padding:10px}.than.rong{overflow-y:auto}.vung-bang{overflow:visible}}

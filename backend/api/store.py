@@ -466,12 +466,12 @@ def tong_hop(year, month=0):
     tham = (year, month) if month else (year,)
     with connect() as connection:
         row = connection.execute(
-            f'SELECT SUM(sol),SUM(area_km2),COUNT(*),GROUP_CONCAT(DISTINCT source) '
+            f'SELECT SUM(sol),SUM(area_km2),COUNT(*),GROUP_CONCAT(DISTINCT source),SUM(lit_area_km2) '
             f'FROM {bang} WHERE {dieu_kien} AND sol IS NOT NULL', tham).fetchone()
-    sol, dien_tich, so_tinh, nguon = row
+    sol, dien_tich, so_tinh, nguon, lit_area = row
     if not so_tinh:
         return None
-    return {'sol': sol, 'area_km2': dien_tich,
+    return {'sol': sol, 'area_km2': dien_tich, 'lit_area_km2': lit_area,
             'sol_density': (sol / dien_tich) if sol is not None and dien_tich else None,
             'so_tinh': so_tinh, 'source': nguon,
             'year': year, 'month': month}

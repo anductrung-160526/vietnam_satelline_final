@@ -17,3 +17,6 @@ backend/data/provinces.geojson
 data_processed/
 
 .pytest_cache/
+
+# Bản sao SQLite trước khi nạp dữ liệu demo, giữ trên máy, không đưa lên Git.
+*.db.backup_*

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VNGISDash</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="vendor/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -19,6 +20,13 @@
     </nav>
     <span id="trang-thai" class="pill">đang tải…</span>
   </header>
+
+  <section class="shared-context" aria-label="Phạm vi dùng chung">
+    <label>Tỉnh <select id="context-province" aria-label="Tỉnh dùng chung"></select></label>
+    <label>Năm <select id="context-year" aria-label="Năm dùng chung"></select></label>
+    <label>Thời gian <select id="context-month" aria-label="Bước thời gian dùng chung"><option value="0">Cả năm</option></select></label>
+    <span id="context-summary" role="status"></span>
+  </section>
 
   <!-- ===================== MÀN 1 — ẢNH ĐÊM ===================== -->
   <div class="than" id="man-anh">
@@ -38,6 +46,15 @@
       <select id="chon-nam"></select>
       <input type="range" id="nam-truot" min="0" max="0" step="1">
 
+      <label for="layer-mode">Dữ liệu bản đồ</label>
+      <select id="layer-mode">
+        <option value="processed">Bức xạ đã xử lý · Processed</option>
+        <option value="avg_rad">avg_rad · Raw</option>
+        <option value="cf_cvg">cf_cvg · Raw</option>
+        <option value="classes">Năm mức sáng · Processed</option>
+      </select>
+      <div id="layer-status" class="ghi-chu" role="status"></div>
+      <div id="class-summary"></div>
       <div id="canh-bao"></div>
 
       <button id="nut-tai-anh">Tải ảnh đêm (.tif)</button>
@@ -60,6 +77,8 @@
   <div class="than rong" id="man-chiso" hidden>
     <aside class="loc" id="loc-chiso"></aside>
     <section class="vung-bang">
+      <div id="detail-fields" class="detail-fields" aria-live="polite"></div>
+      <h2 class="section-label">So sánh theo thời gian · Processed</h2>
       <div class="chan-bang">
         <div class="doi-xem" id="xem-chiso">
           <button type="button" aria-pressed="true" data-xem="bang">Bảng</button>
@@ -85,6 +104,7 @@
 
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/echarts.min.js"></script>
+<script src="demo.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

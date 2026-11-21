@@ -358,9 +358,65 @@ def _mount_tiles():
     if not _titiler_ready():
         return False
     from titiler.core.factory import TilerFactory
+    from titiler.core.errors import add_exception_handlers, DEFAULT_STATUS_CODES
+    add_exception_handlers(app, DEFAULT_STATUS_CODES)
     tiler = TilerFactory()
     app.include_router(tiler.router, prefix='/tiles/cog', tags=['tiles'])
     return True
+
+
+# Phần B: các API chỉ đọc phục vụ nhóm Raw/Processed và đối chiếu GRDP.
+from . import demo_view
+
+
+@app.get('/api/demo/province')
+def demo_province(province_code: str, nam: int = Query(..., ge=2004, le=2025),
+                  thang: int = Query(0, ge=0, le=12)):
+    result = demo_view.province_view(_code(province_code), nam, thang)
+    if result is None:
+        raise HTTPException(404, 'Không có mã tỉnh này.')
+    result['tiles'] = TILE_URL if _titiler_ready() else None
+    return result
+
+
+@app.get('/api/demo/economy')
+def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
+                 nam_den: int = Query(2024, ge=2004, le=2025),
+                 province_code: str = '', price_basis: str = 'so_sanh'):
+    if nam_tu > nam_den or price_basis not in ('so_sanh', 'hien_hanh', 'compare'):
+        raise HTTPException(400, 'Khoảng năm hoặc cơ sở giá không hợp lệ.')
+    return demo_view.economic_view(nam_tu, nam_den, _code(province_code) if province_code else None, price_basis)
+
+
+@app.get('/api/demo/economy.csv')
+def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
+                     nam_den: int = Query(2024, ge=2004, le=2025),
+                     province_code: str = '', price_basis: str = 'so_sanh'):
+    import csv
+    data = demo_economy(nam_tu, nam_den, province_code, price_basis)
+    fields = ['province_code', 'province_name', 'year', 'population', 'grdp_so_sanh',
+              'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
+              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated']
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
+    writer.writeheader()
+    writer.writerows(data['dong'])
+    return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')), media_type='text/csv',
+                             headers={'Content-Disposition': 'attachment; filename="night_economy_comparison.csv"'})
+
+
+@app.get('/api/demo/image')
+def demo_image(province_code: str, nam: int = Query(..., ge=2004, le=2025),
+               thang: int = Query(0, ge=0, le=12), kind: str = 'raw'):
+    if kind not in ('raw', 'processed', 'classes'):
+        raise HTTPException(400, 'Loại ảnh không hợp lệ.')
+    item = demo_view.asset(_code(province_code), nam, thang, kind)
+    if not item:
+        raise HTTPException(404, 'Chưa đăng ký ảnh ở mốc này.')
+    if not Path(item['path']).is_file():
+        raise HTTPException(410, 'Ảnh đã đăng ký không còn ở đường dẫn nguồn.')
+    return FileResponse(item['path'], media_type='image/tiff',
+                        filename=f"night_{_code(province_code)}_{nam}_{thang:02}_{kind}.tif")
 
 
 TILES_MOUNTED = _mount_tiles()

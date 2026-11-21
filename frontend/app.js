@@ -49,6 +49,7 @@ function chuyenMan(ten){
     b.setAttribute('aria-selected', String(b.dataset.man === ten)));
   for(const [k, id] of Object.entries(MAN)) $(id).hidden = k !== ten;
   if(ten === 'anh' && banDo) banDo.resize();
+  if(ten === 'kinhte') requestAnimationFrame(() => economyChart?.resize());
   /* ECharts không đo được khung đang ẩn, nên phải vẽ lại sau khi màn hiện ra. */
   if(ten === 'chiso' && !$('o-chart').hidden) requestAnimationFrame(veDuong);
 }
@@ -186,7 +187,7 @@ async function dungBanDo(){
   banDo.on('click','tinh-bat', e => {
     const ma = String(e.features[0].properties.province_code).padStart(2,'0');
     xoaBoLoc();
-    $('chon-tinh').value = ma; chonPhamVi(ma);
+    $('chon-tinh').value = ma; applySharedContext(ma,demoSelection.year,demoSelection.month);
   });
   banDo.on('mouseenter','tinh-bat',()=>banDo.getCanvas().style.cursor='pointer');
   banDo.on('mouseleave','tinh-bat',()=>banDo.getCanvas().style.cursor='');
@@ -201,6 +202,8 @@ function themCanhBao(loai, chu){
 /* ===================== ảnh đêm ===================== */
 function doiAnhNen(chiSo){
   const muc = cacMoc[chiSo];
+  if(muc){ demoSelection.year = muc.year; demoSelection.month = muc.month || 0; syncContext(); }
+  if(demoReady) refreshDemo();
   veThe(muc);
   if(!banDo) return;
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
@@ -240,10 +243,12 @@ function theSo(nhan, gt, donVi){
     + `<span class="dvi">${thoat(donVi)}</span></div></div>`;
 }
 
+let cardRequest = 0;
 async function veThe(muc){
+  const request = ++cardRequest;
   const o = $('the-so');
   if(!muc){
-    o.innerHTML = theSo('SOL','—','') + theSo('Diện tích','—','km²') + theSo('Mật độ','—','');
+    o.innerHTML = theSo('SOL','—','') + theSo('Diện tích sáng','—','km²') + theSo('Mật độ','—','');
     $('nut-tai-anh').disabled = true;
     $('ghi-chu-tai').textContent = '';
     return;
@@ -256,24 +261,28 @@ async function veThe(muc){
   let sol = null, dienTich = null, matDo = null;
   try{
     if(maDangXem){
-      const d = await layJSON('/api/panel?chi_so=sol,area_km2,sol_density'
+      const d = await layJSON('/api/panel?chi_so=sol,lit_area_km2,sol_density'
         + `&moc=${maMoc(muc)}&province_code=${maDangXem}`);
       const lay = ma => (d.dong.find(r => r.chi_so === ma) || {}).gia_tri?.[0];
-      sol = lay('sol'); dienTich = lay('area_km2'); matDo = lay('sol_density');
+      sol = lay('sol'); dienTich = lay('lit_area_km2'); matDo = lay('sol_density');
     }else{
       const d = await layJSON(`/api/tong-hop?nam=${muc.year}&thang=${muc.month || 0}`);
-      sol = d.sol; dienTich = d.area_km2; matDo = d.sol_density;
+      sol = d.sol; dienTich = d.lit_area_km2; matDo = d.sol_density;
     }
   }catch{ /* chưa có chỉ số của mốc này — ba thẻ để gạch ngang, không bịa số */ }
+  if(request !== cardRequest) return;
   o.innerHTML =
       theSo('SOL', dinhDang(sol, 0) ?? '—', sol === null || sol === undefined ? '' : donVi)
-    + theSo('Diện tích', dinhDang(dienTich, 0) ?? '—', 'km²')
+    + theSo('Diện tích sáng', dinhDang(dienTich, 0) ?? '—', 'km²')
     + theSo('Mật độ', dinhDang(matDo, 2) ?? '—',
             matDo === null || matDo === undefined ? '' : 'trên km²');
 }
 
 function chonPhamVi(ma){
   maDangXem = ma || null;
+  demoSelection.code = maDangXem;
+  syncContext();
+  if(demoReady) refreshDemo();
   const ten = ma ? (danhSachTinh.find(t => t.province_code === ma) || {}).province_name
                  : 'Toàn quốc';
   $('nhan-pham-vi').textContent = ten || 'Toàn quốc';
@@ -320,12 +329,17 @@ function locTinh(tu){
   }
 }
 
-async function napMoc(buocMoi){
+let timelineRequest = 0;
+async function napMoc(buocMoi, preferred = null){
+  const request = ++timelineRequest;
   buoc = buocMoi;
   document.querySelectorAll('.buoc').forEach(b =>
     b.classList.toggle('dang-chon', b.dataset.buoc === buoc));
-  try{ thongTinNen = await layJSON(`/api/basemap?buoc=${buoc}`); }
-  catch{ thongTinNen = null; }
+  let data;
+  try{ data = await layJSON(`/api/basemap?buoc=${buocMoi}`); }
+  catch{ data = null; }
+  if(request !== timelineRequest) return;
+  thongTinNen = data;
   cacMoc = thongTinNen?.chi_tiet || [];
 
   const chon = $('chon-nam'), truot = $('nam-truot');
@@ -333,7 +347,7 @@ async function napMoc(buocMoi){
   if(!cacMoc.length){
     chon.innerHTML = '<option>— chưa có ảnh —</option>';
     chon.disabled = truot.disabled = true;
-    veThe(null); dongThangMau();
+    doiAnhNen(-1);
     nhacThoiGian(buoc === 'thang'
       ? 'Chưa có ảnh theo tháng. Chạy: '
         + '<code>python -m backend.data.build_monthly_cogs --root E:\\SatelliteData</code>'
@@ -346,9 +360,14 @@ async function napMoc(buocMoi){
      ở chế độ tháng các mốc cách nhau một tháng, không đều theo năm. */
   chon.innerHTML = cacMoc.map((m, i) => `<option value="${i}">${tenMoc(m)}</option>`)
     .reverse().join('');
-  truot.min = 0; truot.max = cacMoc.length - 1; truot.value = cacMoc.length - 1;
-  chon.value = truot.value;
-  doiAnhNen(cacMoc.length - 1);
+  const index = preferred ? cacMoc.findIndex(m => maMoc(m) === preferred) : cacMoc.length - 1;
+  if(index < 0){
+    chon.insertAdjacentHTML('afterbegin', '<option value="">— chưa có COG ở mốc đã chọn —</option>');
+    chon.value = ''; truot.disabled = true; doiAnhNen(-1);
+  }else{
+    truot.min = 0; truot.max = cacMoc.length - 1; truot.value = index;
+    chon.value = index; doiAnhNen(index);
+  }
   if(buoc === 'thang' && thongTinNen.ghi_chu_thang) nhacThoiGian(thongTinNen.ghi_chu_thang);
 }
 
@@ -461,6 +480,7 @@ function dungLoc(hop){
       danhDauCoThang(hop, o.dataset.thang.slice(0,4));
     }
     capNhatDem(hop); napBang();
+    if((o.dataset.tinh || o.dataset.nam || o.dataset.thang) && chon.tinh.size === 1 && chon.moc.size === 1) adoptPanelContext();
   });
 
   hop.addEventListener('click', e => {
@@ -526,6 +546,7 @@ function dongBoCay(hop){
     o.checked = chon.moc.has(o.dataset.nam);
     danhDauCoThang(hop, o.dataset.nam);
   });
+  hop.querySelectorAll('[data-thang]').forEach(o => o.checked = chon.moc.has(o.dataset.thang));
 }
 
 /* Ô tick năm không còn phản ánh trạng thái các tháng, nên phải có chỗ khác cho biết
@@ -605,7 +626,7 @@ function veBang(){
       const co = (r.co || [])[i];
       const tt = co && chuGiai[co] ? ` title="${thoat(chuGiai[co])}"` : '';
       return (v === null || v === undefined)
-        ? `<td class="rong"${tt}>—</td>`
+        ? `<td class="rong" title="Chưa có dữ liệu hoặc chỉ số không áp dụng ở mốc này">—</td>`
         : `<td${tt}>${dinhDang(v, chuSo[r.chi_so] ?? 2)}</td>`;
     }).join('')
     + (d.ham || []).map(h => {
@@ -690,145 +711,7 @@ function doiXem(chart){
 }
 
 /* ===================== màn 3: chỉ số kinh tế đêm ===================== */
-let bdTan = null;
 
-function locKinhTe(d){
-  /* Màn này chưa có bộ lọc: khoảng thời gian do phương pháp quyết định chứ không phải
-     do người dùng. Điền thông tin phương pháp vào cột trái thay vì để trống trơn. */
-  const h = (d && d.hoi_quy) || {};
-  const soTinh = d ? new Set(d.dong.map(r => r.province_code)).size : 0;
-  $('loc-kinhte').innerHTML =
-    `<details class="nhom" open><summary>Phương pháp</summary><div class="than-nhom">
-       <p class="canh-nho"><b>Giai đoạn ${d ? d.nam_tu + '–' + d.nam_den : '2014–2025'}</b>
-         — giai đoạn VIIRS, một cảm biến, không mốc nối nào. Mở rộng về trước là vướng
-         mốc đổi vệ tinh 2010 chưa hiệu chỉnh.</p>
-       <p class="canh-nho">Mô hình gộp mọi tỉnh-năm. β riêng từng tỉnh chỉ tính khi tỉnh
-         đó có ít nhất 8 quan sát.</p>
-       <p class="canh-nho">Dòng có SOL hoặc GRDP không dương bị bỏ: log của số không
-         dương không tồn tại.</p>
-     </div></details>
-     <details class="nhom" open><summary>Dữ liệu<span class="dem">${soTinh} tỉnh</span>
-       </summary><div class="than-nhom">
-       <p class="canh-nho">Dân số và GRDP do giảng viên cung cấp, không trích xuất từ ảnh
-         vệ tinh. SOL lấy từ bảng chỉ số đêm theo năm.</p>
-     </div></details>`;
-}
-
-async function dungManKinhTe(){
-  let d = null;
-  try{ d = await layJSON('/api/kinh-te-dem'); }
-  catch(loi){
-    $('vung-kinhte').innerHTML =
-      `<div class="trong-rong"><h2>Không lấy được số liệu</h2>`
-      + `<p>${thoat(loi.message)}</p></div>`;
-    return;
-  }
-  locKinhTe(d.dong.length ? d : null);
-  if(!d.dong.length){
-    $('vung-kinhte').innerHTML =
-      '<div class="trong-rong"><h2>Chưa có số liệu kinh tế</h2>'
-      + '<p>Màn này cần dân số và GRDP theo tỉnh. Điền vào mẫu '
-      + '<code>backend/data/economy_mau.csv</code>, đổi tên thành <code>economy.csv</code> '
-      + 'rồi chạy lại <code>build_indices</code>.</p>'
-      + '<p>Hai chỉ số sẽ tính: ánh sáng bình quân đầu người, và hệ số co giãn β trong '
-      + '<code>ln(GRDP) = α + β·ln(SOL)</code>.</p>'
-      + '<p>Cột <code>grdp_price_basis</code> phải ghi <b>so_sanh</b> hoặc '
-      + '<b>hien_hanh</b>. Giá hiện hành làm β sai lệch vì lạm phát — đây là thứ duy '
-      + 'nhất có thể làm sai toàn bộ con số.</p></div>';
-    return;
-  }
-
-  const h = d.hoi_quy || {};
-  const canh = (d.canh_bao || []).map(c =>
-    `<p class="canh${/GIÁ HIỆN HÀNH|GIẢ LẬP/.test(c) ? ' thieu' : ''}">${thoat(c)}</p>`).join('');
-  const dienGiai = (h.beta === null || h.beta === undefined) ? ''
-    : `<p class="dien-giai">Ánh sáng ban đêm tăng 10% ứng với GRDP tăng khoảng `
-      + `<b>${dinhDang(h.beta * 10, 1)}%</b>.</p>`;
-  $('vung-kinhte').innerHTML =
-    `<div class="the-beta">
-       <h2>Độ co giãn ánh sáng – GRDP</h2>
-       <dl class="hang-beta">
-         <div><dt>β</dt><dd>${dinhDang(h.beta, 2) ?? '—'}</dd></div>
-         <div><dt>R²</dt><dd class="thuong">${dinhDang(h.r2, 2) ?? '—'}</dd></div>
-         <div><dt>Số quan sát</dt><dd class="thuong">${h.n ?? '—'}</dd></div>
-         <div><dt>Giai đoạn</dt><dd class="thuong">${d.nam_tu}–${d.nam_den}</dd></div>
-       </dl>
-       <p class="ct">ln(GRDP) = α + β·ln(SOL) · gộp mọi tỉnh-năm</p>
-       ${dienGiai}${canh}
-     </div>
-     <div class="chan-bang">
-       <div class="doi-xem" id="xem-kt">
-         <button type="button" aria-pressed="true" data-xem="bang">Bảng</button>
-         <button type="button" aria-pressed="false" data-xem="chart">Biểu đồ</button>
-       </div>
-     </div>
-     <div class="cuon" id="o-bang-kt"><table id="bang-kt"></table></div>
-     <div id="o-chart-kt" hidden>
-       <div class="bieu-do" id="bd-tan"></div>
-       <p class="ghi-bd">Mỗi điểm là một tỉnh-năm. Đường thẳng là mô hình đã khớp;
-         độ dốc của nó chính là β.</p>
-     </div>`;
-  veBangKinhTe(d);
-  document.querySelectorAll('#xem-kt button').forEach(b => {
-    b.onclick = () => {
-      const chart = b.dataset.xem === 'chart';
-      $('o-bang-kt').hidden = chart;
-      $('o-chart-kt').hidden = !chart;
-      document.querySelectorAll('#xem-kt button').forEach(x =>
-        x.setAttribute('aria-pressed', String((x.dataset.xem === 'chart') === chart)));
-      if(chart) requestAnimationFrame(() => veTan(d));
-    };
-  });
-}
-
-function veBangKinhTe(d){
-  const dong = [...d.dong].sort((a, b) =>
-    a.province_name.localeCompare(b.province_name, 'vi') || a.year - b.year);
-  $('bang-kt').innerHTML =
-    '<thead><tr><th>Tỉnh</th><th>Năm</th><th>Dân số</th><th>GRDP</th><th>SOL</th>'
-    + '<th>SOL/người</th><th>β tỉnh</th></tr></thead><tbody>'
-    + dong.map(r => `<tr class="${r.province_code === maDangXem ? 'sang' : ''}">`
-        + `<td>${thoat(r.province_name)}</td><td>${r.year}</td>`
-        + `<td>${dinhDang(r.population, 0) ?? '—'}</td>`
-        + `<td>${dinhDang(r.grdp, 0) ?? '—'}</td>`
-        + `<td>${dinhDang(r.sol, 0) ?? '—'}</td>`
-        + `<td>${dinhDang(r.sol_per_capita, 4) ?? '—'}</td>`
-        + `<td>${dinhDang(r.beta_tinh, 2) ?? '—'}</td></tr>`).join('')
-    + '</tbody>';
-}
-
-function veTan(d){
-  if(typeof echarts === 'undefined') return;
-  bdTan = bdTan || echarts.init($('bd-tan'));
-  const diem = d.dong
-    .filter(r => r.sol > 0 && r.grdp > 0)
-    .map(r => [Math.log(r.sol), Math.log(r.grdp), r.province_name, r.year]);
-  const h = d.hoi_quy || {};
-  const x = diem.map(p => p[0]);
-  const duong = (h.beta !== null && h.beta !== undefined && x.length)
-    ? [[Math.min(...x), h.alpha + h.beta * Math.min(...x)],
-       [Math.max(...x), h.alpha + h.beta * Math.max(...x)]] : [];
-  bdTan.setOption({
-    animationDuration:400, textStyle:{color:'#8b97b0'},
-    grid:{left:64, right:18, top:24, bottom:44},
-    tooltip:{trigger:'item', backgroundColor:'#131b2d', borderColor:'#232e45',
-             textStyle:{color:'#e8ecf5'},
-             formatter:p => p.value.length > 2
-               ? `${p.value[2]} ${p.value[3]}<br>ln(SOL) ${p.value[0].toFixed(3)}`
-                 + `<br>ln(GRDP) ${p.value[1].toFixed(3)}` : ''},
-    xAxis:{type:'value', name:'ln(SOL)', nameLocation:'middle', nameGap:26, scale:true,
-           axisLine:{lineStyle:{color:'#232e45'}}, axisTick:{show:false},
-           splitLine:{lineStyle:{color:'#1a2334'}}},
-    yAxis:{type:'value', name:'ln(GRDP)', scale:true,
-           axisLine:{lineStyle:{color:'#232e45'}}, axisTick:{show:false},
-           splitLine:{lineStyle:{color:'#1a2334'}}},
-    series:[{type:'scatter', symbolSize:6, data:diem,
-             itemStyle:{color:'rgba(106,169,255,.6)'}},
-            {type:'line', symbol:'none', data:duong, tooltip:{show:false},
-             lineStyle:{color:'#ffc857', width:2}}],
-  }, true);
-  bdTan.resize();
-}
 
 /* ===================== khởi động ===================== */
 (async function khoiDong(){
@@ -854,15 +737,15 @@ function veTan(d){
   // /api/indicators bọc danh sách trong {chi_so: [...]}
   try{ danhMuc = (await layJSON('/api/indicators')).chi_so || []; }catch{ danhMuc = []; }
 
-  $('chon-tinh').onchange = () => chonPhamVi($('chon-tinh').value || null);
+  $('chon-tinh').onchange = () => applySharedContext($('chon-tinh').value,demoSelection.year,demoSelection.month);
   $('tim-tinh').oninput = () => locTinh($('tim-tinh').value);
   // Enter chọn luôn tỉnh đầu tiên còn lại, để gõ xong không phải với chuột.
   $('tim-tinh').onkeydown = e => {
     if(e.key !== 'Enter') return;
     const con = [...$('chon-tinh').options].filter(o => !o.hidden && o.value);
-    if(con.length){ $('chon-tinh').value = con[0].value; chonPhamVi(con[0].value); }
+    if(con.length){ $('chon-tinh').value = con[0].value; applySharedContext(con[0].value,demoSelection.year,demoSelection.month); }
   };
-  $('nut-toan-quoc').onclick = () => { xoaBoLoc(); $('chon-tinh').value = ''; chonPhamVi(null); };
+  $('nut-toan-quoc').onclick = () => { xoaBoLoc(); $('chon-tinh').value = ''; applySharedContext('',demoSelection.year,demoSelection.month); };
   $('nut-tai-anh').onclick = () => {
     const muc = cacMoc[Number($('chon-nam').value)];
     if(!muc) return;
@@ -871,10 +754,12 @@ function veTan(d){
   };
 
   const oChon = $('chon-nam'), truot = $('nam-truot');
-  oChon.onchange = () => { truot.value = oChon.value; doiAnhNen(Number(oChon.value)); };
-  truot.oninput  = () => { oChon.value = truot.value; doiAnhNen(Number(truot.value)); };
+  const applyTime = index => { const m=cacMoc[index]; if(m) applySharedContext(demoSelection.code,m.year,m.month || 0); };
+  oChon.onchange = () => applyTime(Number(oChon.value));
+  let slideTimer;
+  truot.oninput = () => { oChon.value=truot.value; clearTimeout(slideTimer); slideTimer=setTimeout(()=>applyTime(Number(truot.value)),120); };
   document.querySelectorAll('.buoc').forEach(b => {
-    b.onclick = () => { if(b.dataset.buoc !== buoc) napMoc(b.dataset.buoc); };
+    b.onclick = () => { if(b.dataset.buoc !== buoc) applySharedContext(demoSelection.code,demoSelection.year,b.dataset.buoc === 'nam' ? 0 : (demoSelection.month || 1)); };
   });
 
   dungLoc($('loc-chiso'));
@@ -882,7 +767,7 @@ function veTan(d){
     b.onclick = () => doiXem(b.dataset.xem === 'chart');
   });
   $('nut-csv').onclick = () => { window.location = '/api/panel.csv?' + thamSoBang(); };
-  addEventListener('resize', () => { bieuDo?.resize(); bdTan?.resize(); });
+  addEventListener('resize', () => { bieuDo?.resize(); economyChart?.resize(); });
 
   await dungBanDo();
   chonPhamVi(null);
@@ -892,8 +777,10 @@ function veTan(d){
   if(!co.nam && co.thang) await napMoc('thang');
   if(!thongTinNen?.tiles && (co.nam || co.thang)){
     themCanhBao('thieu', 'Có ảnh nhưng chưa cài TiTiler nên chưa phục vụ được ô bản đồ: '
-      + '<code>pip install -r app/requirements.txt</code>');
+      + '<code>pip install -r backend/requirements.txt</code>');
   }
   await napBang();
-  await dungManKinhTe();
+  initDemoContext();
+  demoReady = true;
+  await applySharedContext('01', 2024, 0);
 })();

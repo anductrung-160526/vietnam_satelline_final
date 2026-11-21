@@ -86,15 +86,17 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### B. Giao diện hiển thị Raw trước Processed
 
-- [ ] Đặt định danh tỉnh và thời gian ở đầu vùng dữ liệu.
-- [ ] Nhóm Raw trước: băng ảnh đầu vào, dân số và hai loại GRDP; nhóm Processed ở sau.
-- [ ] Hiển thị `avg_rad`/`cf_cvg` qua bản đồ hoặc liên kết tải ảnh; không coi mảng pixel là một giá trị số của tỉnh.
-- [ ] Giữ `sol_raw`/`tnl` trong nhóm Processed vì đây là tổng tính từ pixel.
-- [ ] Bổ sung lựa chọn ảnh bức xạ hoặc bản đồ năm mức sáng.
-- [ ] Hiển thị chú giải màu, mốc ngưỡng, đơn vị và diện tích từng lớp.
-- [ ] Đồng bộ chọn tỉnh/năm giữa các thành phần; hiển thị rõ khi đổi từ tháng sang năm.
-- [ ] Bổ sung chọn cơ sở giá GRDP và chế độ đối chiếu; mặc định giá so sánh.
-- [ ] Thiếu dữ liệu hiện ô trống hoặc dấu gạch cùng lý do, không tự thay bằng 0.
+Đã triển khai và thử trên trình duyệt bằng ảnh kiểm thử. Lệnh nạp ảnh thật/GRDP và căn cứ ngưỡng: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md). Các dấu hoàn thành dưới đây xác nhận chức năng đã làm, chưa thay thế bước nghiệm thu trên máy Windows với dữ liệu thật.
+
+- [x] Đặt định danh tỉnh và thời gian ở đầu vùng dữ liệu.
+- [x] Nhóm Raw trước: băng ảnh đầu vào, dân số và hai loại GRDP; nhóm Processed ở sau.
+- [x] Hiển thị `avg_rad`/`cf_cvg` qua bản đồ hoặc liên kết tải ảnh; không coi mảng pixel là một giá trị số của tỉnh.
+- [x] Giữ `sol_raw`/`tnl` trong nhóm Processed vì đây là tổng tính từ pixel.
+- [x] Bổ sung lựa chọn ảnh bức xạ hoặc bản đồ năm mức sáng.
+- [x] Hiển thị chú giải màu, mốc ngưỡng, đơn vị và diện tích từng lớp.
+- [x] Đồng bộ chọn tỉnh/năm giữa các thành phần; hiển thị rõ khi đổi từ tháng sang năm.
+- [x] Bổ sung chọn cơ sở giá GRDP và chế độ đối chiếu; mặc định giá so sánh.
+- [x] Thiếu dữ liệu hiện ô trống hoặc dấu gạch cùng lý do, không tự thay bằng 0.
 
 **Đạt khi:** cô có thể chọn một tỉnh/năm và hiểu được đầu vào, kết quả, đơn vị mà không phải đọc code.
 
