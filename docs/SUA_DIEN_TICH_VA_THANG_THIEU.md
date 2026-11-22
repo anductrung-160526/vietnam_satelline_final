@@ -1,5 +1,7 @@
 # Sửa diện tích giao biên và kiểm tra/phục hồi ảnh tháng
 
+**Đã nhận kết quả Windows ngày 22/11:** published=true, độ phủ vượt 100% đã về 0; 57 tháng thiếu thuộc loại raw không có quan sát sạch mây hợp lệ, không có ảnh bị lỗi FILTER cần sửa. Chi tiết: [KET_QUA_SAU_SUA_V9.md](KET_QUA_SAU_SUA_V9.md). Không cần chạy lại toàn workflow chỉ để tạo lại báo cáo này.
+
 Bản cập nhật STATS_VERSION=9; phân lớp `viirs_brightness_classes_v3_fractional`. Đây là cách chạy mới sau khi đã nhận kết quả D v2 có tỷ lệ vượt 100% và 57 ảnh tháng rỗng. Các báo cáo cũ được giữ làm bằng chứng trước sửa, không sửa tay số liệu hoặc cắt tỷ lệ về 100%.
 
 ## 1. Diện tích đã sửa như thế nào
@@ -75,7 +77,7 @@ Thư mục chính: `E:\SatelliteData\_demo_fix\<lượt chạy>\`.
 
 Báo cáo D v3 nằm ở thư mục mới trong `cog/light_classes`; đường dẫn cụ thể có trong fix_report.json. Cần kiểm tra coverage_above_100=0, sai lệch tổng diện tích nhỏ và method_version=v3_fractional; đối chiếu bản đồ vài tỉnh với polygon. Cờ v2/whole_pixel không được coi là kết quả đã sửa.
 
-Gửi lại **fix_report.json**, **repair/monthly_recovery_audit.csv**, **repair/annual_observation_support.csv** và **validation_report.json của lượt D v3**. Từ đó mới xác nhận 57 tháng cũ có bao nhiêu tháng khôi phục được, bao nhiêu tháng raw thật sự không có quan sát, hoặc thiếu file/lưới cần xử lý tiếp. Chưa chạy trên ổ E nên không tự báo đã lấp được toàn bộ 57 tháng.
+Đã nhận **fix_report.json**: 0 ảnh tháng/năm cần sửa pixel, 57 tháng raw không có quan sát sạch mây hợp lệ; không coi đây là lỗi lọc còn chưa sửa. Cần đọc tiếp **repair/monthly_recovery_audit.csv**, **repair/annual_observation_support.csv**, **indices/calculation_models.csv** và vài dòng kết quả để kiểm tra chi tiết chất lượng năm/hệ số mô hình. Báo cáo tổng đã xác nhận workflow chạy và cập nhật app thành công.
 
 ## 5. Kiểm tra đã thực hiện ở môi trường phát triển
 

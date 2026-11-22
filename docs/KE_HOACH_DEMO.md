@@ -135,13 +135,14 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Kiểm tra tổng diện tích lớp với diện tích hợp lệ; giữ số/cờ khi độ phủ trên 100% do pixel giao biên.
 - [x] Đã nhận đủ bốn file kết quả Windows ngày 22/11, đối chiếu đủ 4.095 khóa và 20.475 dòng lớp; tổng lớp, tỷ lệ và metadata khớp. Ngưỡng thật: 0,5; 1,5; 3,0850000381469727; 17,459999084472656. Báo cáo: [DOI_CHIEU_KET_QUA_PHAN_D.md](DOI_CHIEU_KET_QUA_PHAN_D.md).
 - [x] Đã triển khai v9: diện tích phần giao EPSG:6933, đối chiếu/sửa tháng theo raw và FILTER, bản đồ số tháng hợp lệ, database tạm trước xuất bản; lệnh chạy: [SUA_DIEN_TICH_VA_THANG_THIEU.md](SUA_DIEN_TICH_VA_THANG_THIEU.md).
-- [ ] Nghiệm thu lại sau chạy v9 trên Windows. Kết quả cũ trước sửa còn 57 ảnh tháng rỗng (49 tại 07/2022), 315/315 ảnh năm có độ phủ trên 100%, 20 mốc tỷ lệ diện tích sáng trên 100%. Cần đối chiếu raster/ranh giới, hoàn thiện diện tích giao biên và rà soát chất lượng chuỗi tháng; chưa coi passed kỹ thuật là đã đạt độ chính xác địa lý.
+- [x] Đã chạy v9 trên Windows và nhận fix_report.json: 4.095 ảnh, coverage_above_100=0, không thiếu mẫu số, sai lệch tổng lớp tối đa 7,28×10⁻¹² km²; published=true. 3.723 tháng khớp FILTER và 57 tháng raw không có quan sát sạch mây hợp lệ, không có ảnh cần sửa pixel. [Kết quả sau sửa v9](KET_QUA_SAU_SUA_V9.md).
+- [ ] Đối chiếu vài dòng CSV/ảnh/bản đồ Windows sau sửa và báo cáo số tháng hợp lệ theo pixel; giữ 57 tháng thiếu là thiếu dữ liệu nguồn, không tự lấp hoặc coi bằng 0.
 
 **Đạt khi:** phân lớp có thể tái lập, tổng diện tích được kiểm tra và bản đồ sử dụng đúng bộ ngưỡng đã tính.
 
 ### E. SOL, mật độ, biến động và ghép GRDP
 
-Đã hoàn thiện code và kiểm tra bằng ảnh/số liệu có đáp án biết trước, gồm luồng CSV→SQLite→API. Hướng dẫn chạy ảnh thật và kiểm tra đầu ra: [TINH_CHI_SO_VA_GRDP_PHAN_E.md](TINH_CHI_SO_VA_GRDP_PHAN_E.md). Giữ cờ chất lượng/phương pháp xấp xỉ từ phần D; chưa tuyên bố đã giải quyết sai lệch diện tích hoặc tháng thiếu.
+Đã hoàn thiện code, kiểm tra CSV→SQLite→API và nhận báo cáo chạy dữ liệu thật v9: hai mô hình khớp trên chung 315 cặp, diện tích dùng phần giao EPSG:6933, kết quả đã nạp app. Hướng dẫn: [TINH_CHI_SO_VA_GRDP_PHAN_E.md](TINH_CHI_SO_VA_GRDP_PHAN_E.md), [kết quả sau sửa](KET_QUA_SAU_SUA_V9.md). 57 tháng raw thiếu quan sát được giữ thiếu; cần kiểm tra hệ số thật và báo cáo độ đầy đủ năm.
 
 - [x] Đối chiếu `sol_raw` và `sol` trên cùng đầu vào, kiểm tra không âm và sol không vượt sol_raw trong luồng hai giá.
 - [x] Tính `sol_density` theo diện tích tự nhiên; ghi light_basis và model_light_basis rõ.
@@ -154,7 +155,8 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Mặc định giá so sánh, hiện hành dùng đối chiếu; tăng trưởng GRDP/tỷ số tăng trưởng/ước lượng được tính riêng từng giá.
 - [x] Chỉ tính `sol_per_capita` năm khi có dân số dương; không tạo dân số. GRDP tháng chỉ là tham chiếu năm.
 - [x] Giữ điều kiện hiệu chỉnh ≥30 cặp dương DMSP/VIIRS 2013 và lưu mô hình; không bật cho demo chỉ VIIRS và không sửa mốc F16/F18 2010.
-- [ ] Chạy E trên kho ảnh Windows, nhận economy_validation.csv, calculation_models.csv và vài dòng night_economy.csv để đối chiếu hệ số/số liệu thật; nghiệm thu phần D vẫn còn mở.
+- [x] Đã nhận tóm tắt E trong fix_report.json: 1.260 dòng giá, 8.820 dòng kết quả, hai mô hình trên cùng 315 cặp, 4.095 ảnh có liên kết báo cáo chất lượng, STATS_VERSION=9; đã nạp 315 dòng năm và 3.780 dòng tháng.
+- [ ] Nhận calculation_models.csv và vài dòng night_economy.csv để đối chiếu α/β/R², số liệu/đơn vị/cơ sở giá thực tế; báo cáo tổng không chứa các hệ số này. Dân số vẫn thiếu, chỉ số đầu người giữ trống.
 
 **Đạt khi:** hai loại giá không bị trộn, không mất dòng và kết quả có nhãn cơ sở giá rõ ràng.
 
