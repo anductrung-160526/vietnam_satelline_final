@@ -1,0 +1,2 @@
+# Chỉ để sinh tài liệu Word phần C; không cần cho API.
+python-docx>=1.2,<2

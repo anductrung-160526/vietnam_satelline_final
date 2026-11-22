@@ -1,0 +1,96 @@
+# Định nghĩa biến và công thức — demo kinh tế đêm
+
+Ngày cập nhật: 22/11/2026. Phạm vi: 63 tỉnh trước sáp nhập; dữ liệu demo chính VIIRS 2020–2024, GRDP theo năm. Đây là bản làm việc phần C; chưa nhận form của giảng viên để xác nhận đúng biểu mẫu. Tài liệu Word cùng tên được sinh từ tài liệu này và `NIGHT_DATA_DICTIONARY.md`, không nhập lại danh mục bằng tay.
+
+## 1. Danh mục và cách đếm
+
+Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_DATA_DICTIONARY.md). `table` chỉ có **Night Data** hoặc **Night Economy**. Tên trường chữ thường tiếng Anh, diễn giải tiếng Việt; định danh ở đầu, tiếp theo Raw, sau đó Processed, nhóm dùng chuỗi hiệu chỉnh ở cuối.
+
+Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
+
+Ba mục `valid_area_km2`, `valid_area_pct`, `class_area_pct` mô tả công thức suy ra/đề xuất; chưa có cột ảnh đêm tương ứng được tính, xuất hoặc hiển thị riêng. Các mục này được đếm riêng khi báo tiến độ, không gọi là đầu ra đã triển khai. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+
+## 2. Ký hiệu, nguồn và quy tắc đầu vào
+
+- V: tập pixel bức xạ hợp lệ trong ảnh tỉnh, có mask hợp lệ, hữu hạn và khác -9999. Giá trị 0 thuộc V. N = số pixel trong V.
+- R_i: bức xạ pixel i của ảnh đầu vào đang tính; U là nW/cm²/sr với VIIRS, DN với DMSP. Tổng bức xạ là tổng giá trị pixel, không phải tổng công suất phát sáng vật lý; không nhân diện tích trong công thức SOL.
+- C_i: số lượt quan sát sạch mây của băng cf_cvg. Tập pixel lấy trung bình C_i phải đồng thời hợp lệ ở băng bức xạ và băng cf_cvg, với C_i ≥ 0.
+- A: diện tích tự nhiên tỉnh GADM 4.1, chiếu EPSG:6933 rồi chia 10⁶ để được km². Không đổi ranh giới giữa các năm so sánh.
+- a_i: diện tích một pixel, km². Với lưới chiếu đơn vị mét: abs(dx × dy)/10⁶. Với EPSG:4326: abs(dlon × dlat) × 111,320² × cos(latitude_center_i). Đây là xấp xỉ theo vĩ độ của code, không phải phép đo diện tích ellipsoid chính xác. Không hỗ trợ lưới xoay.
+- b: ngưỡng nền, VIIRS 0,5; DMSP 0. h: ngưỡng sáng, VIIRS 1,5; DMSP 5. Pixel bằng ngưỡng được giữ trong nhóm đạt ngưỡng.
+- G_y: GRDP tỉnh năm y của cơ sở giá được chỉ định; P_y: dân số tỉnh năm y. Giá so sánh năm gốc 2010 là cơ sở chính; giá hiện hành để đối chiếu. Cả hai dùng tỷ đồng.
+- Ảnh năm VIIRS được tổng hợp median ở từng pixel từ ảnh tháng đã lọc, sau đó mới tính tổng/thống kê. Không thay bằng median của các tổng SOL tháng. Ảnh năm tổng hợp là Processed.
+- Raw là đầu vào của dự án: sản phẩm VIIRS tháng đã qua xử lý của nhà cung cấp và số liệu thống kê nguồn. Một đường dẫn #band=1 trong CSV tính lại có thể trỏ ảnh đã lọc; không vì tên avg_rad mà gọi ảnh đó là Raw. App phần B chỉ đăng ký Raw hai băng từ raw_data.
+
+## 3. Tổng sáng, vùng sáng và các mẫu số
+
+TNL = SOL_raw = tổng R_i trên V, khi cùng ảnh, cùng mask và cùng thời gian. SOL = tổng R_i × 1[R_i ≥ b]. Pixel dưới nền đóng góp 0; không lấy R_i − b. Phần bị loại là SOL_raw − SOL trên cùng đầu vào.
+
+L = tổng 1[R_i ≥ h]; T_lit = tổng R_i × 1[R_i ≥ h]; A_lit = tổng a_i × 1[R_i ≥ h]. Không suy dân số từ T_lit dù tên lịch sử là lit_pop_proxy.
+
+Ba tỷ lệ khác nhau: lit_area_pct = 100 × A_lit/A; electrification_ratio_pct = 100 × L/N; valid_area_pct = 100 × tổng a_i/A. Tỷ lệ số pixel không mặc nhiên bằng tỷ lệ diện tích, nhất là lưới địa lý. valid_area_pct hiện chỉ là công thức đề xuất cho ảnh đêm.
+
+sol_density = SOL_selected/A, không phải diện tích sáng. SOL_selected được ghi ở light_basis. CSV tính lại có thể chọn sol_cal bằng --calibrate; SQLite/API phần B dùng sol. VIIRS giữ sol_cal=sol nên bằng nhau trong demo 2020–2024; không suy rộng sự bằng nhau sang DMSP.
+
+## 4. Năm lớp sáng và diện tích
+
+Chỉ áp dụng phân lớp này cho VIIRS, đơn vị nW/cm²/sr. Các mốc là [0,5; 1,5; q50; q90]. q50/q90 lấy bằng phân vị tuyến tính trên tất cả pixel hợp lệ R≥1,5 của 63 ảnh năm 2020, theo số pixel, chưa có trọng số diện tích; các pixel giao biên có thể lặp giữa hai tỉnh. Bộ ngưỡng được giữ cố định cho các năm/tháng.
+
+- Lớp 0: 0 ≤ R < 0,5; gọi là tối/dưới ngưỡng nền, không kết luận không phát sáng tuyệt đối.
+- Lớp 1: 0,5 ≤ R < 1,5; sáng yếu.
+- Lớp 2: 1,5 ≤ R < q50; sáng vừa.
+- Lớp 3: q50 ≤ R < q90; sáng mạnh.
+- Lớp 4: R ≥ q90; rất sáng. Đây là đuôi 10% pixel sáng của năm tham chiếu, không phải 10% diện tích mỗi tỉnh.
+
+A_k = tổng a_i × 1[pixel thuộc lớp k]. Tổng A_k = A_valid. class_area_pct = 100 × A_k/A là công thức đề xuất, chưa có đầu ra riêng. NoData=255 không thuộc năm lớp. Code từ chối ảnh đã xử lý còn giá trị âm, ngưỡng suy biến hoặc thiếu 63 ảnh tham chiếu.
+
+Diện tích lấy cả pixel giao ranh giới theo mặt nạ chuẩn bị phần A; vì vậy tổng có thể cao hơn diện tích polygon. Không ép tỷ lệ về 100%, không đổi NoData thành tối, không thay diện tích pixel bằng 0,25 km² cố định.
+
+Mốc 0,5 dựa trên quy tắc nền đã chốt của dự án; 1,5 theo Task 3. P50/P90 là lựa chọn thực nghiệm minh bạch cho demo, không phải chuẩn vật lý hay phân lớp kinh tế đã được nghiên cứu xác nhận. Giá trị số thực tế phải đọc từ method.json trên máy chứa ảnh; tài liệu này không điền số kiểm thử thay thế. Căn cứ và tài liệu đối chiếu: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md), EOG VIIRS Nighttime Light, Elvidge và cộng sự (2021), DOI 10.3390/rs13050922.
+
+## 5. Thống kê và chuỗi thời gian
+
+μ = tổng R_i/N; σ = sqrt(max(tổng R_i²/N − μ², 0)), độ lệch chuẩn tổng thể ddof=0. spatial_cv = σ/μ nếu μ>0. Khi N>0 và μ≤0, CSV dictionary ghi 0 theo Task 3, còn cột rad_cv cũ app đang ánh xạ có thể trống. N=0 thì thống kê để trống; total_pixels=0 là số đếm thực.
+
+Tăng trưởng = 100 × (giá trị hiện tại/giá trị tham chiếu − 1); mẫu số thiếu hoặc ≤0 thì trống. SOL theo năm so đúng năm liền trước, theo tháng so đúng tháng lịch trước hoặc cùng kỳ năm trước. Chưa hiệu chỉnh chỉ so cùng nguồn; không diễn giải bước nhảy năm 2010 như tăng trưởng kinh tế, kể cả chuỗi đã nối DMSP–VIIRS.
+
+tnl_ma3 dùng tối đa ba dòng quan sát tháng gần nhất; tnl_mom_growth_pct so dòng tháng trước trong chuỗi, có thể nhảy qua tháng thiếu. sol_ma3 dùng cửa sổ ba tháng lịch và trung bình phần có dữ liệu. Không thay hai định nghĩa này bằng nhau. Năm đầu chuỗi hoặc mốc thiếu tham chiếu thì không tạo tăng trưởng bằng 0.
+
+Thiếu tháng làm số tháng hợp lệ khi tổng hợp ảnh năm khác nhau giữa pixel; báo cáo không mặc định đủ 12 tháng chỉ vì tên file là năm. Việc phát hiện cf_cvg <2 là cảnh báo chất lượng, không tự loại mọi pixel/tỉnh khỏi thống kê. CF_CVG_MEAN trên ảnh một băng là metadata từ bước trước, không tái tạo được băng cf_cvg hay số quan sát năm độc lập.
+
+## 6. GRDP, hồi quy và hiệu chỉnh
+
+Khóa bảng economy_prices: province_code + year + price_basis. Hai bộ giá được giữ đồng thời, ô thiếu không thay 0. Bắc Giang hiện hành 2015 N/a; GRDP 2024 sơ bộ. Giữ cờ các điểm cần rà soát ở Hà Nội và Thừa Thiên Huế; app chưa tự loại các điểm bị gắn cờ khỏi mô hình. GRDP theo năm; khi xem ảnh tháng, không nội suy thành GRDP tháng.
+
+Mô hình app: ln(G) = α + β ln(SOL) + ε. Mỗi cơ sở giá có một mô hình riêng trên cùng mẫu tỉnh–năm có SOL và cả hai GRDP dương, cùng đơn vị tỷ đồng. β = cov_sum(ln SOL, ln G)/var_sum(ln SOL); α = mean(ln G) − β mean(ln SOL); R² tính trên thang log. Cần ít nhất 10 cặp và biến thiên ln SOL; hệ số riêng tỉnh của API cần ít nhất 8 năm. Một tỉnh × một năm không đủ ước lượng. Mẫu chính 2020–2024 chỉ có 5 năm nên không đủ β riêng tỉnh.
+
+β là độ co giãn GRDP theo ánh sáng trong mô hình, không phải tỷ số %Δánh sáng/%ΔGRDP. Hồi quy gộp hiện tại không có hiệu ứng cố định hay kiểm định nhân quả. Dữ liệu giả có nhãn kiểm thử; không đưa vào kết luận nghiên cứu. Muốn báo cáo kết quả phải kiểm tra nguồn và mẫu thật, không chỉ xem số hệ số hiện trên app.
+
+Offline calculate_ntl: light_gdp_elasticity = %Δsol_cal/%Δgdp, chỉ trên năm liền nhau giá so sánh, mẫu số tăng trưởng khác 0, không qua 2010. predicted_gdp = exp(α_g + β_g ln(sol_cal)), khớp trên ≥10 cặp dương từ 2014, giá so sánh, loại nguồn kinh tế GIA_LAP; không hiệu chỉnh sai lệch khi đổi log về mức. Đây là ước lượng trong mô hình, chưa phải dự báo tương lai đã kiểm định. API chỉ đọc các cột này khi CSV dictionary đã nạp đúng cơ sở giá, không lấy mô hình đối chiếu trên app điền vào cột còn thiếu.
+
+sol_cal: VIIRS giữ nguyên; DMSP quy thang bằng exp(α_c) × SOL^β_c, khớp ≥30 tỉnh có cả DMSP và VIIRS 2013 dương, β_c>0. Không sửa mốc DMSP F16→F18 năm 2010. Tham số lưu calculation_models.csv; thiếu mô hình hợp lệ thì DMSP sol_cal trống. VIIRS bằng sol không phải bằng chứng đã chạy hiệu chỉnh DMSP.
+
+sol_per_capita: offline dùng sol_cal/population; API kinh tế phần B dùng sol/population. Hai cách bằng nhau trong VIIRS demo. Chưa có dân số nên để trống, không gán dân số giả.
+
+Lưu ý luồng nhập: read_economy của calculate_ntl vẫn chỉ nhận một cơ sở giá cho mỗi tỉnh–năm; không truyền nguyên grdp_all_prices.csv hai giá vào đó. load_demo dùng bảng economy_prices hỗ trợ hai giá. Đây là hai hợp đồng khác nhau; tài liệu không tuyên bố bộ tính offline đã xuất đủ hai cơ sở giá.
+
+## 7. NEI và tiêu chí còn mở
+
+Chưa có công thức tổng hợp NEI được giảng viên xác nhận. Bản demo trình bày các chỉ số thành phần: quy mô ánh sáng (SOL), mật độ (SOL/A), diện tích sáng, phân bố lớp sáng, biến động và quan hệ với GRDP. Chưa coi các đại lượng này là giá trị tiền tệ kinh tế đêm, không tự tạo trọng số, không gọi β hay tỷ lệ diện tích là NEI chính thức.
+
+Chờ chốt: NEI là chỉ số thành phần nào hay chỉ số tổng hợp; đơn vị và chuẩn hóa; trọng số nếu có; năm gốc; cách dùng GRDP; tiêu chí kiểm chứng. Dân số, form tài liệu của cô và bốn mốc thật trong method.json còn cần bổ sung. Chấp nhận giao diện phần B không thay thế kiểm chứng từng con số trên máy demo.
+
+## 8. Ví dụ đối chiếu có thể tính tay
+
+Ví dụ kiểm thử, không phải số tỉnh thật: V có R=[0; 0,4; 0,5; 1,5; 10], thêm một pixel NoData; mỗi pixel hợp lệ có diện tích 1 km²; diện tích tự nhiên giả định A=6 km². Khi b=0,5 và h=1,5: N=5; TNL=SOL_raw=12,4; SOL=12; lit_pixels=2; lit_pop_proxy=11,5; lit_area_km2=2; lit_area_pct=33,3333%; electrification_ratio_pct=40%; sol_density=2 U/km²; A_valid=5 km². Các số khác nhau vì mẫu số khác nhau. Năm lớp vẫn cần bộ ngưỡng tham chiếu thật để xác định ranh giới.
+
+## 9. Truy nguồn và cách cập nhật
+
+- backend/data/calculate_ntl.py: ntl_stats, calculate, add_dictionary_tables, fit_log_model; CSV dictionary và mô hình offline.
+- backend/data/build_light_classes.py: choose_thresholds, classify_image, saved_areas; method.json, COG lớp sáng và diện tích SQLite.
+- backend/data/prepare_grdp.py: đọc GRDP nguồn, chuẩn hóa cơ sở giá, đơn vị và cờ rà soát.
+- backend/data/load_demo.py và demo_schema.sql: nạp hai giá, đăng ký ảnh, kết quả dictionary tùy chọn.
+- backend/api/demo_view.py: ánh xạ trường cũ, mẫu hồi quy chung, trạng thái thiếu và trường hiển thị.
+- backend/core/chi_so.py: OLS và điều kiện số quan sát của app. CLAUDE.md là hợp đồng phương pháp đã chốt.
+
+Sửa danh mục trong NIGHT_DATA_DICTIONARY.md và phần giải thích tại đây, rồi chạy `python scripts/build_demo_dictionary_doc.py` để sinh lại Word. Phụ thuộc tạo tài liệu nằm trong docs/requirements.txt, không làm tăng phụ thuộc runtime của app.

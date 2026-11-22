@@ -102,17 +102,20 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-- [ ] Cập nhật Data Dictionary để phản ánh đúng các trường thực sự tính/xuất/hiển thị.
-- [ ] Thêm trường diện tích các mức sáng, tỷ lệ từng mức và metadata phương pháp cần thiết.
-- [ ] Phân biệt dữ liệu đầu vào với tham số cấu hình và chỉ số tính toán; không xếp ngưỡng vào băng ảnh thô.
-- [ ] Thống nhất tên trường tiếng Anh chữ thường; giải thích bằng tiếng Việt.
-- [ ] Viết công thức, đơn vị, nguồn, cấp tỉnh và tần suất của từng trường.
-- [ ] Định nghĩa rõ mẫu số: diện tích tự nhiên tỉnh, diện tích có dữ liệu hay số pixel hợp lệ.
-- [ ] Nêu cách xử lý thiếu ảnh, thiếu tháng, mẫu số bằng 0 và ít quan sát sạch mây.
-- [ ] Phân biệt tỷ số tăng trưởng ánh sáng/GDP với hệ số β của hồi quy GDP theo ánh sáng.
-- [ ] Thống kê số biến Raw và Processed sau khi chốt danh mục; ghi rõ số này có gồm định danh hay không.
-- [ ] Hoàn thiện `.docx` theo form cô yêu cầu và mở lại để kiểm tra công thức/bảng không lỗi định dạng.
-- [ ] Chốt công thức NEI; nếu chưa chốt, trình bày các chỉ số thành phần, chưa gọi một công thức tự xây dựng là NEI chính thức.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Danh mục có 64 mục: 16 Raw (gồm 5 định danh) và 48 Processed (gồm 3 công thức đề xuất chưa có đầu ra riêng). Đây là số mục từ điển gồm metadata/tham số, không phải 64 biến độc lập hoặc 64 cột đã có trong một file.
+
+- [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
+- [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; tỷ lệ lớp/độ phủ còn là công thức đề xuất, chưa đánh dấu đã triển khai tính/xuất.
+- [x] Phân biệt dữ liệu đầu vào với tham số cấu hình và chỉ số tính toán; không xếp ngưỡng vào băng ảnh thô.
+- [x] Thống nhất tên trường tiếng Anh chữ thường; giải thích bằng tiếng Việt.
+- [x] Viết công thức, đơn vị, nguồn, cấp tỉnh và tần suất của từng trường.
+- [x] Định nghĩa rõ mẫu số: diện tích tự nhiên tỉnh, diện tích có dữ liệu và số pixel hợp lệ.
+- [x] Nêu cách xử lý thiếu ảnh, thiếu tháng, mẫu số bằng 0 và ít quan sát sạch mây.
+- [x] Phân biệt tỷ số tăng trưởng ánh sáng/GRDP với hệ số β của hồi quy GRDP theo ánh sáng.
+- [x] Thống kê số mục Raw và Processed; tách định danh và mục đề xuất, không cộng trùng khóa ở hai CSV.
+- [x] Tạo `.docx` bản làm việc, mở lại và render 10 trang để kiểm tra bảng/công thức. Có script sinh lại từ Markdown.
+- [ ] Xác nhận/chỉnh Word theo form cô yêu cầu sau khi nhận được form; chưa coi bản làm việc là đã đúng biểu mẫu.
+- [ ] Chốt công thức NEI tổng hợp với cô. Hiện tài liệu trình bày các chỉ số thành phần, không tự gán trọng số hay gọi SOL/β là NEI chính thức.
 
 **Đạt khi:** mỗi biến trên app truy được đến công thức, đơn vị và nguồn tương ứng trong tài liệu.
 
