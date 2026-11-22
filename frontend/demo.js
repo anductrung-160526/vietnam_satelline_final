@@ -16,6 +16,7 @@ function checkDemoSnapshot(data){
   const id=data.snapshot_id || null;
   if(demoSnapshotChanged || (demoSnapshotInitialized && id!==demoSnapshotId)){
     demoSnapshotChanged=true;demoDetails=null;
+    if(typeof invalidateSpatial==='function')invalidateSpatial();
     $('class-summary').innerHTML='';$('nut-tai-anh').disabled=true;
     const message='Bộ dữ liệu đã được cập nhật. Tải lại trang để đồng bộ bản đồ, bảng và biểu đồ.';
     let banner=$('snapshot-warning');
@@ -70,6 +71,7 @@ async function applySharedContext(code, year, month){
   demoReady = true;
   syncContext();
   await Promise.all([napBang(), refreshDemo()]);
+  if(!$('man-spatial').hidden)refreshSpatial();
 }
 async function adoptPanelContext(){
   const period = [...chon.moc][0].split('-');

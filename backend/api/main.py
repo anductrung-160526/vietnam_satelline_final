@@ -36,7 +36,7 @@ def _code(province_code: str) -> str:
     return code
 
 
-GIAO_DIEN = ('index.html', 'style.css', 'app.js')
+GIAO_DIEN = ('index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js')
 
 
 def _bam(du_lieu):
@@ -520,6 +520,33 @@ def demo_dataset():
         datasets=snapshot_status(connection)
         row=connection.execute("SELECT value FROM demo_schema_meta WHERE key='version'").fetchone() if demo_view.has_table(connection,'demo_schema_meta') else None
     return dict(snapshot_id=demo_snapshot_id(),demo_schema_version=int(row[0]) if row else None,datasets=list(datasets.values()))
+
+
+@app.get('/api/spatial')
+def spatial(year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024,ge=2004,le=2025)):
+    if year_start>=year_end:raise HTTPException(400,'Năm đầu phải nhỏ hơn năm cuối.')
+    from .spatial_view import read_spatial
+    result=read_spatial(year_start,year_end)
+    result['tiles']=TILE_URL if _titiler_ready() else None
+    return result
+
+
+@app.get('/api/spatial/file')
+def spatial_file(kind: str,run_id: str,expected_snapshot: str,
+                 year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024,ge=2004,le=2025),province_code: str=''):
+    result=spatial(year_start,year_end)
+    if result['snapshot_id']!=expected_snapshot or result.get('run_id')!=run_id:
+        raise HTTPException(409,'Kết quả P1 đã đổi; tải lại màn phân tích trước khi tải file.')
+    if result['status']!='ready':raise HTTPException(410,result.get('message','Kết quả P1 không sẵn có.'))
+    if kind in ('change','delta'):
+        key=_code(province_code)+'_'+kind
+    elif kind in ('moran','moran_values','changes','transitions','neighbors','province_changes'):key=kind
+    else:raise HTTPException(400,'Loại file P1 không hợp lệ.')
+    record=result['files'].get(key)
+    if not record:raise HTTPException(404,'Chưa có file cho tỉnh/cặp năm này.')
+    media='image/tiff' if kind in ('change','delta') else 'application/geo+json' if kind=='province_changes' else 'text/csv; charset=utf-8'
+    return FileResponse(record['path'],media_type=media,filename=Path(record['path']).name,
+                        headers={'X-Spatial-Run-ID':run_id,'X-File-SHA256':record['sha256']})
 
 
 TILES_MOUNTED = _mount_tiles()

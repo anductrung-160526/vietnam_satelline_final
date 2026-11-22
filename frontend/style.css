@@ -246,3 +246,15 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 #loc-kinhte label{display:block;margin-bottom:8px}
 #loc-kinhte select{width:100%}
 @media(max-width:860px){.shared-context{gap:8px}.shared-context label{flex:1}#context-summary{width:100%;margin:0}.data-group{padding:10px}.than.rong{overflow-y:auto}.vung-bang{overflow:visible}}
+
+/* P1: bảng có thể đọc ngay cả khi chưa có dịch vụ ô bản đồ. */
+#spatial-map {height:520px;min-height:320px;margin:20px 0;border:1px solid #26354a;border-radius:10px;}
+#loc-spatial {padding:18px;display:flex;flex-direction:column;gap:10px;}
+#loc-spatial label {margin-top:12px;color:var(--chu-mo);}
+#spatial-results .asset-link {margin:4px 12px 4px 0;padding:7px 10px;border:1px solid var(--vien);border-radius:6px;text-decoration:none;}
+#spatial-results h2 {font-size:19px;margin:24px 0 12px;}
+#spatial-results p {line-height:1.65;}
+#spatial-results .fit-card strong {display:block;font-size:23px;margin-top:8px;}
+.spatial-key {display:inline-flex;align-items:center;gap:6px;margin:6px 16px 6px 0;}
+.spatial-key i {display:inline-block;width:12px;height:12px;}
+@media(max-width:760px){.thanh-man{flex-wrap:wrap;}#spatial-map{height:380px;}}

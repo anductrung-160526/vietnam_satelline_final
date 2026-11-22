@@ -284,7 +284,7 @@ class StaticAndSchemaTest(unittest.TestCase):
         self.assertTrue(body['thu_muc_giao_dien'].endswith('frontend'))
         self.assertEqual(len(body['dau_van_giao_dien']), 12)
         self.assertEqual(set(body['van_tay_tung_tep']),
-                         {'index.html', 'style.css', 'app.js'})
+                         {'index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js'})
 
     def test_the_fingerprint_ignores_windows_line_endings(self):
         """Git trên Windows đổi LF thành CRLF; không chuẩn hoá thì phép so vô dụng."""
@@ -304,7 +304,7 @@ class StaticAndSchemaTest(unittest.TestCase):
 
     def test_static_files_are_served_with_no_cache(self):
         """Trình duyệt từng giữ style.css cũ rồi ghép với index.html mới -> giao diện lai."""
-        for path in ('/', '/style.css', '/app.js'):
+        for path in ('/', '/style.css', '/app.js', '/demo.js', '/spatial.js'):
             with self.subTest(path=path):
                 phan_hoi = self.client.get(path)
                 self.assertEqual(phan_hoi.status_code, 200)

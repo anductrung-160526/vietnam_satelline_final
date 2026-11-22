@@ -17,6 +17,7 @@
       <button role="tab" aria-selected="true" data-man="anh">Ảnh đêm</button>
       <button role="tab" aria-selected="false" data-man="chiso">Chỉ số đêm</button>
       <button role="tab" aria-selected="false" data-man="kinhte">Chỉ số kinh tế đêm</button>
+      <button role="tab" aria-selected="false" data-man="spatial">Phân tích không gian</button>
     </nav>
     <span id="trang-thai" class="pill">đang tải…</span>
   </header>
@@ -100,11 +101,26 @@
     <aside class="loc" id="loc-kinhte"></aside>
     <section class="vung-bang" id="vung-kinhte"></section>
   </div>
+  <div class="than rong" id="man-spatial" hidden>
+    <aside class="loc" id="loc-spatial">
+      <label for="spatial-start">Năm đầu · VIIRS</label><select id="spatial-start"></select>
+      <label for="spatial-end">Năm cuối · VIIRS</label><select id="spatial-end"></select>
+      <button id="spatial-load" type="button">Xem phân tích</button>
+      <label for="spatial-mode">Bản đồ thay đổi</label>
+      <select id="spatial-mode"><option value="change">Chuyển vùng/lớp sáng</option><option value="delta">Chênh lệch bức xạ</option></select>
+      <p class="canh-nho">Moran dùng toàn bộ tỉnh đủ điều kiện trong từng năm. Bản đồ chi tiết dùng tỉnh ở thanh phạm vi chung. Phân tích theo năm, không theo tháng.</p>
+    </aside>
+    <section class="vung-bang"><div id="spatial-results" aria-live="polite"></div>
+      <div id="spatial-map" aria-label="Bản đồ thay đổi vùng sáng"></div>
+      <div id="spatial-legend" class="nho"></div>
+    </section>
+  </div>
 </div>
 
 <script src="vendor/maplibre-gl.js"></script>
 <script src="vendor/echarts.min.js"></script>
 <script src="demo.js"></script>
+<script src="spatial.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -102,7 +102,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần F, danh mục có 92 mục: 16 Raw (gồm 5 định danh) và 76 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 92 biến độc lập hoặc 92 cột đã có trong một file.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần P1, danh mục có 117 mục: 16 Raw (gồm 5 định danh) và 101 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 117 biến độc lập hoặc 117 cột đã có trong một file.
 
 - [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
 - [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; đã cập nhật tỷ lệ lớp/độ phủ theo đầu ra phần D.
@@ -171,31 +171,36 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] CSV chỉ số/kinh tế/lớp có đơn vị, mốc, cơ sở giá, chuỗi ánh sáng, dataset_id/stats_version và hash nguồn; link tải gắn expected_snapshot để chặn nhầm lượt.
 - [x] Quét GeoTIFF theo mốc manifest, tạo bản crop/mask riêng khi cần; kiểm lại ngoài tỉnh là NoData, giữ 0 hợp lệ và pixel giao biên dương; nguồn không đổi.
 - [x] Kiểm tồn tại/chữ ký nguồn và bản xuất; API báo không sẵn có/410 khi đổi hoặc mất, không dùng số không nhất quán vào mẫu mô hình.
-- [ ] Chạy verify_demo trên Windows với fix_report đã published, gửi integration_report.json; đối chiếu vài tỉnh/năm giữa app/CSV/TIFF và xem mask trong QGIS trước demo.
+- [x] Đã nhận integration_report.json Windows: published=true, 12.285 ảnh, 0 pixel hợp lệ hoàn toàn ngoài tỉnh, 0 bản cần sửa mask; đối chiếu 315 dòng năm, 3.780 tháng, 4.095 Night Data và 8.820 Night Economy. Snapshot 8f7799734c1d…; stats v9/schema v2.
+- [ ] Nghiệm thu màn hình sau bản sửa cache/snapshot 63868bc; đối chiếu vài tỉnh/năm app/CSV/TIFF và xem mask trong QGIS trước demo.
 
 **Đạt khi:** một giá trị được chọn có thể đối chiếu từ ảnh → CSV → SQLite → API → màn hình → file tải xuống.
 
 ## 6. Công việc P1: Moran và thay đổi không gian
 
+Đã triển khai code/API/màn phân tích và kiểm thử ảnh biết trước. Hướng dẫn và căn cứ phương pháp: [PHAN_P1_PHAN_TICH_KHONG_GIAN.md](PHAN_P1_PHAN_TICH_KHONG_GIAN.md). Các dấu hoàn thành xác nhận chức năng; kết quả 63 tỉnh thật cần lượt chạy Windows.
+
 ### Global Moran's I cấp tỉnh
 
-- [ ] Chọn một biến phân tích, đề xuất `sol_density`, cùng một năm trên toàn bộ 63 tỉnh.
-- [ ] Chốt trọng số không gian, đề xuất quan hệ tiếp giáp ranh giới tỉnh; ghi rõ cách chuẩn hóa trọng số.
-- [ ] Xử lý tỉnh không có láng giềng và tỉnh thiếu số liệu; không tự gán Moran bằng 0.
-- [ ] Tính chỉ số, kiểm định hoán vị và lưu seed để tái lập; ghi số tỉnh thực tế tham gia.
-- [ ] Kiểm tra trường hợp biến không có phương sai hoặc số địa bàn không đủ.
-- [ ] Hiển thị kết quả theo năm, biến được dùng, phương pháp và giới hạn diễn giải.
+- [x] Chọn một biến phân tích, dùng `sol_density` chưa hiệu chỉnh của ntl_annual, cùng một năm trên toàn bộ 63 tỉnh.
+- [x] Chốt trọng số không gian, Queen trên polygon EPSG:6933 với dung sai 1 m và chuẩn hóa hàng sau loại thiếu/cô lập; ghi rõ cách chuẩn hóa trọng số.
+- [x] Xử lý tỉnh không có láng giềng và tỉnh thiếu số liệu; không tự gán Moran bằng 0.
+- [x] Tính chỉ số, kiểm định hoán vị và lưu seed để tái lập; ghi số tỉnh thực tế tham gia.
+- [x] Kiểm tra trường hợp biến không có phương sai hoặc số địa bàn không đủ.
+- [x] Hiển thị kết quả theo năm, biến được dùng, phương pháp và giới hạn diễn giải.
 
 **Giới hạn:** Moran đo tự tương quan không gian, không tự chứng minh lan tỏa kinh tế, hướng dịch chuyển hoặc quan hệ nhân quả.
 
 ### Thay đổi vùng sáng và hướng dịch chuyển
 
-- [ ] Chọn hai năm cùng cảm biến, cùng bộ ngưỡng và quy trình tổng hợp.
-- [ ] Đưa ảnh về cùng CRS, độ phân giải, lưới pixel và ranh giới.
-- [ ] So sánh trên vùng có dữ liệu hợp lệ ở cả hai năm; tách riêng phần thiếu quan sát.
-- [ ] Dựng bản đồ tăng/giảm sáng hoặc chuyển lớp và tính diện tích thay đổi.
-- [ ] Nếu tính trọng tâm ánh sáng, ghi rõ trọng số và tính khoảng cách/hướng trong hệ tọa độ phù hợp.
-- [ ] Chỉ kết luận liên hệ với đường, biển, cảng hoặc khu công nghiệp khi có lớp địa lý đối chiếu; nếu chưa có, chỉ mô tả thay đổi quan sát được.
+- [x] Chọn hai năm cùng cảm biến, cùng bộ ngưỡng và quy trình tổng hợp.
+- [x] Đưa ảnh về cùng CRS, độ phân giải, lưới pixel và ranh giới.
+- [x] So sánh trên vùng có dữ liệu hợp lệ ở cả hai năm; tách riêng phần thiếu quan sát.
+- [x] Dựng bản đồ tăng/giảm sáng hoặc chuyển lớp và tính diện tích thay đổi.
+- [x] Nếu tính trọng tâm ánh sáng, ghi rõ trọng số và tính khoảng cách/hướng trong hệ tọa độ phù hợp.
+- [x] Chỉ kết luận liên hệ với đường, biển, cảng hoặc khu công nghiệp khi có lớp địa lý đối chiếu; nếu chưa có, chỉ mô tả thay đổi quan sát được.
+
+- [ ] Chạy build_spatial trên Windows, gửi spatial_report.json; kiểm n/63, diện tích miền chung/thiếu, raster và hướng trọng tâm ở vài tỉnh trước demo.
 
 ## 7. Kiểm chứng số liệu trước khi chốt demo
 
