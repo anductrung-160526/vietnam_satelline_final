@@ -29,6 +29,26 @@ python -m uvicorn backend.api.main:app --reload --port 8000
 
 Mở `http://localhost:8000`, tải lại trang để lấy frontend mới.
 
+### Khôi phục lượt phân lớp bị lỗi bảng mã Windows
+
+Nếu đã xử lý hết ảnh nhưng dừng tại `SCHEMA.read_text()` với `UnicodeDecodeError` (cp1252), cập nhật code và chạy:
+
+```powershell
+git pull origin night-app
+python -m backend.data.build_light_classes --root "E:\SatelliteData" --resume-latest
+```
+
+Lệnh chọn thư mục mới nhất có `method.json` trong `E:\SatelliteData\cog\light_classes`, giữ bộ ngưỡng đã tính, đọc COG cũ để lấy diện tích và hoàn tất nạp SQLite. Không phân lớp lại những ảnh đã có. Vẫn cần thời gian đọc và kiểm tra 4.095 ảnh. Dừng app trước khi chạy. Nếu một ảnh còn thiếu, chỉ ảnh đó được phân lớp; ảnh có metadata/mask không khớp sẽ báo lỗi thay vì tự bỏ qua. Có thể chỉ định lượt cụ thể bằng `--resume-dir "E:\SatelliteData\cog\light_classes\TEN_THU_MUC"`.
+
+Lần `load_demo` đã báo thành công thì không cần nạp lại chỉ để khắc phục lỗi này. Nếu cần nạp lại mà thiếu `grdp_all_prices.csv`, kiểm tra đúng thư mục chuẩn bị:
+
+```powershell
+Test-Path "E:\SatelliteData\_demo_preparation\20261121_224811_221282\grdp_all_prices.csv"
+Get-ChildItem "E:\SatelliteData\_demo_preparation" -Filter grdp_all_prices.csv -Recurse
+```
+
+Đường dẫn dùng `_demo_preparation`, không có dấu gạch chéo giữa `_` và `demo_preparation`. Dùng thư mục cha của CSV tìm thấy cho `--prepared`; không cần chạy lại toàn bộ phần A chỉ vì nhập sai đường dẫn.
+
 `load_demo`:
 
 - Đọc `grdp_all_prices.csv`, `manifest_candidates.csv`, `image_inventory.csv` từ phần A.

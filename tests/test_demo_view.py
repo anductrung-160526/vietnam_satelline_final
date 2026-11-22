@@ -20,7 +20,7 @@ from backend.data.build_light_classes import classify_image, choose_thresholds
 def database(tmp_path, monkeypatch):
     db = tmp_path/'demo.db'
     con = mo(db)
-    con.executescript(SCHEMA.read_text())
+    con.executescript(SCHEMA.read_text(encoding='utf-8'))
     for code in ['01','27']:
         for year in range(2015,2025):
             light = (int(code)+year-2010)*100
@@ -114,3 +114,42 @@ def test_outside_raster_tile_is_404_not_server_crash(database,tmp_path):
     source=tmp_path/'source.tif';make_raster(source,[[1,2]])
     response=TestClient(app).get('/tiles/cog/tiles/WebMercatorQuad/8/0/0.png',params={'url':str(source),'bidx':1})
     assert response.status_code==404
+
+
+def test_resume_classes_after_windows_schema_error(database, tmp_path, monkeypatch):
+    from backend.data import build_light_classes as module
+    source = tmp_path/'source.tif'
+    make_raster(source, [[0, .5, 1.5, 10, 20, -9999]])
+    directory = tmp_path/'cog/light_classes/20261121_235900'
+    directory.mkdir(parents=True)
+    breaks = [.5, 1.5, 10., 20.]
+    (directory/'method.json').write_text(json.dumps(dict(
+        breaks=breaks, reference_year=2020, status='empirical_demo')), encoding='utf-8')
+    target = directory/'01_VIIRS_2024_00_classes.tif'
+    expected = classify_image(source, target, breaks, 2020)
+    before = target.read_bytes()
+    with sqlite3.connect(database) as con:
+        con.execute('INSERT INTO demo_asset VALUES(?,?,?,?,?,?,?)',
+                    ('01', 2024, 0, 'processed', str(source), 'VIIRS', '[]'))
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Không được phân lớp/chọn ngưỡng lại khi phục hồi ảnh đã có.')
+    monkeypatch.setattr(module, 'classify_image', forbidden)
+    monkeypatch.setattr(module, 'choose_thresholds', forbidden)
+    original_read_text = Path.read_text
+    def windows_read_text(path, *args, **kwargs):
+        if path == SCHEMA:
+            assert kwargs.get('encoding') == 'utf-8'
+        return original_read_text(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'read_text', windows_read_text)
+    result = module.build(tmp_path, database, resume_dir=directory)
+    assert result['images'] == result['reused_images'] == 1
+    assert target.read_bytes() == before
+    with sqlite3.connect(database) as con:
+        areas = [r[0] for r in con.execute('SELECT area_km2 FROM light_class ORDER BY class_index')]
+    assert areas == expected
+    (directory/'method.json').write_text(json.dumps(dict(
+        breaks=[.5, 1.5, 11., 20.], reference_year=2020, status='empirical_demo')), encoding='utf-8')
+    with pytest.raises(ValueError, match='không khớp'):
+        module.build(tmp_path, database, resume_dir=directory)
+    with sqlite3.connect(database) as con:
+        assert con.execute('SELECT COUNT(*) FROM light_class').fetchone()[0] == 5
