@@ -11,6 +11,8 @@ let economyBasis = 'so_sanh';
 const CLASS_NAMES = ['Tối / dưới ngưỡng nền','Sáng yếu','Sáng vừa','Sáng mạnh','Rất sáng'];
 let demoSnapshotInitialized=false, demoSnapshotId=null, demoSnapshotChanged=false;
 function checkDemoSnapshot(data){
+  // Thiếu metadata nghĩa là chưa biết, không phải dataset đã bị xóa/đổi.
+  if(!Object.prototype.hasOwnProperty.call(data,'snapshot_id'))return;
   const id=data.snapshot_id || null;
   if(demoSnapshotChanged || (demoSnapshotInitialized && id!==demoSnapshotId)){
     demoSnapshotChanged=true;demoDetails=null;

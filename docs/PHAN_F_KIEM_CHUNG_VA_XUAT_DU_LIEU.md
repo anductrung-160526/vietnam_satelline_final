@@ -88,6 +88,8 @@ Gửi **integration_report.json** sau khi chạy thành công. Kiểm các mục
 
 ## 6. Kiểm tra Windows trước demo
 
+Nếu trang trống kèm thông báo đổi bộ dữ liệu ngay sau khi cập nhật code: dừng app, git pull, mở lại app rồi Ctrl+F5. Frontend bỏ qua phản hồi thiếu metadata phiên bản và API không dùng cache; chỉ khóa khi có phiên bản khác đã xác định. Không chạy lại build_indices/build_cogs chỉ vì các dòng “chưa có ảnh/ranh giới” xuất hiện sau khi việc tải API bị chặn. Nếu vẫn lỗi sau tải lại, mở /api/health, /api/demo/dataset và /api/boundaries-info để kiểm tra đúng database/ranh giới đang phục vụ.
+
 - Chọn Hà Nội/Bắc Ninh, đổi năm/tháng; đối chiếu cùng SOL và mốc trên bản đồ/thẻ số/bảng/CSV.
 - Chọn 2022-07 ở tỉnh không có quan sát để thấy thiếu số, không phải SOL=0.
 - Tải CSV chỉ số, CSV kinh tế hai giá, CSV lớp và TIFF; đối chiếu mã snapshot, đơn vị, source hash và mốc.

@@ -29,8 +29,10 @@ const tenMoc = m => m.month ? `${THANG_VN[m.month - 1]}/${m.year}` : String(m.ye
 const maMoc  = m => m.month ? `${m.year}-${String(m.month).padStart(2,'0')}` : String(m.year);
 
 async function layJSON(duongDan){
-  const r = await fetch(duongDan);
-  if(typeof checkDemoSnapshot === 'function')checkDemoSnapshot({snapshot_id:r.headers.get('X-Snapshot-ID') || null});
+  // Không dùng JSON cũ trong cache sau khi cập nhật database/code.
+  const r = await fetch(duongDan, {cache:'no-store'});
+  if(typeof checkDemoSnapshot === 'function' && r.headers.has('X-Snapshot-ID'))
+    checkDemoSnapshot({snapshot_id:r.headers.get('X-Snapshot-ID') || null});
   if(!r.ok){
     let detail='';try{detail=(await r.json()).detail || '';}catch{}
     throw new Error(detail || `${duongDan} → ${r.status}`);

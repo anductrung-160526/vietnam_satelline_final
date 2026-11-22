@@ -389,6 +389,7 @@ async def same_snapshot_for_api(request,call_next):
         return JSONResponse(status_code=409,content={'detail':'Bộ dữ liệu vừa thay đổi. Tải lại trang để đồng bộ.'},
                             headers={'X-Snapshot-ID':after or ''})
     response.headers['X-Snapshot-ID']=before or ''
+    response.headers['Cache-Control']='no-store'
     return response
 
 

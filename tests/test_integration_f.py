@@ -48,6 +48,7 @@ def test_csv_sql_api_and_exports_have_same_snapshot_and_values(integrated):
     assert next(r for r in rows if r['field']=='sol_per_capita')['value']=='0.2'
     image=client.get('/api/demo/image',params=dict(province_code='01',nam=2022,kind='processed',expected_snapshot=checked['dataset_id']))
     assert image.status_code==200 and image.headers['x-snapshot-id']==checked['dataset_id']
+    assert image.headers['cache-control']=='no-store'
     for endpoint in ('province.csv','classes.csv','image','economy.csv'):
         args=dict(province_code='01',expected_snapshot='older_snapshot')
         if endpoint=='economy.csv':args.update(nam_tu=2022,nam_den=2022)
