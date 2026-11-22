@@ -16,6 +16,7 @@ function checkDemoSnapshot(data){
   const id=data.snapshot_id || null;
   if(demoSnapshotChanged || (demoSnapshotInitialized && id!==demoSnapshotId)){
     demoSnapshotChanged=true;demoDetails=null;
+    if(typeof invalidateWideTable==='function')invalidateWideTable();
     if(typeof invalidateSpatial==='function')invalidateSpatial();
     $('class-summary').innerHTML='';$('nut-tai-anh').disabled=true;
     const message='Bộ dữ liệu đã được cập nhật. Tải lại trang để đồng bộ bản đồ, bảng và biểu đồ.';
@@ -55,7 +56,7 @@ function initDemoContext(){
   $('nut-tai-anh').onclick = downloadSelectedImage;
   syncContext();
 }
-async function applySharedContext(code, year, month){
+async function applySharedContext(code, year, month, fromPanel=false){
   // Tạm dừng refresh trong các thay đổi nội bộ để tránh nhiều request dùng ngữ cảnh nửa cũ.
   const shared = ++sharedRequest;
   demoReady = false;
@@ -64,6 +65,8 @@ async function applySharedContext(code, year, month){
   chonPhamVi(code);
   chon.tinh = new Set(code ? [code] : danhSachTinh.map(p => p.province_code));
   chon.moc = new Set([contextPeriod()]);
+  if(!fromPanel && !month && year>=NAM_CO_THANG)
+    for(let m=1;m<=12;m++)chon.moc.add(`${year}-${String(m).padStart(2,'0')}`);
   document.querySelectorAll('[data-tinh]').forEach(e => e.checked = chon.tinh.has(e.dataset.tinh));
   dongBoCay($('loc-chiso')); capNhatDem($('loc-chiso'));
   await napMoc(month ? 'thang' : 'nam', contextPeriod());
@@ -75,7 +78,7 @@ async function applySharedContext(code, year, month){
 }
 async function adoptPanelContext(){
   const period = [...chon.moc][0].split('-');
-  await applySharedContext([...chon.tinh][0], Number(period[0]), Number(period[1] || 0));
+  await applySharedContext([...chon.tinh][0], Number(period[0]), Number(period[1] || 0), true);
 }
 function demoParams(){
   const params=new URLSearchParams({province_code:demoSelection.code || '', nam:demoSelection.year, thang:demoSelection.month});

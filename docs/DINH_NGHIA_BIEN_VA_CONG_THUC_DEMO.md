@@ -8,7 +8,7 @@ Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_
 
 Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
 
-Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau phần P1, danh mục có 117 mục: 16 Raw (5 định danh) và 101 Processed; gồm cả metadata/tham số, không phải 117 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau phần P1, danh mục có 121 mục: 19 Raw (6 định danh) và 102 Processed; gồm cả metadata/tham số, không phải 121 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
 
 ## 2. Ký hiệu, nguồn và quy tắc đầu vào
 
@@ -117,3 +117,8 @@ Hai năm so sánh cùng VIIRS và cùng bộ ngưỡng cố định; đưa năm 
 Trọng tâm tính trên cùng C, trọng số m=R×diện tích giao khi R≥0,5. Tọa độ là trung bình tâm pixel trong EPSG:6933 theo m, có sai số ở pixel biên và độ phân giải. Khoảng cách haversine bán kính 6371,0088 km, góc từ Bắc theo chiều kim đồng hồ. Không có trọng số dương thì trống. Không gán hướng quan sát được cho biển/đường/cảng/khu công nghiệp khi chưa có lớp đối chiếu.
 
 Kết quả lưu spatial_run riêng, P1 version=1, không đổi thống kê v9/schema F v2. Snapshot và run_id gắn với file tải, nguồn mất/đổi bị vô hiệu hóa. Đã kiểm chức năng bằng dữ liệu biết trước; chưa có spatial_report.json Windows để nghiệm thu 63 tỉnh thật.
+
+
+## 13. Bảng dữ liệu theo quan sát
+
+Màn Chỉ số đêm mặc định hiển thị bảng ngang tỉnh–năm/tháng, cùng thứ tự cột CSV: định danh → Raw → Processed. Chọn năm VIIRS mặc định có dòng năm và 12 dòng tháng, vẫn lọc độc lập. Băng Raw là tham chiếu ảnh, GRDP/dân số tháng là annual_reference của năm đó. Dữ liệu thiếu giữ trống, số 0 giữ nguyên. Chế độ So sánh thời gian và Biểu đồ giữ phương pháp cũ. Tham chiếu BANG_DU_LIEU_THEO_THANG.md. Việc đổi thứ tự cột không thay công thức, không thay STATS_VERSION, không cần chạy lại F/P1.

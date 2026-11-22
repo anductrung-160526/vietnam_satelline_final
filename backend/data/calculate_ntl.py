@@ -555,6 +555,8 @@ def write_tables(tables, directory, overwrite=False):
         fields += extra
         if not fields:
             fields = ['province_code', 'year']
+        from .column_order import ordered_fields
+        fields = ordered_fields(fields)
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8-sig', newline='',

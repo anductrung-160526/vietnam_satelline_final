@@ -456,7 +456,7 @@ function dsHam(){
   return `<ul class="ds" id="ds-ham">` + Object.entries(HAM).map(([ma, ten]) =>
     `<li><label><input type="checkbox" data-ham="${ma}"><span>${ten}</span></label></li>`
   ).join('') + '</ul>'
-  + '<p class="canh-nho">Mỗi hàm thành một cột phụ bên phải bảng. Tốc độ tăng trưởng và '
+  + '<p class="canh-nho">Mỗi hàm thành một cột phụ trong chế độ So sánh thời gian. Tốc độ tăng trưởng và '
   + 'thay đổi toàn kỳ từ chối chạy khi khoảng bắc qua mốc đổi vệ tinh.</p>';
 }
 
@@ -595,6 +595,7 @@ function thamSoBang(){
 }
 
 async function napBang(){
+  loadWideTable();
   const o = $('canh-bao-bang');
   if(!chon.chiSo.size || !chon.moc.size){
     duLieuBang = null;
@@ -711,12 +712,16 @@ function veDuong(){
   bieuDo.resize();
 }
 
-function doiXem(chart){
-  $('o-bang').hidden = chart;
-  $('o-chart').hidden = !chart;
+let tableMode='bang';
+function doiXem(mode){
+  tableMode=mode;
+  $('o-data-table').hidden=mode!=='bang';
+  $('data-table-summary').hidden=$('data-table-pages').hidden=mode!=='bang';
+  $('o-bang').hidden = mode!=='sosanh';
+  $('o-chart').hidden = mode!=='chart';
   document.querySelectorAll('#xem-chiso button').forEach(b =>
-    b.setAttribute('aria-pressed', String((b.dataset.xem === 'chart') === chart)));
-  if(chart) requestAnimationFrame(veDuong);
+    b.setAttribute('aria-pressed', String(b.dataset.xem===mode)));
+  if(mode==='chart') requestAnimationFrame(veDuong);
 }
 
 /* ===================== màn 3: chỉ số kinh tế đêm ===================== */
@@ -745,6 +750,7 @@ function doiXem(chart){
   dungDanhSachTinh(danhSachTinh);
   // /api/indicators bọc danh sách trong {chi_so: [...]}
   try{ danhMuc = (await layJSON('/api/indicators')).chi_so || []; }catch{ danhMuc = []; }
+  chon.chiSo=new Set(danhMuc.filter(e=>e.bang!=='economy').map(e=>e.ma));
 
   $('chon-tinh').onchange = () => applySharedContext($('chon-tinh').value,demoSelection.year,demoSelection.month);
   $('tim-tinh').oninput = () => locTinh($('tim-tinh').value);
@@ -773,9 +779,12 @@ function doiXem(chart){
 
   dungLoc($('loc-chiso'));
   document.querySelectorAll('#xem-chiso button').forEach(b => {
-    b.onclick = () => doiXem(b.dataset.xem === 'chart');
+    b.onclick = () => doiXem(b.dataset.xem);
   });
-  $('nut-csv').onclick = () => { window.location = '/api/panel.csv?' + thamSoBang(); };
+  $('nut-csv').onclick = () => {
+    if(tableMode==='bang')downloadWideTable();
+    else window.location = '/api/panel.csv?' + thamSoBang();
+  };
   addEventListener('resize', () => { bieuDo?.resize(); economyChart?.resize(); });
 
   await dungBanDo();

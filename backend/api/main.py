@@ -36,7 +36,7 @@ def _code(province_code: str) -> str:
     return code
 
 
-GIAO_DIEN = ('index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js')
+GIAO_DIEN = ('index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js', 'data-table.js')
 
 
 def _bam(du_lieu):
@@ -520,6 +520,27 @@ def demo_dataset():
         datasets=snapshot_status(connection)
         row=connection.execute("SELECT value FROM demo_schema_meta WHERE key='version'").fetchone() if demo_view.has_table(connection,'demo_schema_meta') else None
     return dict(snapshot_id=demo_snapshot_id(),demo_schema_version=int(row[0]) if row else None,datasets=list(datasets.values()))
+
+
+@app.get('/api/demo/data')
+def demo_data(moc: str='2024',province_code: str='',chi_so: str=''):
+    from .data_table import data_table
+    try:
+        return data_table(moc.split(','),[_code(c) for c in province_code.split(',')] if province_code else None,
+                          chi_so.split(',') if chi_so else None)
+    except ValueError as error:raise HTTPException(400,str(error))
+
+
+@app.get('/api/demo/data.csv')
+def demo_data_csv(moc: str='2024',province_code: str='',chi_so: str='',expected_snapshot: str=''):
+    import csv
+    data=demo_data(moc,province_code,chi_so)
+    if expected_snapshot and data['snapshot_id']!=expected_snapshot:
+        raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại bảng trước khi xuất CSV.')
+    stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=[c['field'] for c in data['columns']])
+    writer.writeheader();writer.writerows(data['rows'])
+    return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')),media_type='text/csv',
+                             headers={'Content-Disposition':'attachment; filename="night_data_monthly.csv"'})
 
 
 @app.get('/api/spatial')

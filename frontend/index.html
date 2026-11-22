@@ -78,17 +78,21 @@
   <div class="than rong" id="man-chiso" hidden>
     <aside class="loc" id="loc-chiso"></aside>
     <section class="vung-bang">
-      <div id="detail-fields" class="detail-fields" aria-live="polite"></div>
-      <h2 class="section-label">So sánh theo thời gian · Processed</h2>
+      <div id="detail-fields" hidden></div>
+      <h2 class="section-label">Bảng dữ liệu chi tiết theo tỉnh và thời gian</h2>
       <div class="chan-bang">
         <div class="doi-xem" id="xem-chiso">
           <button type="button" aria-pressed="true" data-xem="bang">Bảng</button>
+          <button type="button" aria-pressed="false" data-xem="sosanh">So sánh thời gian</button>
           <button type="button" aria-pressed="false" data-xem="chart">Biểu đồ</button>
         </div>
         <button class="nut-tai" type="button" id="nut-csv">Tải CSV</button>
       </div>
       <div id="canh-bao-bang"></div>
-      <div class="cuon" id="o-bang"><table id="bang-chiso"></table></div>
+      <div id="data-table-summary" class="nho" role="status"></div>
+      <div class="chan-bang" id="data-table-pages"><button id="data-prev" type="button">← Trang trước</button><span id="data-page"></span><button id="data-next" type="button">Trang sau →</button></div>
+      <div class="cuon" id="o-data-table"><table id="data-table"></table></div>
+      <div class="cuon" id="o-bang" hidden><table id="bang-chiso"></table></div>
       <div id="o-chart" hidden>
         <div class="bieu-do" id="bd-duong"></div>
         <p class="ghi-bd" id="ghi-bd"></p>
@@ -121,6 +125,7 @@
 <script src="vendor/echarts.min.js"></script>
 <script src="demo.js"></script>
 <script src="spatial.js"></script>
+<script src="data-table.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

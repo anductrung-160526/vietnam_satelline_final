@@ -284,7 +284,7 @@ class StaticAndSchemaTest(unittest.TestCase):
         self.assertTrue(body['thu_muc_giao_dien'].endswith('frontend'))
         self.assertEqual(len(body['dau_van_giao_dien']), 12)
         self.assertEqual(set(body['van_tay_tung_tep']),
-                         {'index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js'})
+                         {'index.html', 'style.css', 'app.js', 'demo.js', 'spatial.js', 'data-table.js'})
 
     def test_the_fingerprint_ignores_windows_line_endings(self):
         """Git trên Windows đổi LF thành CRLF; không chuẩn hoá thì phép so vô dụng."""
