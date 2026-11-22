@@ -102,10 +102,10 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Danh mục có 64 mục: 16 Raw (gồm 5 định danh) và 48 Processed (gồm 3 công thức đề xuất chưa có đầu ra riêng). Đây là số mục từ điển gồm metadata/tham số, không phải 64 biến độc lập hoặc 64 cột đã có trong một file.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần D, danh mục có 69 mục: 16 Raw (gồm 5 định danh) và 53 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất nay đã triển khai. Đây là số mục từ điển gồm metadata/tham số, không phải 69 biến độc lập hoặc 69 cột đã có trong một file.
 
 - [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
-- [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; tỷ lệ lớp/độ phủ còn là công thức đề xuất, chưa đánh dấu đã triển khai tính/xuất.
+- [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; đã cập nhật tỷ lệ lớp/độ phủ theo đầu ra phần D.
 - [x] Phân biệt dữ liệu đầu vào với tham số cấu hình và chỉ số tính toán; không xếp ngưỡng vào băng ảnh thô.
 - [x] Thống nhất tên trường tiếng Anh chữ thường; giải thích bằng tiếng Việt.
 - [x] Viết công thức, đơn vị, nguồn, cấp tỉnh và tần suất của từng trường.
@@ -113,7 +113,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Nêu cách xử lý thiếu ảnh, thiếu tháng, mẫu số bằng 0 và ít quan sát sạch mây.
 - [x] Phân biệt tỷ số tăng trưởng ánh sáng/GRDP với hệ số β của hồi quy GRDP theo ánh sáng.
 - [x] Thống kê số mục Raw và Processed; tách định danh và mục đề xuất, không cộng trùng khóa ở hai CSV.
-- [x] Tạo `.docx` bản làm việc, mở lại và render 10 trang để kiểm tra bảng/công thức. Có script sinh lại từ Markdown.
+- [x] Tạo `.docx` bản làm việc, mở lại và render để kiểm tra bảng/công thức; bản cập nhật phần D có 11 trang. Có script sinh lại từ Markdown.
 - [ ] Xác nhận/chỉnh Word theo form cô yêu cầu sau khi nhận được form; chưa coi bản làm việc là đã đúng biểu mẫu.
 - [ ] Chốt công thức NEI tổng hợp với cô. Hiện tài liệu trình bày các chỉ số thành phần, không tự gán trọng số hay gọi SOL/β là NEI chính thức.
 
@@ -121,16 +121,19 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### D. Phân lớp sáng và diện tích
 
-- [ ] Chốt năm khoảng: tối/không phát sáng, yếu, vừa, mạnh, rất mạnh.
-- [ ] Phân biệt tối thực sự với ánh sáng bị coi là nền; ghi rõ định nghĩa được chọn.
-- [ ] Mỗi pixel hợp lệ thuộc đúng một khoảng, với quy tắc biên không chồng lặp.
-- [ ] Giữ ngưỡng cố định qua các năm cùng cảm biến; không chia lại theo max riêng từng năm.
-- [ ] Không lấy 600/6.000 làm giới hạn mặc định khi chưa kiểm tra đơn vị ảnh thật.
-- [ ] Tính diện tích từng lớp bằng tổng diện tích pixel trong lớp.
-- [ ] Tính tỷ lệ từng lớp trên diện tích tự nhiên tỉnh; bổ sung độ phủ dữ liệu để giải thích phần còn thiếu.
-- [ ] Giữ nguyên NoData; không gán pixel mây/thiếu ảnh vào lớp tối.
-- [ ] Xuất raster phân lớp và bảng diện tích, kèm ngưỡng và phiên bản phương pháp.
-- [ ] Kiểm tra tổng diện tích các lớp khớp diện tích pixel có dữ liệu, không ép bằng diện tích tự nhiên nếu ảnh thiếu.
+Đã triển khai và kiểm tra code/API/giao diện bằng ảnh biết trước. Lệnh chạy và ý nghĩa báo cáo: [PHAN_LOP_SANG_PHAN_D.md](PHAN_LOP_SANG_PHAN_D.md). Các dấu dưới đây là tiến độ thực hiện chức năng, chưa phải nghiệm thu 4.095 ảnh thật trên Windows.
+
+- [x] Chốt quy tắc năm khoảng cho demo: 0,5; 1,5; P50/P90 pixel sáng năm 2020. Giá trị thật P50/P90 phải lấy từ method.json; không dùng mốc ảnh kiểm thử.
+- [x] Phân biệt tối thực sự với dưới ngưỡng nền; ghi rõ chưa suy diễn lớp bức xạ thành mức kinh tế/loại đất.
+- [x] Mỗi pixel hợp lệ thuộc đúng một khoảng; bằng ngưỡng thuộc lớp cao hơn; kiểm chứng lại từ bức xạ nguồn.
+- [x] Giữ ngưỡng cố định qua các năm/tháng VIIRS; không fit lại theo max từng ảnh.
+- [x] Không dùng 600/6.000 làm giới hạn mặc định; cận trên lớp rất sáng không hữu hạn.
+- [x] Tính diện tích từng lớp theo lưới/vĩ độ; không dùng 0,25 km²/pixel cố định.
+- [x] Tính và lưu tỷ lệ từng lớp trên diện tích tự nhiên, diện tích hợp lệ và độ phủ; thiếu mẫu số thì để trống tỷ lệ và báo cờ.
+- [x] Giữ NoData=255, kiểm tra mask với ảnh nguồn; toàn NoData có trạng thái riêng, không coi là tối.
+- [x] Xuất COG, CSV diện tích, CSV/JSON kiểm chứng, ngưỡng và phiên bản; API tải CSV đúng tỉnh/mốc đang chọn.
+- [x] Kiểm tra tổng diện tích lớp với diện tích hợp lệ; giữ số/cờ khi độ phủ trên 100% do pixel giao biên.
+- [ ] Chạy hoặc phục hồi phần D trên đúng kho dữ liệu Windows; nhận method.json, validation_report.json và light_class_validation.csv, rà soát ảnh rỗng, mẫu số và sai lệch diện tích trước nghiệm thu.
 
 **Đạt khi:** phân lớp có thể tái lập, tổng diện tích được kiểm tra và bản đồ sử dụng đúng bộ ngưỡng đã tính.
 

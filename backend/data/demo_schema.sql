@@ -23,3 +23,15 @@ CREATE TABLE IF NOT EXISTS demo_result(
  table_name TEXT NOT NULL, price_basis TEXT NOT NULL, payload TEXT NOT NULL,
  PRIMARY KEY(province_code,year,month,table_name,price_basis)
 );
+-- Phần D: kiểm chứng và mẫu số lưu cùng kết quả, không tính raster trong API.
+CREATE TABLE IF NOT EXISTS light_class_summary(
+ province_code TEXT NOT NULL, year INTEGER NOT NULL, month INTEGER NOT NULL,
+ area_km2 REAL, area_source TEXT NOT NULL,
+ valid_pixels INTEGER NOT NULL, nodata_pixels INTEGER NOT NULL,
+ valid_area_km2 REAL NOT NULL, valid_area_pct REAL,
+ lit_area_km2 REAL NOT NULL, lit_area_pct REAL,
+ area_balance_error_km2 REAL NOT NULL, validation_status TEXT NOT NULL,
+ reference_year INTEGER NOT NULL, method_version TEXT NOT NULL,
+ class_area_pcts TEXT NOT NULL,
+ PRIMARY KEY(province_code,year,month)
+);

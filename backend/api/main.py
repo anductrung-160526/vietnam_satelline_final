@@ -419,6 +419,30 @@ def demo_image(province_code: str, nam: int = Query(..., ge=2004, le=2025),
                         filename=f"night_{_code(province_code)}_{nam}_{thang:02}_{kind}.tif")
 
 
+@app.get('/api/demo/classes.csv')
+def demo_classes_csv(province_code: str, nam: int = Query(..., ge=2004, le=2025),
+                     thang: int = Query(0, ge=0, le=12)):
+    """Xuất số đã kiểm chứng từ SQLite; không đọc/tính raster trong API."""
+    import csv
+    data = demo_view.province_view(_code(province_code), nam, thang)
+    if data is None:
+        raise HTTPException(404, 'Không có mã tỉnh này.')
+    if data['class_status'] != 'ready' or data['class_summary'] is None:
+        raise HTTPException(404, 'Chưa có kết quả kiểm chứng phần D; chạy build_light_classes trước.')
+    summary = data['class_summary']
+    fields = ['province_code', 'year', 'month', 'class_index', 'lower_bound', 'upper_bound',
+              'class_area_km2', 'class_area_pct', 'area_km2', 'valid_area_km2', 'valid_area_pct',
+              'validation_status', 'reference_year', 'method_version', 'unit', 'area_source']
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
+    writer.writeheader()
+    for row in data['classes']:
+        writer.writerow(dict(summary, **{k: v for k, v in row.items() if k != 'area_km2'},
+                             class_area_km2=row['area_km2']))
+    return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')), media_type='text/csv',
+                             headers={'Content-Disposition': 'attachment; filename="night_light_classes.csv"'})
+
+
 TILES_MOUNTED = _mount_tiles()
 
 class KhongDemFile(StaticFiles):

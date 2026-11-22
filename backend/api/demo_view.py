@@ -116,7 +116,9 @@ FIELD_ALIASES = {'valid_pixels':'total_pixels', 'rad_mean':'mean_rad', 'rad_std'
 
 
 PROCESSED = (
-    ('area_km2', 'Diện tích tự nhiên', 'km²'), ('tnl', 'Tổng bức xạ cùng tập pixel đầu vào', 'bức xạ'), ('sol_raw', 'Tổng sáng trước loại nền', 'bức xạ'),
+    ('area_km2', 'Diện tích tự nhiên', 'km²'),
+    ('valid_area_km2', 'Diện tích có dữ liệu', 'km²'), ('valid_area_pct', 'Độ phủ dữ liệu', '%'),
+    ('tnl', 'Tổng bức xạ cùng tập pixel đầu vào', 'bức xạ'), ('sol_raw', 'Tổng sáng trước loại nền', 'bức xạ'),
     ('sol', 'Tổng sáng sau loại nền', 'bức xạ'), ('sol_density', 'Mật độ sáng', 'bức xạ/km²'),
     ('valid_pixels', 'Pixel hợp lệ', 'pixel'), ('rad_mean', 'Bức xạ trung bình', 'bức xạ'),
     ('rad_std', 'Độ lệch chuẩn', 'bức xạ'), ('rad_min', 'Bức xạ nhỏ nhất', 'bức xạ'),
@@ -154,10 +156,20 @@ def province_view(code, year, month):
         nd = saved.get((code, year, month, 'night_data', ''), {})
         ne = saved.get((code, year, month, 'night_economy', 'so_sanh'), {})
         classes = []
+        class_summary = None
         if has_table(connection, 'light_class'):
             classes = [dict(r) for r in connection.execute(
                 'SELECT * FROM light_class WHERE province_code=? AND year=? AND month=? ORDER BY class_index',
                 (code, year, month))]
+        if has_table(connection, 'light_class_summary'):
+            found_summary = connection.execute(
+                'SELECT * FROM light_class_summary WHERE province_code=? AND year=? AND month=?',
+                (code, year, month)).fetchone()
+            if found_summary:
+                class_summary = dict(found_summary)
+                percentages = json.loads(class_summary.pop('class_area_pcts'))
+                for item in classes:
+                    item['class_area_pct'] = percentages[item['class_index']]
     raw_asset = asset(code, year, month, 'raw')
     processed_asset = asset(code, year, month, 'processed')
     source = observation.get('source') or (processed_asset or {}).get('source') or 'VIIRS'
@@ -185,6 +197,8 @@ def province_view(code, year, month):
         stored = ne if field in ('sol_per_capita','light_gdp_elasticity','predicted_gdp') else nd
         if display_name in stored:
             value = result_number(stored, display_name)
+        if class_summary is not None and field in ('valid_area_km2', 'valid_area_pct'):
+            value = class_summary[field]
         fields.append({'field': display_name, 'name': name, 'stage': 'Processed', 'value': value,
                        'unit': field_unit.replace('bức xạ', unit),
                        'reason': '' if value is not None else 'Chưa có số liệu hoặc chỉ số không tính được ở mốc này.'})
@@ -192,5 +206,6 @@ def province_view(code, year, month):
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
             'fields': fields, 'raw_asset': raw_asset, 'processed_asset': processed_asset,
             'classes': classes, 'class_asset': asset(code, year, month, 'classes'), 'is_simulated': simulated,
+            'class_summary': class_summary,
             'class_status': 'ready' if len(classes) == 5 else 'missing',
             'class_reason': '' if len(classes) == 5 else 'Chưa có kết quả năm mức sáng và ngưỡng đã cấu hình cho tỉnh/mốc này.'}

@@ -44,7 +44,7 @@ def style_section(section, landscape=False):
 def main():
     rows = dictionary_rows()
     counts = Counter(r['note'] for r in rows)
-    proposed = {'valid_area_km2', 'valid_area_pct', 'class_area_pct'}
+    proposed = {r['field'] for r in rows if r['storage'].startswith('Công thức đề xuất')}
     identity = sum(r['group'] == 'Định danh' for r in rows)
     document = Document()
     style_section(document.sections[0])
@@ -74,7 +74,7 @@ def main():
     ]:
         cells = summary.add_row().cells
         cells[0].text, cells[1].text = label, str(count)
-    document.add_paragraph('Không cộng trùng khóa ở hai CSV; đây không phải số biến độc lập thống kê. TNL và SOL_raw trùng bản chất trên cùng đầu vào. Chưa có đủ 64 cột trong một file đầu ra duy nhất.')
+    document.add_paragraph(f'Không cộng trùng khóa ở hai CSV; đây không phải số biến độc lập thống kê. TNL và SOL_raw trùng bản chất trên cùng đầu vào. Các {len(rows)} mục không đồng nghĩa {len(rows)} cột trong một file đầu ra duy nhất.')
     for line in (DOCS/'DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md').read_text(encoding='utf-8').splitlines():
         if not line.strip() or line.startswith('# '):
             continue
@@ -97,7 +97,7 @@ def main():
     section = document.add_section(WD_SECTION_START.NEW_PAGE)
     style_section(section, landscape=True)
     document.add_heading('Phụ lục — danh mục trường dữ liệu', 1)
-    document.add_paragraph('Bản đầy đủ các cột table/group/task3_field_lowercase nằm trong NIGHT_DATA_DICTIONARY.md. Phụ lục giữ cùng 64 định nghĩa, rút gọn cấu trúc cột để đọc trên trang ngang.')
+    document.add_paragraph(f'Bản đầy đủ các cột table/group/task3_field_lowercase nằm trong NIGHT_DATA_DICTIONARY.md. Phụ lục giữ cùng {len(rows)} định nghĩa, rút gọn cấu trúc cột để đọc trên trang ngang.')
     widths = [3.2, 6.0, 5.3, 1.9, 1.8, 8.7]
     for stage in ['Raw', 'Processed']:
         document.add_heading(stage, 2)

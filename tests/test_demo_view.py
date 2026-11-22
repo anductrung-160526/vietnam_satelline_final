@@ -147,9 +147,102 @@ def test_resume_classes_after_windows_schema_error(database, tmp_path, monkeypat
     with sqlite3.connect(database) as con:
         areas = [r[0] for r in con.execute('SELECT area_km2 FROM light_class ORDER BY class_index')]
     assert areas == expected
+    report = json.loads(Path(result['validation_report']).read_text(encoding='utf-8'))
+    assert report['images'] == 1 and report['missing_province_area'] == 0
+    with Path(result['class_csv']).open(encoding='utf-8-sig') as stream:
+        exported = list(csv.DictReader(stream))
+    assert len(exported) == 5
+    assert sum(float(r['class_area_km2']) for r in exported) == 5
+    assert sum(float(r['class_area_pct']) for r in exported) == pytest.approx(.5)
+    client = TestClient(app)
+    data = client.get('/api/demo/province?province_code=01&nam=2024').json()
+    assert data['class_summary']['valid_pixels'] == 5
+    assert data['class_summary']['nodata_pixels'] == 1
+    assert data['class_summary']['valid_area_pct'] == .5
+    assert sum(c['class_area_pct'] for c in data['classes']) == pytest.approx(.5)
+    assert next(r for r in data['fields'] if r['field'] == 'valid_area_km2')['value'] == 5
+    csv_result = client.get('/api/demo/classes.csv?province_code=01&nam=2024')
+    records = list(csv.DictReader(csv_result.content.decode('utf-8-sig').splitlines()))
+    assert len(records) == 5 and float(records[0]['area_km2']) == 1000
+    assert float(records[0]['class_area_km2']) == 1
+    assert client.get('/api/demo/classes.csv?province_code=01&nam=2023').status_code == 404
     (directory/'method.json').write_text(json.dumps(dict(
         breaks=[.5, 1.5, 11., 20.], reference_year=2020, status='empirical_demo')), encoding='utf-8')
     with pytest.raises(ValueError, match='không khớp'):
         module.build(tmp_path, database, resume_dir=directory)
     with sqlite3.connect(database) as con:
         assert con.execute('SELECT COUNT(*) FROM light_class').fetchone()[0] == 5
+
+
+def test_classification_rejects_bad_values_and_corrupt_saved_class(tmp_path):
+    from backend.data.build_light_classes import saved_areas
+    source, target = tmp_path/'radiance.tif', tmp_path/'classes.tif'
+    make_raster(source, [[-.1, 2]])
+    with pytest.raises(ValueError, match='âm'):
+        classify_image(source, target, [.5, 1.5, 10, 20], 2020)
+    assert not target.exists()
+    make_raster(source, [[0, 2]])
+    with pytest.raises(ValueError, match='ngưỡng'):
+        classify_image(source, target, [.5, 1.5, 1.5, 20], 2020)
+    classify_image(source, target, [.5, 1.5, 10, 20], 2020)
+    with rasterio.open(target, 'r+', IGNORE_COG_LAYOUT_BREAK='YES') as image:
+        image.write(np.array([[0, 4]], dtype='uint8'), 1)
+    with pytest.raises(ValueError, match='không khớp ngưỡng'):
+        saved_areas(target, source, [.5, 1.5, 10, 20], 2020)
+
+
+def test_geographic_class_area_uses_latitude_and_nodata_stays_empty(tmp_path):
+    from backend.data.build_light_classes import saved_areas
+    source, target = tmp_path/'radiance.tif', tmp_path/'classes.tif'
+    transform = from_origin(105, 22, .01, .01)
+    with rasterio.open(source, 'w', driver='GTiff', width=2, height=2, count=1,
+                       dtype='float32', nodata=-9999, crs='EPSG:4326', transform=transform) as image:
+        image.write(np.array([[0, 1.5], [10, -9999]], dtype='float32'), 1)
+    classify_image(source, target, [.5, 1.5, 10, 20], 2020)
+    result = saved_areas(target, source, [.5, 1.5, 10, 20], 2020, details=True)
+    top = .01**2 * 111.320**2 * np.cos(np.radians(21.995))
+    bottom = .01**2 * 111.320**2 * np.cos(np.radians(21.985))
+    assert result['areas'] == pytest.approx([top, 0, top, bottom, 0])
+    assert result['valid_area_km2'] == pytest.approx(2*top + bottom)
+    assert result['valid_pixels'] == 3 and result['nodata_pixels'] == 1
+    make_raster(source, [[-9999, -9999]])
+    classify_image(source, target, [.5, 1.5, 10, 20], 2020)
+    empty = saved_areas(target, source, [.5, 1.5, 10, 20], 2020, details=True)
+    assert empty['areas'] == [0]*5 and empty['valid_pixels'] == 0
+    with rasterio.open(target) as image:
+        assert image.read(1).tolist() == [[255, 255]]
+
+
+@pytest.mark.parametrize('values,area,expected_status', [
+    ([[-9999, -9999]], 6, 'no_valid_pixels'),
+    ([[0, 2]], 1, 'passed'),
+    ([[0, 2]], None, 'passed'),
+])
+def test_class_summary_missing_empty_and_coverage_above_100(database, tmp_path, values, area, expected_status):
+    from backend.data.build_light_classes import build
+    source = tmp_path/'source.tif'
+    make_raster(source, values)
+    directory = tmp_path/'cog/light_classes/test'
+    directory.mkdir(parents=True)
+    (directory/'method.json').write_text(json.dumps(dict(
+        breaks=[.5, 1.5, 10, 20], reference_year=2020, status='empirical_demo')), encoding='utf-8')
+    classify_image(source, directory/'01_VIIRS_2024_00_classes.tif', [.5, 1.5, 10, 20], 2020)
+    with sqlite3.connect(database) as con:
+        con.execute('INSERT INTO demo_asset VALUES(?,?,?,?,?,?,?)',
+                    ('01', 2024, 0, 'processed', str(source), 'VIIRS', '[]'))
+    area_file = tmp_path/'province_areas.csv'
+    area_file.write_text('province_code,area_km2\n'+('01,'+str(area) if area is not None else '27,6')+'\n', encoding='utf-8')
+    result = build(tmp_path, database, resume_dir=directory, areas_csv=area_file)
+    data = TestClient(app).get('/api/demo/province?province_code=01&nam=2024').json()
+    summary = data['class_summary']
+    assert summary['validation_status'] == expected_status
+    if area is None:
+        assert summary['area_km2'] is None and summary['valid_area_pct'] is None
+        assert result['missing_province_area'] == 1
+        assert all(c['class_area_pct'] is None for c in data['classes'])
+    elif expected_status == 'no_valid_pixels':
+        assert result['empty_images'] == 1 and summary['valid_area_pct'] == 0
+        assert all(c['class_area_pct'] is None for c in data['classes'])
+    else:
+        assert summary['valid_area_pct'] == 200 and result['coverage_above_100'] == 1
+        assert sum(c['class_area_pct'] for c in data['classes']) == 200

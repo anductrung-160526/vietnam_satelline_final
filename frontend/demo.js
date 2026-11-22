@@ -118,9 +118,15 @@ function renderClassSummary(data){
   }
   const reference = data.classes[0]?.status?.replace('empirical_reference_','');
   const methodNote = /^20\d{2}$/.test(reference) ? `Mốc 0,5 và 1,5 theo quy tắc dự án/Task 3; hai mốc còn lại là P50/P90 của pixel sáng năm ${reference}.` : 'Bộ phân lớp kiểm thử hoặc chưa có nhãn năm tham chiếu.';
-  $('class-summary').innerHTML = '<h3>Diện tích theo mức sáng</h3><table class="class-table"><thead><tr><th>Mức / ngưỡng</th><th>km²</th></tr></thead><tbody>'
-    + data.classes.map((c,i) => `<tr><td><i style="background:${CLASS_COLORS[i]}"></i>${CLASS_NAMES[i]}<small>${c.lower_bound} ≤ r ${c.upper_bound === null ? '' : '< '+c.upper_bound} ${thoat(c.unit)}</small></td><td>${valueCell(c.area_km2)}</td></tr>`).join('')
-    + `</tbody></table><p class="nho">${thoat(methodNote)} Ngưỡng giữ cố định giữa các năm. Pixel giao biên được tính cả diện tích pixel.</p>`;
+  const s = data.class_summary;
+  const params = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:demoSelection.month});
+  const audit = s ? `<p class="nho">Diện tích tự nhiên: ${valueCell(s.area_km2)} km².<br>Diện tích có dữ liệu: ${valueCell(s.valid_area_km2)} km² · độ phủ ${valueCell(s.valid_area_pct)}%.<br>Pixel hợp lệ: ${s.valid_pixels}; NoData: ${s.nodata_pixels}.<br>Kiểm chứng: ${s.validation_status === 'passed' ? 'đạt' : 'không có pixel hợp lệ'}; sai lệch tổng lớp ${valueCell(s.area_balance_error_km2)} km².</p>`
+    + ((s.valid_area_pct ?? 0) > 100 ? '<p class="canh-nho">Độ phủ vượt 100%: cần đối chiếu mask và diện tích tỉnh. Tính cả pixel giao biên cũng có thể làm độ phủ vượt 100%; chưa hiệu chỉnh phần giao ranh giới.</p>' : '')
+    + `<a class="asset-link" href="/api/demo/classes.csv?${params}">Tải CSV lớp sáng · tỉnh/mốc đang chọn</a>`
+    : '<p class="nho">Chưa có báo cáo kiểm chứng phần D; cần chạy bộ phân lớp để bổ sung tỷ lệ và độ phủ.</p>';
+  $('class-summary').innerHTML = '<h3>Diện tích theo mức sáng</h3><table class="class-table"><thead><tr><th>Mức / ngưỡng</th><th>km²</th><th>% tỉnh</th></tr></thead><tbody>'
+    + data.classes.map((c,i) => `<tr><td><i style="background:${CLASS_COLORS[i]}"></i>${CLASS_NAMES[i]}<small>${c.lower_bound} ≤ r ${c.upper_bound === null ? '' : '< '+c.upper_bound} ${thoat(c.unit)}</small></td><td>${valueCell(c.area_km2)}</td><td>${dinhDang(c.class_area_pct,2) ?? '—'}</td></tr>`).join('')
+    + `</tbody></table>${audit}<p class="nho">${thoat(methodNote)} Ngưỡng giữ cố định giữa các năm. % tỉnh dùng diện tích tự nhiên làm mẫu số; NoData không thuộc lớp tối. Pixel giao biên được tính cả diện tích pixel.</p>`;
 }
 function renderDemoLayer(){
   const mode = $('layer-mode').value;

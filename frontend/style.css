@@ -236,7 +236,11 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 .fit-card{border:1px solid var(--vien);border-radius:6px;padding:12px}
 .fit-card h3{font-size:.86rem;margin:0 0 8px}
 .fit-card p{color:var(--nhan);font-family:ui-monospace,monospace}
-.class-table{font-size:.76rem;width:100%}
+.class-table{font-size:.76rem;width:100%;table-layout:fixed}
+.class-table th,.class-table td{padding:7px 4px;white-space:normal;overflow-wrap:anywhere;position:static;left:auto}
+.class-table th:first-child,.class-table td:first-child{width:54%}
+.class-table th:nth-child(2),.class-table td:nth-child(2){width:26%}
+.class-table th:nth-child(3),.class-table td:nth-child(3){width:20%}
 .class-table i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
 #loc-kinhte{padding:18px}
 #loc-kinhte label{display:block;margin-bottom:8px}

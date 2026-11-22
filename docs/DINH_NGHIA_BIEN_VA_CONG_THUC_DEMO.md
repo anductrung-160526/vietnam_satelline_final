@@ -8,7 +8,7 @@ Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_
 
 Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
 
-Ba mục `valid_area_km2`, `valid_area_pct`, `class_area_pct` mô tả công thức suy ra/đề xuất; chưa có cột ảnh đêm tương ứng được tính, xuất hoặc hiển thị riêng. Các mục này được đếm riêng khi báo tiến độ, không gọi là đầu ra đã triển khai. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Danh mục hiện có 69 mục: 16 Raw (5 định danh) và 53 Processed; gồm cả metadata/tham số, không phải 69 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
 
 ## 2. Ký hiệu, nguồn và quy tắc đầu vào
 
@@ -28,7 +28,7 @@ TNL = SOL_raw = tổng R_i trên V, khi cùng ảnh, cùng mask và cùng thời
 
 L = tổng 1[R_i ≥ h]; T_lit = tổng R_i × 1[R_i ≥ h]; A_lit = tổng a_i × 1[R_i ≥ h]. Không suy dân số từ T_lit dù tên lịch sử là lit_pop_proxy.
 
-Ba tỷ lệ khác nhau: lit_area_pct = 100 × A_lit/A; electrification_ratio_pct = 100 × L/N; valid_area_pct = 100 × tổng a_i/A. Tỷ lệ số pixel không mặc nhiên bằng tỷ lệ diện tích, nhất là lưới địa lý. valid_area_pct hiện chỉ là công thức đề xuất cho ảnh đêm.
+Ba tỷ lệ khác nhau: lit_area_pct = 100 × A_lit/A; electrification_ratio_pct = 100 × L/N; valid_area_pct = 100 × tổng a_i/A. Tỷ lệ số pixel không mặc nhiên bằng tỷ lệ diện tích, nhất là lưới địa lý. valid_area_pct đã tính offline và lưu light_class_summary trong phần D.
 
 sol_density = SOL_selected/A, không phải diện tích sáng. SOL_selected được ghi ở light_basis. CSV tính lại có thể chọn sol_cal bằng --calibrate; SQLite/API phần B dùng sol. VIIRS giữ sol_cal=sol nên bằng nhau trong demo 2020–2024; không suy rộng sự bằng nhau sang DMSP.
 
@@ -42,7 +42,7 @@ Chỉ áp dụng phân lớp này cho VIIRS, đơn vị nW/cm²/sr. Các mốc l
 - Lớp 3: q50 ≤ R < q90; sáng mạnh.
 - Lớp 4: R ≥ q90; rất sáng. Đây là đuôi 10% pixel sáng của năm tham chiếu, không phải 10% diện tích mỗi tỉnh.
 
-A_k = tổng a_i × 1[pixel thuộc lớp k]. Tổng A_k = A_valid. class_area_pct = 100 × A_k/A là công thức đề xuất, chưa có đầu ra riêng. NoData=255 không thuộc năm lớp. Code từ chối ảnh đã xử lý còn giá trị âm, ngưỡng suy biến hoặc thiếu 63 ảnh tham chiếu.
+A_k = tổng a_i × 1[pixel thuộc lớp k]. Tổng A_k = A_valid. class_area_pct = 100 × A_k/A đã tính offline, lưu ở light_class_summary.class_area_pcts và xuất light_class_areas.csv; API đọc tỷ lệ đã lưu. NoData=255 không thuộc năm lớp. Code từ chối ảnh đã xử lý còn giá trị âm, ngưỡng suy biến hoặc thiếu 63 ảnh tham chiếu.
 
 Diện tích lấy cả pixel giao ranh giới theo mặt nạ chuẩn bị phần A; vì vậy tổng có thể cao hơn diện tích polygon. Không ép tỷ lệ về 100%, không đổi NoData thành tối, không thay diện tích pixel bằng 0,25 km² cố định.
 
@@ -94,3 +94,5 @@ Ví dụ kiểm thử, không phải số tỉnh thật: V có R=[0; 0,4; 0,5; 1
 - backend/core/chi_so.py: OLS và điều kiện số quan sát của app. CLAUDE.md là hợp đồng phương pháp đã chốt.
 
 Sửa danh mục trong NIGHT_DATA_DICTIONARY.md và phần giải thích tại đây, rồi chạy `python scripts/build_demo_dictionary_doc.py` để sinh lại Word. Phụ thuộc tạo tài liệu nằm trong docs/requirements.txt, không làm tăng phụ thuộc runtime của app.
+
+Phần D đối chiếu từng giá trị lớp với np.digitize trên ảnh nguồn, kiểm tra mask/NoData và tổng diện tích bằng rtol=1e−10, atol=1e−8; không chỉ tin metadata TIFF. Bảng kiểm chứng lưu diện tích tự nhiên và area_source. Có thể chỉ định --areas tới province_areas.csv của phần A; nếu không, lấy area_km2 đúng tỉnh/năm/tháng từ bảng ntl đã nạp. Thiếu mẫu số thì giữ diện tích lớp nhưng tỷ lệ để trống; toàn NoData ghi no_valid_pixels, không kết luận tỉnh tối. nodata_pixels đếm cả ô ngoài tỉnh trong khung raster nên không được diễn giải là số pixel mây.
