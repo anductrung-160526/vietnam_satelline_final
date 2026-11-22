@@ -102,7 +102,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần D, danh mục có 69 mục: 16 Raw (gồm 5 định danh) và 53 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất nay đã triển khai. Đây là số mục từ điển gồm metadata/tham số, không phải 69 biến độc lập hoặc 69 cột đã có trong một file.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần E, danh mục có 75 mục: 16 Raw (gồm 5 định danh) và 59 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 75 biến độc lập hoặc 75 cột đã có trong một file.
 
 - [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
 - [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; đã cập nhật tỷ lệ lớp/độ phủ theo đầu ra phần D.
@@ -113,7 +113,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Nêu cách xử lý thiếu ảnh, thiếu tháng, mẫu số bằng 0 và ít quan sát sạch mây.
 - [x] Phân biệt tỷ số tăng trưởng ánh sáng/GRDP với hệ số β của hồi quy GRDP theo ánh sáng.
 - [x] Thống kê số mục Raw và Processed; tách định danh và mục đề xuất, không cộng trùng khóa ở hai CSV.
-- [x] Tạo `.docx` bản làm việc, mở lại và render để kiểm tra bảng/công thức; bản cập nhật phần D có 11 trang. Có script sinh lại từ Markdown.
+- [x] Tạo `.docx` bản làm việc, mở lại và render để kiểm tra bảng/công thức; đã cập nhật theo trường/công thức phần E. Có script sinh lại từ Markdown.
 - [ ] Xác nhận/chỉnh Word theo form cô yêu cầu sau khi nhận được form; chưa coi bản làm việc là đã đúng biểu mẫu.
 - [ ] Chốt công thức NEI tổng hợp với cô. Hiện tài liệu trình bày các chỉ số thành phần, không tự gán trọng số hay gọi SOL/β là NEI chính thức.
 
@@ -140,17 +140,20 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### E. SOL, mật độ, biến động và ghép GRDP
 
-- [ ] Đối chiếu `sol_raw` trước loại nền và `sol` sau loại nền trên cùng ảnh/tập pixel.
-- [ ] Tính `sol_density` từ tổng sáng chia diện tích tự nhiên tỉnh, ghi rõ chuỗi ánh sáng sử dụng.
-- [ ] Tính `lit_area_km2`, `lit_area_pct` và tỷ lệ pixel sáng, giữ khác biệt giữa các mẫu số.
-- [ ] Tính các chỉ số thời gian; phân biệt cửa sổ ba dòng quan sát của Task 3 với ba tháng lịch.
-- [ ] Sửa khóa bảng kinh tế để lưu đồng thời tỉnh–năm–cơ sở giá; tránh hai bộ GRDP ghi đè nhau.
-- [ ] Giữ giá hiện hành và giá so sánh năm gốc 2010, đơn vị tỷ đồng, nguồn và cờ sơ bộ.
-- [ ] Sửa bộ đọc kinh tế, API và bộ xuất file để hỗ trợ hai loại giá; code hiện có chưa hỗ trợ đầy đủ yêu cầu này.
-- [ ] Tính mô hình riêng theo từng cơ sở giá, dùng cùng tập tỉnh–năm khi đối chiếu.
-- [ ] Dùng giá so sánh làm kết quả chính thức; giá hiện hành để đối chiếu theo yêu cầu của cô.
-- [ ] Chỉ tính `sol_per_capita` khi đã có dân số hợp lệ; không suy dân số từ vùng sáng.
-- [ ] Nếu dùng hiệu chỉnh DMSP–VIIRS: kiểm tra đủ cặp chồng lấn năm 2013, lưu mô hình; không tuyên bố đã sửa mốc F16–F18 năm 2010.
+Đã hoàn thiện code và kiểm tra bằng ảnh/số liệu có đáp án biết trước, gồm luồng CSV→SQLite→API. Hướng dẫn chạy ảnh thật và kiểm tra đầu ra: [TINH_CHI_SO_VA_GRDP_PHAN_E.md](TINH_CHI_SO_VA_GRDP_PHAN_E.md). Giữ cờ chất lượng/phương pháp xấp xỉ từ phần D; chưa tuyên bố đã giải quyết sai lệch diện tích hoặc tháng thiếu.
+
+- [x] Đối chiếu `sol_raw` và `sol` trên cùng đầu vào, kiểm tra không âm và sol không vượt sol_raw trong luồng hai giá.
+- [x] Tính `sol_density` theo diện tích tự nhiên; ghi light_basis và model_light_basis rõ.
+- [x] Giữ công thức/mẫu số riêng cho diện tích sáng, tỷ lệ diện tích và tỷ lệ pixel; mang cờ xấp xỉ/tỷ lệ vượt 100% sang CSV/app, chưa nghiệm thu địa lý.
+- [x] Tính chuỗi thời gian riêng cho ba dòng tháng và ba tháng lịch; không tạo tăng trưởng từ tháng/giá trị tham chiếu thiếu. Bộ tính v8 chặn tăng trưởng năm 2010.
+- [x] Khóa economy_prices và demo_result giữ đồng thời hai giá; CSV trùng khóa bị từ chối.
+- [x] Giữ đơn vị tỷ đồng, năm gốc 2010, nguồn, sơ bộ và cờ rà soát; thiếu GRDP vẫn giữ ô trống.
+- [x] Bổ sung --economy-prices cho bộ tính CSV hai giá, API và CSV tải theo cơ sở giá; luồng --economy một giá cũ vẫn dùng được.
+- [x] Khớp hai mô hình VIIRS năm trên chung mẫu dương ≥10 điểm, loại GIA_LAP; xuất thời kỳ/n/β theo từng mô hình.
+- [x] Mặc định giá so sánh, hiện hành dùng đối chiếu; tăng trưởng GRDP/tỷ số tăng trưởng/ước lượng được tính riêng từng giá.
+- [x] Chỉ tính `sol_per_capita` năm khi có dân số dương; không tạo dân số. GRDP tháng chỉ là tham chiếu năm.
+- [x] Giữ điều kiện hiệu chỉnh ≥30 cặp dương DMSP/VIIRS 2013 và lưu mô hình; không bật cho demo chỉ VIIRS và không sửa mốc F16/F18 2010.
+- [ ] Chạy E trên kho ảnh Windows, nhận economy_validation.csv, calculation_models.csv và vài dòng night_economy.csv để đối chiếu hệ số/số liệu thật; nghiệm thu phần D vẫn còn mở.
 
 **Đạt khi:** hai loại giá không bị trộn, không mất dòng và kết quả có nhãn cơ sở giá rõ ràng.
 

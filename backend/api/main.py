@@ -396,7 +396,9 @@ def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
     data = demo_economy(nam_tu, nam_den, province_code, price_basis)
     fields = ['province_code', 'province_name', 'year', 'population', 'grdp_so_sanh',
               'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
-              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated']
+              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated',
+              'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
+              'model_training_period', 'model_n', 'model_beta']
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()

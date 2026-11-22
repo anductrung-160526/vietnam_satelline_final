@@ -65,6 +65,7 @@ def load(root, prepared, db, indices_dir=None):
             assets[key] = dict(path=str(path), source=row['source'], band_names=row.get('band_names', '[]'))
     # Kết quả đã tính theo dictionary: tên gid_1 được ánh xạ bằng danh mục chính thức.
     dictionary_rows = []
+    dictionary_keys = set()
     by_gid = {p['gid_1']: p['ma_tinh'] for p in provinces()}
     directory = Path(indices_dir) if indices_dir else root/'VN_NTL_Panel_2004_2025/data_processed'
     for table_name in ('night_data', 'night_economy'):
@@ -76,9 +77,14 @@ def load(root, prepared, db, indices_dir=None):
             if code not in catalog:
                 raise ValueError(f'{file}: mã tỉnh/GADM không hợp lệ.')
             basis = row.get('grdp_price_basis', '') if table_name == 'night_economy' else ''
+            if basis not in ('', 'so_sanh', 'hien_hanh'):
+                raise ValueError(f'{file}: cơ sở giá không hợp lệ.')
+            key = (code, int(row['year']), int(row['month']), table_name, basis)
+            if key in dictionary_keys:
+                raise ValueError(f'{file}: trùng khóa kết quả {key}')
+            dictionary_keys.add(key)
             # Không dùng kết quả thiếu nhãn giá làm kết quả chính thức của giá so sánh.
-            dictionary_rows.append((code, int(row['year']), int(row['month']), table_name,
-                                    basis, json.dumps(row, ensure_ascii=False)))
+            dictionary_rows.append((*key, json.dumps(row, ensure_ascii=False)))
     backup = backup_database(db)
     if db.exists():
         # Không gọi mo trên database cũ: tránh cơ chế dựng lại schema xóa COG.

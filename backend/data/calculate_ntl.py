@@ -18,7 +18,7 @@ import numpy as np
 from rasterio.windows import Window
 
 NODATA = -9999
-STATS_VERSION = 7  # v7: dictionary, chuỗi TNL và dữ liệu kinh tế; không dùng cache cũ
+STATS_VERSION = 8  # v8: luồng hai giá GRDP, mẫu chung và cờ chất lượng phần E
 LIT_THRESHOLD = {'VIIRS': 1.5, 'DMSP': 5.0}
 BACKGROUND = {'VIIRS': 0.5, 'DMSP': 0.0}
 
@@ -224,10 +224,10 @@ def read_manifest(path):
     return records
 
 
-def calculate(records, economy=None, calibrate=False):
+def calculate(records, economy=None, calibrate=False, economy_prices=None, image_quality=None, progress=False):
     annual, monthly, overlap = [], [], []
     lookup = {}
-    for record in records:
+    for image_index, record in enumerate(records, 1):
         row = {k: v for k, v in record.items() if k != 'path'}
         source = row['source']
         row.update(ntl_stats(record['path'], LIT_THRESHOLD[source], BACKGROUND[source]))
@@ -250,10 +250,12 @@ def calculate(records, economy=None, calibrate=False):
             monthly.append(row)
         elif source == 'DMSP' or row['year'] >= 2014:
             annual.append(row)
+        if progress and (image_index % 100 == 0 or image_index == len(records)):
+            print(f'Đã tính chỉ số {image_index}/{len(records)} ảnh', flush=True)
     # Chuỗi năm: VIIRS 2013 chỉ dùng làm cặp chồng lấn, không vào bảng ntl_annual.
     for row in annual:
         previous = (lookup.get((row['province_code'], row['year']-1, 0, row['source']))
-                    if row['year'] != 2014 else None)
+                    if row['year'] not in (2010, 2014) else None)
         row['sol_change_pct'] = pct(row['sol'], previous['sol']) if previous else None
         row['note'] = 'DOI_NGUON_ANH_CHUA_HIEU_CHINH' if row['year'] == 2014 else ''
     for row in monthly:
@@ -280,6 +282,9 @@ def calculate(records, economy=None, calibrate=False):
                   ntl_panel=[], ntl_overlap_2013=overlap)
     # Xuất bảng dictionary; các bảng ntl_* phía trên giữ tên cột mà app đang đọc.
     add_dictionary_tables(tables, records, economy or {}, calibrate)
+    if economy_prices is not None:
+        from .economy_indices import attach_two_prices
+        attach_two_prices(tables, economy_prices, image_quality, calibrate)
     return tables
 
 
@@ -383,7 +388,7 @@ def add_dictionary_tables(tables, records, economy, calibrate):
         value = row['sol_cal']
         row['sol_density_cal'] = rounded(value / row['area_km2']) if value is not None else None
         previous = annual_by_key.get((row['province_code'], row['year']-1))
-        row['sol_change_cal_pct'] = pct(value, previous['sol_cal']) if previous else None
+        row['sol_change_cal_pct'] = pct(value, previous['sol_cal']) if previous and row['year'] != 2010 else None
 
     # tnl_ma3 và tnl_mom_growth_pct: theo các DÒNG tháng của từng tỉnh, như Task 3.
     # Không thay thế chúng bằng sol_ma3/sol_change_mom_pct của app (cửa sổ tháng lịch).
@@ -479,7 +484,7 @@ def add_dictionary_tables(tables, records, economy, calibrate):
                                  if selected_light is not None else None)
         # sol_change_pct: thay đổi NĂM; dòng tháng để trống, không so với dòng năm.
         output['sol_change_pct'] = None
-        if row['month'] == 0:
+        if row['month'] == 0 and row['year'] != 2010:
             previous = annual_lookup.get((row['province_code'], row['year']-1))
             if previous and (calibrate or previous['source'] == row['source']):
                 previous_light = previous['sol_cal'] if calibrate else previous['sol']
@@ -545,7 +550,10 @@ def main():
     parser.add_argument('--manifest', required=True, type=Path, help='CSV danh sách ảnh theo tỉnh')
     parser.add_argument('--root', type=Path, default=Path('/data/SatelliteData'))
     parser.add_argument('--output', type=Path, help='Thư mục CSV; mặc định <root>/VN_NTL_Panel_2004_2025/data_processed')
-    parser.add_argument('--economy', type=Path, help='CSV dân số và GRDP theo province_code + year')
+    prices = parser.add_mutually_exclusive_group()
+    prices.add_argument('--economy', type=Path, help='CSV kinh tế một giá cũ: province_code + year')
+    prices.add_argument('--economy-prices', type=Path, help='grdp_all_prices.csv hai cơ sở giá của phần A')
+    parser.add_argument('--class-validation', type=Path, help='light_class_validation.csv phần D, dùng cùng --economy-prices')
     parser.add_argument('--calibrate', action='store_true', help='Khớp hiệu chỉnh từ >=30 cặp tỉnh DMSP/VIIRS 2013')
     parser.add_argument('--overwrite', action='store_true', help='Cho phép thay các bảng kết quả đã có')
     args = parser.parse_args()
@@ -554,9 +562,17 @@ def main():
         records = read_manifest(args.manifest)
         # Chặn ghi đè trước khi đọc ảnh lớn. --output cho phép tính thử ở thư mục khác.
         if not args.overwrite and any((directory/(n+'.csv')).exists() for n in ('ntl_annual', 'ntl_monthly', 'ntl_panel', 'ntl_overlap_2013',
-                                                                                   'night_data', 'night_economy', 'calculation_models')):
+                                                                                   'night_data', 'night_economy', 'calculation_models', 'economy_validation')):
             raise FileExistsError('Đã có bảng kết quả; chọn --output khác hoặc thêm --overwrite.')
-        tables = calculate(records, economy=read_economy(args.economy), calibrate=args.calibrate)
+        if args.class_validation and not args.economy_prices:
+            raise ValueError('--class-validation cần đi cùng --economy-prices.')
+        price_rows, quality_rows = None, None
+        if args.economy_prices:
+            from .economy_indices import read_prices, read_image_quality
+            price_rows = read_prices(args.economy_prices)
+            quality_rows = read_image_quality(args.class_validation)
+        tables = calculate(records, economy=read_economy(args.economy), calibrate=args.calibrate,
+                           economy_prices=price_rows, image_quality=quality_rows, progress=True)
         write_tables(tables, directory, args.overwrite)
     except (ValueError, OSError) as error:
         parser.exit(1, f'Lỗi: {error}\n')
@@ -565,7 +581,7 @@ def main():
     print('Đã hiệu chỉnh DMSP–VIIRS.' if args.calibrate else
           'Chưa hiệu chỉnh DMSP; sol_cal của VIIRS bằng sol, DMSP để trống.')
     if args.output is None:
-        print('Nạp vào app: python -m backend.data.build_indices --root '+str(args.root))
+        print('Nạp vào app bằng load_demo --indices-dir tới thư mục kết quả; không reset database/COG.')
     else:
         print('Kết quả ở thư mục --output; kiểm tra trước khi dùng làm dữ liệu của app.')
     print('Các chỉ số kinh tế thiếu đầu vào/mô hình hợp lệ được để trống trong CSV.')

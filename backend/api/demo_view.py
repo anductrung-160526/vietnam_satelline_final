@@ -55,6 +55,11 @@ def result_number(row, key):
     return float(value) if value is not None and str(value).strip() else None
 
 
+def merged_quality_flags(*rows):
+    flags = [flag for row in rows for flag in (row.get('quality_flags') or '').split(';') if flag]
+    return ';'.join(dict.fromkeys(flags))
+
+
 def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
     with store.connect() as connection:
         data = prices(connection, year_from, year_to, code)
@@ -73,7 +78,8 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         fake = any('GIA_LAP' in s.upper() for s in sources) or 'GIA_LAP' in str(light.get('source', '')).upper()
         # Hai mô hình dùng cùng tỉnh–năm với GRDP và SOL dương; dữ liệu giả luôn được gắn nhãn.
         paired = (all(v is not None and v > 0 for v in (a.get('grdp'), b.get('grdp'), light.get('sol')))
-                  and a.get('unit') == b.get('unit') == 'ty_vnd')
+                  and a.get('unit') == b.get('unit') == 'ty_vnd'
+                  and light.get('source') == 'VIIRS' and not fake)
         selected = a if basis != 'hien_hanh' else b
         result = saved.get((province, year, 0, 'night_economy', 'hien_hanh' if basis == 'hien_hanh' else 'so_sanh'), {})
         population = a.get('population') if a.get('population') is not None else b.get('population')
@@ -82,6 +88,14 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
                      'grdp_hien_hanh': b.get('grdp'), 'grdp': selected.get('grdp'),
                      'light_gdp_elasticity': result_number(result, 'light_gdp_elasticity'),
                      'predicted_gdp': result_number(result, 'predicted_gdp'),
+                     'gdp_change_pct': result_number(result, 'gdp_change_pct'),
+                     'image_quality_flags': result.get('image_quality_flags', ''),
+                     'comparison_note': result.get('comparison_note', ''),
+                     'light_basis': result.get('light_basis', 'sol'),
+                     'model_training_period': result.get('model_training_period', ''),
+                     'model_n': result_number(result, 'model_n'),
+                     'model_beta': result_number(result, 'model_beta'),
+                     'area_method': result.get('area_method', 'whole_pixel_approximation'),
                      'sol': light.get('sol'), 'paired': paired, 'is_simulated': fake,
                      'sol_per_capita': light['sol']/population
                      if light.get('sol') is not None and population is not None and population > 0 else None,
@@ -89,7 +103,7 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
                      'unit': selected.get('unit', 'ty_vnd'),
                      'price_base_year': a.get('price_base_year'),
                      'is_provisional': bool(a.get('is_provisional') or b.get('is_provisional')),
-                     'quality_flags': ';'.join(filter(None, [a.get('quality_flags'), b.get('quality_flags')])),
+                     'quality_flags': merged_quality_flags(a, b),
                      'source_so_sanh': a.get('source'), 'source_hien_hanh': b.get('source'),
                      'missing_reason': 'Chưa có chỉ số ảnh năm' if light.get('sol') is None else ''})
     fits = {}
@@ -97,6 +111,9 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         sample = [dict(r, grdp=r['grdp_'+price]) for r in rows if r['paired']]
         fits[price] = do_co_gian(sample, gia_so_sanh=price == 'so_sanh')
     warnings = []
+    warnings.append('Diện tích sáng và độ phủ đang ước tính theo toàn bộ pixel giao biên, chưa nghiệm thu độ chính xác diện tích. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
+    if any(r['image_quality_flags'] for r in rows):
+        warnings.append('Kết quả ghép có cờ chất lượng ảnh; xem cột chất lượng và CSV. Biến động độ phủ có thể ảnh hưởng chỉ số ánh sáng.')
     if any(r['is_simulated'] for r in rows):
         warnings.append('SỐ LIỆU GIẢ LẬP — chỉ dùng kiểm thử giao diện, không dùng cho báo cáo.')
     if basis in ('hien_hanh', 'compare'):

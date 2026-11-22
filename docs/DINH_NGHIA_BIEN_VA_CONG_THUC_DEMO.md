@@ -8,7 +8,7 @@ Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_
 
 Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
 
-Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Danh mục hiện có 69 mục: 16 Raw (5 định danh) và 53 Processed; gồm cả metadata/tham số, không phải 69 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau phần E, danh mục có 75 mục: 16 Raw (5 định danh) và 59 Processed; gồm cả metadata/tham số, không phải 75 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
 
 ## 2. Ký hiệu, nguồn và quy tắc đầu vào
 
@@ -66,13 +66,13 @@ Mô hình app: ln(G) = α + β ln(SOL) + ε. Mỗi cơ sở giá có một mô h
 
 β là độ co giãn GRDP theo ánh sáng trong mô hình, không phải tỷ số %Δánh sáng/%ΔGRDP. Hồi quy gộp hiện tại không có hiệu ứng cố định hay kiểm định nhân quả. Dữ liệu giả có nhãn kiểm thử; không đưa vào kết luận nghiên cứu. Muốn báo cáo kết quả phải kiểm tra nguồn và mẫu thật, không chỉ xem số hệ số hiện trên app.
 
-Offline calculate_ntl: light_gdp_elasticity = %Δsol_cal/%Δgdp, chỉ trên năm liền nhau giá so sánh, mẫu số tăng trưởng khác 0, không qua 2010. predicted_gdp = exp(α_g + β_g ln(sol_cal)), khớp trên ≥10 cặp dương từ 2014, giá so sánh, loại nguồn kinh tế GIA_LAP; không hiệu chỉnh sai lệch khi đổi log về mức. Đây là ước lượng trong mô hình, chưa phải dự báo tương lai đã kiểm định. API chỉ đọc các cột này khi CSV dictionary đã nạp đúng cơ sở giá, không lấy mô hình đối chiếu trên app điền vào cột còn thiếu.
+Offline calculate_ntl: light_gdp_elasticity = %Δsol_cal/%Δgdp, chỉ trên năm liền nhau, mẫu số tăng trưởng khác 0, không qua 2010. Luồng --economy cũ chỉ giá so sánh; --economy-prices mới tính riêng cả hai giá và giữ giá so sánh làm cơ sở chính. predicted_gdp = exp(α_g + β_g ln(sol_cal)), luồng một giá khớp ≥10 cặp dương từ 2014 giá so sánh; luồng hai giá v8 khớp hai mô hình VIIRS năm riêng trên cùng mẫu có đủ hai GRDP dương, loại nguồn GIA_LAP; không hiệu chỉnh sai lệch khi đổi log về mức. Đây là ước lượng trong mô hình, chưa phải dự báo tương lai đã kiểm định. API chỉ đọc các cột này khi CSV dictionary đã nạp đúng cơ sở giá, không lấy mô hình đối chiếu trên app điền vào cột còn thiếu.
 
 sol_cal: VIIRS giữ nguyên; DMSP quy thang bằng exp(α_c) × SOL^β_c, khớp ≥30 tỉnh có cả DMSP và VIIRS 2013 dương, β_c>0. Không sửa mốc DMSP F16→F18 năm 2010. Tham số lưu calculation_models.csv; thiếu mô hình hợp lệ thì DMSP sol_cal trống. VIIRS bằng sol không phải bằng chứng đã chạy hiệu chỉnh DMSP.
 
 sol_per_capita: offline dùng sol_cal/population; API kinh tế phần B dùng sol/population. Hai cách bằng nhau trong VIIRS demo. Chưa có dân số nên để trống, không gán dân số giả.
 
-Lưu ý luồng nhập: read_economy của calculate_ntl vẫn chỉ nhận một cơ sở giá cho mỗi tỉnh–năm; không truyền nguyên grdp_all_prices.csv hai giá vào đó. load_demo dùng bảng economy_prices hỗ trợ hai giá. Đây là hai hợp đồng khác nhau; tài liệu không tuyên bố bộ tính offline đã xuất đủ hai cơ sở giá.
+Lưu ý luồng nhập: --economy/read_economy vẫn nhận một giá mỗi tỉnh–năm. Từ v8 dùng --economy-prices với grdp_all_prices.csv để tính/xuất đồng thời hai giá, khóa tỉnh–năm–tháng–giá. Giữ dòng có GRDP mà chưa có ảnh; chỉ số ánh sáng để trống. load_demo nạp economy_prices và demo_result riêng từng giá, từ chối CSV trùng khóa. Hướng dẫn và nghiệm thu số liệu thật ở TINH_CHI_SO_VA_GRDP_PHAN_E.md.
 
 ## 7. NEI và tiêu chí còn mở
 
@@ -96,3 +96,5 @@ Ví dụ kiểm thử, không phải số tỉnh thật: V có R=[0; 0,4; 0,5; 1
 Sửa danh mục trong NIGHT_DATA_DICTIONARY.md và phần giải thích tại đây, rồi chạy `python scripts/build_demo_dictionary_doc.py` để sinh lại Word. Phụ thuộc tạo tài liệu nằm trong docs/requirements.txt, không làm tăng phụ thuộc runtime của app.
 
 Phần D đối chiếu từng giá trị lớp với np.digitize trên ảnh nguồn, kiểm tra mask/NoData và tổng diện tích bằng rtol=1e−10, atol=1e−8; không chỉ tin metadata TIFF. Bảng kiểm chứng lưu diện tích tự nhiên và area_source. Có thể chỉ định --areas tới province_areas.csv của phần A; nếu không, lấy area_km2 đúng tỉnh/năm/tháng từ bảng ntl đã nạp. Thiếu mẫu số thì giữ diện tích lớp nhưng tỷ lệ để trống; toàn NoData ghi no_valid_pixels, không kết luận tỉnh tối. nodata_pixels đếm cả ô ngoài tỉnh trong khung raster nên không được diễn giải là số pixel mây.
+
+Phần E xuất gdp_change_pct, mô hình hai giá và metadata model_training_period/model_n/model_beta/model_light_basis; app đọc kết quả đúng giá và phân biệt mô hình offline với hồi quy theo phạm vi xem. Cờ image_quality_flags/area_method giữ giới hạn phần D. Chưa có kết quả chạy lại E trên Windows để xác nhận hệ số thật.
