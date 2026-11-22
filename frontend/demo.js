@@ -9,6 +9,25 @@ let economyChart = null;
 let demoDetails = null;
 let economyBasis = 'so_sanh';
 const CLASS_NAMES = ['Tối / dưới ngưỡng nền','Sáng yếu','Sáng vừa','Sáng mạnh','Rất sáng'];
+let demoSnapshotInitialized=false, demoSnapshotId=null, demoSnapshotChanged=false;
+function checkDemoSnapshot(data){
+  const id=data.snapshot_id || null;
+  if(demoSnapshotChanged || (demoSnapshotInitialized && id!==demoSnapshotId)){
+    demoSnapshotChanged=true;demoDetails=null;
+    $('class-summary').innerHTML='';$('nut-tai-anh').disabled=true;
+    const message='Bộ dữ liệu đã được cập nhật. Tải lại trang để đồng bộ bản đồ, bảng và biểu đồ.';
+    let banner=$('snapshot-warning');
+    if(!banner){banner=document.createElement('p');banner.id='snapshot-warning';banner.className='canh';$('ung-dung').prepend(banner);}
+    banner.textContent=message;
+    $('detail-fields').innerHTML=`<p class="canh">${message}</p>`;
+    $('vung-kinhte').innerHTML=`<p class="canh">${message}</p>`;
+    if(economyChart){economyChart.dispose();economyChart=null;}
+    if(banDo?.getLayer('anh-dem'))banDo.removeLayer('anh-dem');
+    if(banDo?.getSource('anh-dem'))banDo.removeSource('anh-dem');
+    throw new Error(message);
+  }
+  demoSnapshotInitialized=true;demoSnapshotId=id;
+}
 const CLASS_COLORS = ['#18233b','#5568a8','#56b9b0','#f6bc55','#ff765d'];
 
 function contextPeriod(){
@@ -55,7 +74,9 @@ async function adoptPanelContext(){
   await applySharedContext([...chon.tinh][0], Number(period[0]), Number(period[1] || 0));
 }
 function demoParams(){
-  return new URLSearchParams({province_code:demoSelection.code || '', nam:demoSelection.year, thang:demoSelection.month});
+  const params=new URLSearchParams({province_code:demoSelection.code || '', nam:demoSelection.year, thang:demoSelection.month});
+  if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
+  return params;
 }
 function valueCell(value, reason, digits=2){
   if(value === null || value === undefined || !Number.isFinite(Number(value)))
@@ -80,6 +101,8 @@ async function refreshDemo(){
   try{
     const data = await layJSON('/api/demo/province?' + params);
     if(request !== demoRequest) return;
+    checkDemoSnapshot(data);
+    if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
     demoDetails = data;
     const identity = `<div class="data-identity"><b>${thoat(data.province.province_name)}</b>`
       + `<span>Mã thống kê ${data.province.province_code} · ${thoat(data.province.gid_1 || 'Chưa có mã GADM')}</span>`
@@ -93,14 +116,18 @@ async function refreshDemo(){
     const support = data.observation_support;
     const supportValue = key => valueCell(support?.[key] === '' ? null : support?.[key] == null ? null : Number(support[key]));
     const supportParams = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:0,kind:'support'});
+    if(demoSnapshotId)supportParams.set('expected_snapshot',demoSnapshotId);
     const recoveryNames = {NO_CLOUD_FREE_OBSERVATIONS:'Ảnh gốc không có quan sát sạch mây hợp lệ; giữ thiếu dữ liệu.',NO_VALID_RADIANCE_DESPITE_CF:'Có thông tin quan sát nhưng bức xạ gốc không hợp lệ; chưa phục hồi được.',REPAIRED_FILTER_MISMATCH:'Đã sửa ảnh lọc từ quan sát hợp lệ trong ảnh gốc.',MATCHES_RAW_FILTER_RULE:'Ảnh lọc khớp quy tắc và quan sát gốc.',MISSING_RAW_OR_FILTERED_MONTHS:'Thiếu ảnh gốc hoặc ảnh tháng để kiểm tra đầy đủ năm.',GRID_MISMATCH_REQUIRES_REVIEW:'Lưới ảnh gốc và ảnh lọc khác nhau; cần đối chiếu trước khi sửa.',FILTER_RULE_UNVERIFIED:'Chưa xác minh quy tắc lọc; giữ nguyên dữ liệu.',SOURCE_READ_ERROR:'Chưa đọc được ảnh nguồn; cần kiểm tra đường dẫn/file.'};
     recoveryNames.MISSING_CF_COVERAGE = 'Thông tin số lượt quan sát trong ảnh gốc không hợp lệ; chưa thể xác nhận quan sát.';
     const recoveryInfo = data.recovery_audit ? `<p class="nho">Kiểm tra ảnh tháng: ${thoat(recoveryNames[data.recovery_audit.diagnosis] || data.recovery_audit.diagnosis)}</p>` : '';
-    const supportInfo = recoveryInfo + (support ? `<p class="nho">Ảnh năm ${data.year}: số tháng hợp lệ trên pixel có quan sát từ ${supportValue('valid_month_min')} đến ${supportValue('valid_month_max')}, trung bình ${supportValue('valid_month_mean')}. Diện tích không có tháng nào hợp lệ: ${supportValue('area_without_observations_km2')} km². Có file tháng không đồng nghĩa có quan sát ở mọi pixel.</p><a class="asset-link" href="/api/demo/image?${supportParams}">Tải bản đồ số tháng hợp lệ trong năm</a>` : '');
+    const supportInfo = recoveryInfo + (support ? `<p class="nho">Ảnh năm ${data.year}: số tháng hợp lệ trên pixel có quan sát từ ${supportValue('valid_month_min')} đến ${supportValue('valid_month_max')}, trung bình ${supportValue('valid_month_mean')}. Diện tích không có tháng nào hợp lệ: ${supportValue('area_without_observations_km2')} km². Có file tháng không đồng nghĩa có quan sát ở mọi pixel.</p>${data.support_asset?.available ? `<a class="asset-link" href="/api/demo/image?${supportParams}">Tải bản đồ số tháng hợp lệ trong năm</a>` : '<p class="nho">Bản đồ số tháng hợp lệ hiện không sẵn có.</p>'}` : '');
     const group = stage => `<section class="data-group ${stage.toLowerCase()}"><h2>${stage === 'Raw' ? '01 · Raw — dữ liệu đầu vào' : '02 · Processed — kết quả tính toán'}</h2>`
       + `<div class="cuon"><table><thead><tr><th>Trường dữ liệu</th><th>Giá trị / dữ liệu nguồn</th><th>Đơn vị</th></tr></thead><tbody>${fields(stage)}</tbody></table></div>${stage === 'Processed' ? supportInfo : ''}</section>`;
     $('detail-fields').innerHTML = identity + (data.is_simulated ? '<p class="canh thieu">SỐ LIỆU GIẢ LẬP — chỉ kiểm thử giao diện.</p>' : '')
-      + group('Raw') + group('Processed');
+      + `<p class="nho">Bộ dữ liệu: ${thoat(data.provenance?.dataset_id?.slice(0,12) || 'chưa có mã snapshot')} · phiên bản thống kê ${data.provenance?.stats_version ?? 'chưa xác minh'}.</p>`
+      + (data.provenance?.reason ? `<p class="canh">${thoat(data.provenance.reason)} Các số đã lưu vẫn được giữ để tra cứu.</p>` : '')
+      + group('Raw') + group('Processed')
+      + `<a class="asset-link" href="/api/demo/province.csv?${params}">Tải CSV chỉ số · cùng tỉnh/mốc</a>`;
     // Có thể có ảnh tỉnh đã đăng ký trước khi ghép COG toàn quốc.
     ++cardRequest;
     const field = name => data.fields.find(f => f.field === name)?.value;
@@ -128,6 +155,7 @@ function renderClassSummary(data){
   const s = data.class_summary;
   const fractional = s?.method_version === 'viirs_brightness_classes_v3_fractional';
   const params = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:demoSelection.month});
+  if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
   const audit = s ? `<p class="nho">Diện tích tự nhiên: ${valueCell(s.area_km2)} km².<br>Diện tích có dữ liệu: ${valueCell(s.valid_area_km2)} km² · độ phủ ${valueCell(s.valid_area_pct)}%.<br>Pixel hợp lệ: ${s.valid_pixels}; NoData: ${s.nodata_pixels}.<br>Kiểm chứng: ${s.validation_status === 'passed' ? 'đạt' : 'không có pixel hợp lệ'}; sai lệch tổng lớp ${valueCell(s.area_balance_error_km2)} km².</p>`
     + ((s.valid_area_pct ?? 0) > 100 ? '<p class="canh-nho">Độ phủ vượt 100%: cần đối chiếu mask và diện tích tỉnh. Tính cả pixel giao biên cũng có thể làm độ phủ vượt 100%; chưa hiệu chỉnh phần giao ranh giới.</p>' : '')
     + `<a class="asset-link" href="/api/demo/classes.csv?${params}">Tải CSV lớp sáng · tỉnh/mốc đang chọn</a>`
@@ -140,13 +168,15 @@ function renderDemoLayer(){
   const mode = $('layer-mode').value;
   const data = demoDetails;
   let item = mode === 'processed' ? data?.processed_asset : mode === 'classes' ? data?.class_asset : data?.raw_asset;
+  const unavailable=item?.available===false ? item.reason : '';
+  if(item?.available===false)item=null;
   const legacyMoc = cacMoc.find(m => maMoc(m) === contextPeriod());
-  if(mode === 'processed' && !item && legacyMoc) item = legacyMoc;
+  if(mode === 'processed' && !item && legacyMoc && !unavailable && !demoSnapshotChanged) item = legacyMoc;
   const tileTemplate = data?.tiles || thongTinNen?.tiles;
-  $('nut-tai-anh').disabled = !item && !(mode === 'processed' && legacyMoc);
+  $('nut-tai-anh').disabled = demoSnapshotChanged || (!item && !(mode === 'processed' && legacyMoc && !unavailable));
   let reason = '';
   if(!demoSelection.code) reason = mode === 'processed' ? '' : 'Chọn một tỉnh để xem băng gốc hoặc năm mức sáng.';
-  else if(!item) reason = mode === 'classes' ? (data?.class_reason || 'Chưa có kết quả phân lớp.') : 'Chưa đăng ký ảnh nguồn ở mốc này.';
+  else if(!item) reason = unavailable || (mode === 'classes' ? (data?.class_reason || 'Chưa có kết quả phân lớp.') : 'Chưa đăng ký ảnh nguồn ở mốc này.');
   if(!tileTemplate) reason = 'Chưa có dịch vụ ô bản đồ; vẫn có thể xem bảng và tải GeoTIFF.';
   $('layer-status').textContent = reason || (mode === 'cf_cvg' ? 'Raw · số lượt quan sát sạch mây/pixel.' : mode === 'avg_rad' ? 'Raw · bức xạ của sản phẩm đầu vào.' : mode === 'classes' ? 'Processed · năm mức sáng, NoData được để trống.' : 'Processed · ảnh bức xạ đã xử lý.');
   if(!banDo || !banDo.isStyleLoaded()) return;
@@ -157,7 +187,7 @@ function renderDemoLayer(){
   let suffix = mode === 'classes' ? '&nodata=255&resampling=nearest&colormap=' + encodeURIComponent(JSON.stringify(Object.fromEntries(CLASS_COLORS.map((c,i) => [i,[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16),255]]))))
     : `&bidx=${mode === 'cf_cvg' ? 2 : 1}&rescale=0,${mode === 'cf_cvg' ? 20 : 60}&colormap_name=inferno&nodata=-9999`;
   const feature = ranhGioi?.features.find(f => String(f.properties.province_code).padStart(2,'0') === demoSelection.code);
-  const source = {type:'raster',tileSize:256,tiles:[tileTemplate + encodeURIComponent(item.path) + suffix]};
+  const source = {type:'raster',tileSize:256,tiles:[tileTemplate + encodeURIComponent(item.export_path || item.path) + suffix]};
   if(feature) source.bounds = bienDo(feature).flat();
   banDo.addSource('anh-dem', source);
   banDo.addLayer({id:'anh-dem',type:'raster',source:'anh-dem',paint:{'raster-opacity':1,'raster-resampling':mode === 'classes' ? 'nearest' : 'linear'}}, banDo.getLayer('mat-na-lop') ? 'mat-na-lop' : undefined);
@@ -173,6 +203,7 @@ function downloadSelectedImage(){
   const mode = $('layer-mode').value;
   const kind = mode === 'classes' ? 'classes' : mode === 'processed' ? 'processed' : 'raw';
   const item = demoDetails?.[kind === 'raw' ? 'raw_asset' : kind === 'classes' ? 'class_asset' : 'processed_asset'];
+  if(demoSnapshotChanged || item?.available===false)return;
   if(demoSelection.code && item){
     const params=demoParams(); params.set('kind',kind);
     window.location='/api/demo/image?'+params;
@@ -198,11 +229,14 @@ async function dungManKinhTe(){
   try{
     const data = await layJSON('/api/demo/economy?' + params);
     if(request !== economyRequest) return;
+    checkDemoSnapshot(data);
+    if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
     const basis = economyBasis === 'hien_hanh' ? 'hien_hanh' : 'so_sanh';
     const fit = data.hoi_quy[basis];
     const fitCard = (key,label) => { const h=data.hoi_quy[key]; return `<article class="fit-card"><h3>${label}</h3><p>β ${dinhDang(h.beta,3) ?? '—'} · R² ${dinhDang(h.r2,3) ?? '—'} · n ${h.n}</p><small>${h.beta === null ? 'Chưa đủ quan sát hợp lệ để ước lượng.' : 'ln(GRDP) = α + β·ln(SOL)'}</small></article>`; };
     const rawHeader = economyBasis === 'compare' ? '<th>GRDP so sánh</th><th>GRDP hiện hành</th>' : `<th>GRDP ${basis === 'so_sanh' ? 'so sánh' : 'hiện hành'}</th>`;
     $('vung-kinhte').innerHTML = `<div class="data-identity"><b>${demoSelection.code ? thoat(danhSachTinh.find(p=>p.province_code===demoSelection.code)?.province_name || '') : '63 tỉnh trước sáp nhập'} · ${year}</b><span>GRDP theo năm · ${data.paired_count} quan sát chung đủ điều kiện</span></div>`
+      + `<p class="nho">Snapshot: ${thoat(data.snapshot_id?.slice(0,12) || 'chưa xác minh')}.</p>`
       + data.canh_bao.map(t=>`<p class="canh">${thoat(t)}</p>`).join('')
       + `<section class="data-group raw"><h2>01 · Raw — dân số và GRDP</h2><p class="nho">Đơn vị GRDP: tỷ đồng với bộ cô cung cấp; giá so sánh năm gốc 2010. Năm 2024 sơ bộ được đánh dấu theo dữ liệu.</p>`
       + `<div class="cuon"><table id="economy-raw"><thead><tr><th>Tỉnh</th><th>Năm</th><th>Dân số</th>${rawHeader}<th>Chất lượng</th></tr></thead><tbody>`

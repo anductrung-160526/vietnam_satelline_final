@@ -9,6 +9,7 @@ TiTiler được nạp nếu có cài; không có thì API vẫn chạy, chỉ t
 import io
 import json
 import os
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -369,6 +370,28 @@ def _mount_tiles():
 from . import demo_view
 
 
+def demo_snapshot_id():
+    try:
+        with store.connect() as connection:
+            if not demo_view.has_table(connection,'demo_schema_meta'):return None
+            row=connection.execute("SELECT value FROM demo_schema_meta WHERE key='current_dataset'").fetchone()
+            return row[0] if row else None
+    except sqlite3.Error:return None
+
+
+@app.middleware('http')
+async def same_snapshot_for_api(request,call_next):
+    if not request.url.path.startswith('/api/'):return await call_next(request)
+    before=demo_snapshot_id()
+    response=await call_next(request)
+    after=demo_snapshot_id()
+    if before!=after:
+        return JSONResponse(status_code=409,content={'detail':'Bộ dữ liệu vừa thay đổi. Tải lại trang để đồng bộ.'},
+                            headers={'X-Snapshot-ID':after or ''})
+    response.headers['X-Snapshot-ID']=before or ''
+    return response
+
+
 @app.get('/api/demo/province')
 def demo_province(province_code: str, nam: int = Query(..., ge=2004, le=2025),
                   thang: int = Query(0, ge=0, le=12)):
@@ -376,6 +399,7 @@ def demo_province(province_code: str, nam: int = Query(..., ge=2004, le=2025),
     if result is None:
         raise HTTPException(404, 'Không có mã tỉnh này.')
     result['tiles'] = TILE_URL if _titiler_ready() else None
+    result.setdefault('snapshot_id',demo_snapshot_id())
     return result
 
 
@@ -385,20 +409,25 @@ def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
                  province_code: str = '', price_basis: str = 'so_sanh'):
     if nam_tu > nam_den or price_basis not in ('so_sanh', 'hien_hanh', 'compare'):
         raise HTTPException(400, 'Khoảng năm hoặc cơ sở giá không hợp lệ.')
-    return demo_view.economic_view(nam_tu, nam_den, _code(province_code) if province_code else None, price_basis)
+    result=demo_view.economic_view(nam_tu, nam_den, _code(province_code) if province_code else None, price_basis)
+    result.setdefault('snapshot_id',demo_snapshot_id())
+    return result
 
 
 @app.get('/api/demo/economy.csv')
 def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
                      nam_den: int = Query(2024, ge=2004, le=2025),
-                     province_code: str = '', price_basis: str = 'so_sanh'):
+                     province_code: str = '', price_basis: str = 'so_sanh',expected_snapshot: str=''):
     import csv
     data = demo_economy(nam_tu, nam_den, province_code, price_basis)
+    if expected_snapshot and data.get('snapshot_id')!=expected_snapshot:
+        raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
     fields = ['province_code', 'province_name', 'year', 'population', 'grdp_so_sanh',
               'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
               'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated',
               'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
-              'model_training_period', 'model_n', 'model_beta']
+              'model_training_period', 'model_n', 'model_beta','dataset_id','stats_version','sol_unit',
+              'provenance_consistent','provenance_reason','source_image_path','source_image_sha256']
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -409,40 +438,87 @@ def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
 
 @app.get('/api/demo/image')
 def demo_image(province_code: str, nam: int = Query(..., ge=2004, le=2025),
-               thang: int = Query(0, ge=0, le=12), kind: str = 'raw'):
+               thang: int = Query(0, ge=0, le=12), kind: str = 'raw',expected_snapshot: str=''):
     if kind not in ('raw', 'processed', 'classes', 'support'):
         raise HTTPException(400, 'Loại ảnh không hợp lệ.')
-    item = demo_view.asset(_code(province_code), nam, thang, kind)
+    from .provenance import available_asset,current_id
+    with store.connect() as connection:
+        connection.execute('BEGIN')
+        snapshot=current_id(connection)
+        if expected_snapshot and snapshot!=expected_snapshot:
+            raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải ảnh.')
+        item=available_asset(connection,_code(province_code),nam,thang,kind)
     if not item:
         raise HTTPException(404, 'Chưa đăng ký ảnh ở mốc này.')
-    if not Path(item['path']).is_file():
-        raise HTTPException(410, 'Ảnh đã đăng ký không còn ở đường dẫn nguồn.')
-    return FileResponse(item['path'], media_type='image/tiff',
+    if not item['available']:
+        raise HTTPException(410, item['reason'])
+    return FileResponse(item.get('export_path') or item['path'], media_type='image/tiff',
+                        headers={'X-Source-SHA256':item.get('source_sha256') or 'unverified',
+                                 'X-Snapshot-ID':snapshot or 'unverified','X-Mask-Rule':item.get('mask_rule') or 'unverified'},
                         filename=f"night_{_code(province_code)}_{nam}_{thang:02}_{kind}.tif")
 
 
 @app.get('/api/demo/classes.csv')
 def demo_classes_csv(province_code: str, nam: int = Query(..., ge=2004, le=2025),
-                     thang: int = Query(0, ge=0, le=12)):
+                     thang: int = Query(0, ge=0, le=12),expected_snapshot: str=''):
     """Xuất số đã kiểm chứng từ SQLite; không đọc/tính raster trong API."""
     import csv
     data = demo_view.province_view(_code(province_code), nam, thang)
     if data is None:
         raise HTTPException(404, 'Không có mã tỉnh này.')
+    if expected_snapshot and data.get('snapshot_id')!=expected_snapshot:
+        raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
     if data['class_status'] != 'ready' or data['class_summary'] is None:
         raise HTTPException(404, 'Chưa có kết quả kiểm chứng phần D; chạy build_light_classes trước.')
     summary = data['class_summary']
     fields = ['province_code', 'year', 'month', 'class_index', 'lower_bound', 'upper_bound',
               'class_area_km2', 'class_area_pct', 'area_km2', 'valid_area_km2', 'valid_area_pct',
-              'validation_status', 'reference_year', 'method_version', 'unit', 'area_source']
+              'validation_status', 'reference_year', 'method_version', 'unit', 'area_source','dataset_id','stats_version','source_image_sha256']
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for row in data['classes']:
         writer.writerow(dict(summary, **{k: v for k, v in row.items() if k != 'area_km2'},
-                             class_area_km2=row['area_km2']))
+                             class_area_km2=row['area_km2'],dataset_id=data['provenance']['dataset_id'],
+                             stats_version=data['provenance']['stats_version'],source_image_sha256=data['provenance']['source_sha256']))
     return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')), media_type='text/csv',
                              headers={'Content-Disposition': 'attachment; filename="night_light_classes.csv"'})
+
+
+@app.get('/api/demo/province.csv')
+def demo_province_csv(province_code: str,nam: int=Query(...,ge=2004,le=2025),thang: int=Query(0,ge=0,le=12),expected_snapshot: str=''):
+    """Bảng dài một field một dòng, cùng giá trị/đơn vị/Raw–Processed với màn chỉ số."""
+    import csv
+    data=demo_province(province_code,nam,thang)
+    if expected_snapshot and data.get('snapshot_id')!=expected_snapshot:
+        raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
+    columns=['province_code','province_name','year','month','field','stage','value','unit','reason',
+             'dataset_id','stats_version','light_basis','area_method','grdp_price_basis',
+             'source_image_path','source_image_sha256','provenance_consistent']
+    stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=columns);writer.writeheader()
+    for field in data['fields']:
+        value=field['value']
+        if field.get('is_raster') and field.get('available'):
+            value=data['raw_asset']['path']+'#band='+str(field['band'])
+        basis='hien_hanh' if field['field']=='grdp_hien_hanh' else 'so_sanh' if field['field'] in ('grdp_so_sanh','predicted_gdp','light_gdp_elasticity') else ''
+        writer.writerow(dict(province_code=_code(province_code),province_name=data['province']['province_name'],year=nam,month=thang,
+                             field=field['field'],stage=field['stage'],value=value,unit=field['unit'],reason=field.get('reason',''),
+                             dataset_id=data['provenance']['dataset_id'],stats_version=data['provenance']['stats_version'],
+                             light_basis=data['light_basis'],area_method=data['area_method'],grdp_price_basis=basis,
+                             source_image_path=(data['raw_asset'] or {}).get('path') if field.get('is_raster') else data['provenance']['source_path'],
+                             source_image_sha256=(data['raw_asset'] or {}).get('source_sha256') if field.get('is_raster') else data['provenance']['source_sha256'],
+                             provenance_consistent=data['provenance']['consistent']))
+    return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')),media_type='text/csv',
+                             headers={'Content-Disposition':'attachment; filename="night_province_fields.csv"'})
+
+
+@app.get('/api/demo/dataset')
+def demo_dataset():
+    from backend.data.dataset import snapshot_status
+    with store.connect() as connection:
+        datasets=snapshot_status(connection)
+        row=connection.execute("SELECT value FROM demo_schema_meta WHERE key='version'").fetchone() if demo_view.has_table(connection,'demo_schema_meta') else None
+    return dict(snapshot_id=demo_snapshot_id(),demo_schema_version=int(row[0]) if row else None,datasets=list(datasets.values()))
 
 
 TILES_MOUNTED = _mount_tiles()

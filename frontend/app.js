@@ -30,7 +30,11 @@ const maMoc  = m => m.month ? `${m.year}-${String(m.month).padStart(2,'0')}` : S
 
 async function layJSON(duongDan){
   const r = await fetch(duongDan);
-  if(!r.ok) throw new Error(`${duongDan} → ${r.status}`);
+  if(typeof checkDemoSnapshot === 'function')checkDemoSnapshot({snapshot_id:r.headers.get('X-Snapshot-ID') || null});
+  if(!r.ok){
+    let detail='';try{detail=(await r.json()).detail || '';}catch{}
+    throw new Error(detail || `${duongDan} → ${r.status}`);
+  }
   return r.json();
 }
 const dinhDang = (v, c = 2) => (v === null || v === undefined)

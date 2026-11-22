@@ -102,7 +102,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau sửa dữ liệu v9, danh mục có 84 mục: 16 Raw (gồm 5 định danh) và 68 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 84 biến độc lập hoặc 84 cột đã có trong một file.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần F, danh mục có 92 mục: 16 Raw (gồm 5 định danh) và 76 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 92 biến độc lập hoặc 92 cột đã có trong một file.
 
 - [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
 - [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; đã cập nhật tỷ lệ lớp/độ phủ theo đầu ra phần D.
@@ -162,13 +162,16 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### F. Nạp và xuất dữ liệu xuyên suốt app
 
-- [ ] Rà tên trường giữa dictionary, code tính, CSV, schema SQLite và danh mục API.
-- [ ] Sửa schema và tăng phiên bản schema khi đổi cấu trúc; sao lưu database trước khi dựng lại.
-- [ ] Nạp chỉ số trước, sau đó cập nhật lại sổ ảnh COG nếu việc dựng lại schema đã xóa các bản ghi ảnh.
-- [ ] Kiểm tra bản đồ, bảng, biểu đồ cùng lấy đúng tỉnh/năm và phiên bản kết quả.
-- [ ] CSV xuất ra có tên trường, đơn vị/cơ sở giá và thông tin phương pháp đủ để đối chiếu.
-- [ ] GeoTIFF tải theo tỉnh được cắt/mask đúng ranh giới; ngoài tỉnh là NoData.
-- [ ] Không báo có dữ liệu trên màn hình khi file nguồn hoặc kết quả thực tế không còn.
+Đã triển khai bộ kiểm chứng và metadata snapshot; hướng dẫn: [PHAN_F_KIEM_CHUNG_VA_XUAT_DU_LIEU.md](PHAN_F_KIEM_CHUNG_VA_XUAT_DU_LIEU.md). Các dấu dưới đây xác nhận code/kiểm thử, còn nghiệm thu kho Windows mở ở mục cuối.
+
+- [x] Kiểm trường Dictionary/CSV/API; xuất field_contract.csv, giữ đúng alias SQL/JSON, phân biệt tham chiếu Raw và filtered.
+- [x] Thêm schema demo v2 bằng migration cộng thêm, backup trước xuất bản; base schema v8 không bị reset, số liệu và COG giữ nguyên.
+- [x] Nạp chỉ số và xuất xứ vào cùng transaction; không dựng lại schema rồi làm mất sổ ảnh. Từ chối CSV khác dataset_manifest/trùng khóa hoặc schema mới hơn code.
+- [x] Kiểm từng dòng CSV/SQLite, thống kê từ ảnh và mô hình; các màn nhận X-Snapshot-ID và yêu cầu tải lại nếu bộ dữ liệu đổi giữa lần đọc.
+- [x] CSV chỉ số/kinh tế/lớp có đơn vị, mốc, cơ sở giá, chuỗi ánh sáng, dataset_id/stats_version và hash nguồn; link tải gắn expected_snapshot để chặn nhầm lượt.
+- [x] Quét GeoTIFF theo mốc manifest, tạo bản crop/mask riêng khi cần; kiểm lại ngoài tỉnh là NoData, giữ 0 hợp lệ và pixel giao biên dương; nguồn không đổi.
+- [x] Kiểm tồn tại/chữ ký nguồn và bản xuất; API báo không sẵn có/410 khi đổi hoặc mất, không dùng số không nhất quán vào mẫu mô hình.
+- [ ] Chạy verify_demo trên Windows với fix_report đã published, gửi integration_report.json; đối chiếu vài tỉnh/năm giữa app/CSV/TIFF và xem mask trong QGIS trước demo.
 
 **Đạt khi:** một giá trị được chọn có thể đối chiếu từ ảnh → CSV → SQLite → API → màn hình → file tải xuống.
 

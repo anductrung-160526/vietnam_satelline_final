@@ -2,6 +2,8 @@
 import json
 
 from . import store
+from .provenance import available_asset,observation_info,current_id
+from backend.data.dataset import snapshot_status,provenance_rows
 from backend.core.chi_so import do_co_gian
 
 
@@ -11,11 +13,7 @@ def has_table(connection, name):
 
 def asset(code, year, month, kind):
     with store.connect() as connection:
-        if not has_table(connection, 'demo_asset'):
-            return None
-        row = connection.execute('SELECT * FROM demo_asset WHERE province_code=? AND year=? AND month=? AND kind=?',
-                                 (code, year, month, kind)).fetchone()
-    return dict(row) if row else None
+        return available_asset(connection,code,year,month,kind)
 
 
 def prices(connection, year_from, year_to, code=None):
@@ -62,12 +60,16 @@ def merged_quality_flags(*rows):
 
 def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
     with store.connect() as connection:
+        connection.execute('BEGIN')
+        request_snapshot=current_id(connection)
         data = prices(connection, year_from, year_to, code)
         saved = dictionary_results(connection, year_from, year_to)
         night = {(r['province_code'], r['year']): dict(r) for r in connection.execute(
             'SELECT province_code,year,sol,source,status FROM ntl_annual WHERE year BETWEEN ? AND ?',
             (year_from, year_to))}
         catalog = {r['province_code']: dict(r) for r in connection.execute('SELECT * FROM province')}
+        versions=snapshot_status(connection);provenance=provenance_rows(connection)
+        image_info={key:observation_info(connection,*key,0,versions,provenance) for key in night}
     keys = sorted({k[:2] for k in data})
     rows = []
     for province, year in keys:
@@ -82,6 +84,11 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
                   and light.get('source') == 'VIIRS' and not fake)
         selected = a if basis != 'hien_hanh' else b
         result = saved.get((province, year, 0, 'night_economy', 'hien_hanh' if basis == 'hien_hanh' else 'so_sanh'), {})
+        info=image_info.get((province,year),{})
+        result_provenance=provenance.get((province,year,0,'night_economy','hien_hanh' if basis=='hien_hanh' else 'so_sanh'),{})
+        result_id=result_provenance.get('dataset_id')
+        consistent=info.get('consistent',True) and (not result_id or info.get('dataset_id')==result_id)
+        paired=paired and consistent
         population = a.get('population') if a.get('population') is not None else b.get('population')
         rows.append({'province_code': province, 'province_name': catalog[province]['province_name'],
                      'year': year, 'population': population, 'grdp_so_sanh': a.get('grdp'),
@@ -96,6 +103,12 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
                      'model_n': result_number(result, 'model_n'),
                      'model_beta': result_number(result, 'model_beta'),
                      'area_method': result.get('area_method', 'whole_pixel_approximation'),
+                     'dataset_id':result_id or info.get('dataset_id'),
+                     'stats_version':info.get('stats_version') or result_number(result,'stats_version'),
+                     'provenance_consistent':consistent,'provenance_reason':info.get('reason','') or
+                      ('Ảnh và kết quả kinh tế không cùng snapshot.' if not consistent else ''),
+                     'source_image_path':info.get('source_path'),'source_image_sha256':info.get('source_sha256'),
+                     'sol_unit':'DN' if light.get('source')=='DMSP' else 'nW/cm²/sr',
                      'sol': light.get('sol'), 'paired': paired, 'is_simulated': fake,
                      'sol_per_capita': light['sol']/population
                      if light.get('sol') is not None and population is not None and population > 0 else None,
@@ -111,6 +124,8 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         sample = [dict(r, grdp=r['grdp_'+price]) for r in rows if r['paired']]
         fits[price] = do_co_gian(sample, gia_so_sanh=price == 'so_sanh')
     warnings = []
+    if any(not r['provenance_consistent'] for r in rows):
+        warnings.append('Có dòng thiếu nguồn hoặc khác snapshot; giữ số đã lưu để tra cứu, loại khỏi mẫu hồi quy hiện tại. Xem CSV để biết lý do.')
     if any(r['area_method'] == 'whole_pixel_approximation' for r in rows):
         warnings.append('Có kết quả diện tích dùng toàn bộ pixel giao biên; cần tính lại theo phần giao pixel–tỉnh. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
     if any(r['image_quality_flags'] for r in rows):
@@ -124,6 +139,7 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
     if rows and not any(r['paired'] for r in rows):
         warnings.append('Chưa có mẫu chung đủ hai loại GRDP và SOL dương; chưa ước lượng mô hình đối chiếu.')
     return {'dong': rows, 'hoi_quy': fits, 'canh_bao': warnings, 'price_basis': basis,
+            'snapshot_id':request_snapshot,
             'nam_tu': year_from, 'nam_den': year_to, 'paired_count': sum(r['paired'] for r in rows),
             'province_code': code, 'population_missing': all(r['population'] is None for r in rows)}
 
@@ -162,6 +178,9 @@ def province_view(code, year, month):
         return None
     table = 'ntl_monthly' if month else 'ntl_annual'
     with store.connect() as connection:
+        connection.execute('BEGIN')
+        request_snapshot=current_id(connection)
+        data_provenance=observation_info(connection,code,year,month)
         query = f'SELECT * FROM {table} WHERE province_code=? AND year=?'
         args = [code, year]
         if month:
@@ -198,16 +217,18 @@ def province_view(code, year, month):
                 percentages = json.loads(class_summary.pop('class_area_pcts'))
                 for item in classes:
                     item['class_area_pct'] = percentages[item['class_index']]
-    raw_asset = asset(code, year, month, 'raw')
-    processed_asset = asset(code, year, month, 'processed')
+        raw_asset=available_asset(connection,code,year,month,'raw')
+        processed_asset=available_asset(connection,code,year,month,'processed')
+        class_asset=available_asset(connection,code,year,month,'classes')
+        support_asset=available_asset(connection,code,year,0,'support')
     source = observation.get('source') or (processed_asset or {}).get('source') or 'VIIRS'
     unit = 'DN' if 'DMSP' in source else 'nW/cm²/sr'
     fields = []
     for band, name in [('avg_rad', 'Bức xạ đầu vào'), ('cf_cvg', 'Lượt quan sát sạch mây')]:
         fields.append({'field': band, 'name': name, 'stage': 'Raw', 'value': None,
                        'unit': unit if band == 'avg_rad' else 'lượt', 'is_raster': True,
-                       'band': 1 if band == 'avg_rad' else 2, 'available': raw_asset is not None,
-                       'reason': '' if raw_asset else ('DMSP không có băng avg_rad/cf_cvg của VIIRS.' if 'DMSP' in source else 'Chưa đăng ký ảnh gốc hai băng ở mốc này; ảnh năm đã tổng hợp không phải băng Raw.')})
+                       'band': 1 if band == 'avg_rad' else 2, 'available': bool(raw_asset and raw_asset['available']),
+                       'reason': raw_asset.get('reason','') if raw_asset else ('DMSP không có băng avg_rad/cf_cvg của VIIRS.' if 'DMSP' in source else 'Chưa đăng ký ảnh gốc hai băng ở mốc này; ảnh năm đã tổng hợp không phải băng Raw.')})
     for basis in ('so_sanh', 'hien_hanh'):
         item = economy.get((code, year, basis), {})
         fields.append({'field': 'grdp_'+basis, 'name': 'GRDP '+('giá so sánh' if basis == 'so_sanh' else 'giá hiện hành'),
@@ -222,20 +243,25 @@ def province_view(code, year, month):
             continue
         value = observation.get('sol_raw' if field == 'tnl' else field)
         display_name = FIELD_ALIASES.get(field, field)
-        stored = ne if field in ('sol_per_capita','light_gdp_elasticity','predicted_gdp') else nd
+        stored = nd if display_name in nd else ne
         if display_name in stored:
             value = result_number(stored, display_name)
         if class_summary is not None and field in ('valid_area_km2', 'valid_area_pct'):
             value = class_summary[field]
+        field_radiance_unit='nW/cm²/sr' if field in ('sol_cal','sol_per_capita') or (field=='sol_density' and ne.get('light_basis')=='sol_cal') else unit
         fields.append({'field': display_name, 'name': name, 'stage': 'Processed', 'value': value,
-                       'unit': field_unit.replace('bức xạ', unit),
+                       'unit': field_unit.replace('bức xạ', field_radiance_unit) if field_unit else 'không thứ nguyên',
                        'reason': '' if value is not None else 'Chưa có số liệu hoặc chỉ số không tính được ở mốc này.'})
     simulated = 'GIA_LAP' in str(observation.get('source', '')).upper() or observation.get('status') == 'GIA_LAP'
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
             'fields': fields, 'raw_asset': raw_asset, 'processed_asset': processed_asset,
-            'classes': classes, 'class_asset': asset(code, year, month, 'classes'), 'is_simulated': simulated,
+            'classes': classes, 'class_asset': class_asset, 'is_simulated': simulated,
+            'snapshot_id':request_snapshot,
             'class_summary': class_summary,
             'observation_support': observation_support,
+            'support_asset':support_asset,
             'recovery_audit': recovery_audit,
+            'provenance':data_provenance,
+            'light_basis':ne.get('light_basis','sol'),'area_method':ne.get('area_method',nd.get('area_method','unknown')),
             'class_status': 'ready' if len(classes) == 5 else 'missing',
             'class_reason': '' if len(classes) == 5 else 'Chưa có kết quả năm mức sáng và ngưỡng đã cấu hình cho tỉnh/mốc này.'}

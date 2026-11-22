@@ -8,7 +8,7 @@ Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_
 
 Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
 
-Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau bổ sung sửa dữ liệu v9, danh mục có 84 mục: 16 Raw (5 định danh) và 68 Processed; gồm cả metadata/tham số, không phải 84 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau phần F, danh mục có 92 mục: 16 Raw (5 định danh) và 76 Processed; gồm cả metadata/tham số, không phải 92 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
 
 ## 2. Ký hiệu, nguồn và quy tắc đầu vào
 
@@ -102,3 +102,7 @@ Phần E xuất gdp_change_pct, mô hình hai giá và metadata model_training_p
 ## 10. Sửa diện tích và tháng thiếu v9
 
 Workflow fix_demo_data tính diện tích giao pixel–tỉnh, đối chiếu raw hai băng với quy tắc FILTER xác minh được, xuất ảnh sửa riêng và bản đồ 0–12 tháng hợp lệ. Không tạo quan sát khi cf_cvg=0/NoData; các ca thiếu nguồn/lưới/quy tắc chưa xác minh có chẩn đoán cần rà soát. App đọc diagnosis và số tháng min/max/mean; không tự xem có đủ 12 file là đủ 12 quan sát. Đã nhận fix_report.json Windows: published=true, 4.095 ảnh tính lại diện tích, 0 mốc độ phủ trên 100%, 57 tháng raw thiếu quan sát sạch mây hợp lệ, không có lỗi FILTER cần sửa ảnh. Hai mô hình khớp trên 315 cặp chung; chưa nhận hệ số α/β/R². Tham chiếu KET_QUA_SAU_SUA_V9.md và SUA_DIEN_TICH_VA_THANG_THIEU.md. Không báo đã lấp 57 tháng, không biến thiếu nguồn thành 0.
+
+## 11. Hợp đồng dữ liệu và xuất xứ phần F
+
+Dataset_manifest ghi hash/số dòng CSV, dataset_id và stats_version, tách schema demo v2 khỏi thuật toán v9. Kiểm F đối chiếu từng dòng CSV/SQLite, thống kê từ ảnh, lớp/diện tích và mô hình; bản xuất TIFF crop/mask riêng khi cần, nguồn giữ nguyên. API báo nguồn mất/đổi và snapshot không đồng bộ; CSV xuất có đơn vị/chuỗi sáng/cơ sở giá/mã snapshot/hash nguồn. Tham chiếu PHAN_F_KIEM_CHUNG_VA_XUAT_DU_LIEU.md. TNL và cửa sổ ba dòng vẫn khác SOL và ba tháng lịch; nguồn raw trên app khác tham chiếu băng filtered trong CSV tính lại. Chưa có báo cáo kiểm F trên kho Windows sau cập nhật để đánh dấu nghiệm thu thực tế.

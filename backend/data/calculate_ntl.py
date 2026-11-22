@@ -545,7 +545,7 @@ def write_tables(tables, directory, overwrite=False):
     """Xuất từng file nguyên tử; chặn ghi đè mặc định để giữ kết quả đang dùng."""
     directory = Path(directory)
     paths = {name: directory/(name+'.csv') for name in tables}
-    if not overwrite and any(p.exists() for p in paths.values()):
+    if not overwrite and (any(p.exists() for p in paths.values()) or (directory/'dataset_manifest.json').exists()):
         raise FileExistsError('Đã có bảng kết quả; chọn thư mục khác hoặc thêm --overwrite.')
     directory.mkdir(parents=True, exist_ok=True)
     for name, rows in tables.items():
@@ -567,6 +567,8 @@ def write_tables(tables, directory, overwrite=False):
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+    from .dataset import write_snapshot
+    write_snapshot(directory, STATS_VERSION)
 
 
 def main():

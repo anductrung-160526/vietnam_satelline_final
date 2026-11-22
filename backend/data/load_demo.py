@@ -86,6 +86,7 @@ def load(root, prepared, db, indices_dir=None, manifest_path=None):
     dictionary_keys = set()
     by_gid = {p['gid_1']: p['ma_tinh'] for p in provinces()}
     directory = Path(indices_dir) if indices_dir else root/'VN_NTL_Panel_2004_2025/data_processed'
+    from .dataset import checked_snapshot, migrate_demo, register_snapshot
     for table_name in ('night_data', 'night_economy'):
         file = directory/(table_name+'.csv')
         if not file.exists():
@@ -103,6 +104,7 @@ def load(root, prepared, db, indices_dir=None, manifest_path=None):
             dictionary_keys.add(key)
             # Không dùng kết quả thiếu nhãn giá làm kết quả chính thức của giá so sánh.
             dictionary_rows.append((*key, json.dumps(row, ensure_ascii=False)))
+    snapshot = checked_snapshot(directory)
     backup = backup_database(db)
     if db.exists():
         # Không gọi mo trên database cũ: tránh cơ chế dựng lại schema xóa COG.
@@ -110,7 +112,7 @@ def load(root, prepared, db, indices_dir=None, manifest_path=None):
     else:
         connection = mo(db)
     try:
-        connection.executescript(SCHEMA.read_text(encoding='utf-8'))
+        migrate_demo(connection)
         with connection:
             load_provinces(connection)
             connection.executemany(
@@ -144,6 +146,7 @@ def load(root, prepared, db, indices_dir=None, manifest_path=None):
                     sql = f'INSERT OR REPLACE INTO {table} ({",".join(keys)}) VALUES ({",".join("?" for _ in keys)})'
                     connection.execute(sql, [values[k] for k in keys])
                     imported[table] += 1
+            register_snapshot(connection,snapshot,directory,manifest)
     finally:
         connection.close()
     return {'backup': backup, 'prices': len(prices), 'assets': len(assets), 'dictionary_results': len(dictionary_rows), 'indices': imported}

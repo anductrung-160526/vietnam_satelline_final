@@ -43,3 +43,19 @@ CREATE TABLE IF NOT EXISTS monthly_recovery_audit(
  province_code TEXT NOT NULL, year INTEGER NOT NULL, month INTEGER NOT NULL, payload TEXT NOT NULL,
  PRIMARY KEY(province_code,year,month)
 );
+-- F: schema cộng thêm, không reset các bảng chỉ số/sổ COG cũ.
+CREATE TABLE IF NOT EXISTS demo_schema_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS demo_dataset(
+ dataset_id TEXT PRIMARY KEY, indices_dir TEXT NOT NULL, manifest_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demo_provenance(
+ province_code TEXT NOT NULL, year INTEGER NOT NULL, month INTEGER NOT NULL,
+ table_name TEXT NOT NULL, price_basis TEXT NOT NULL, dataset_id TEXT NOT NULL,
+ source_path TEXT,
+ PRIMARY KEY(province_code,year,month,table_name,price_basis)
+);
+CREATE TABLE IF NOT EXISTS demo_asset_check(
+ province_code TEXT NOT NULL, year INTEGER NOT NULL, month INTEGER NOT NULL, kind TEXT NOT NULL,
+ payload TEXT NOT NULL,
+ PRIMARY KEY(province_code,year,month,kind)
+);
