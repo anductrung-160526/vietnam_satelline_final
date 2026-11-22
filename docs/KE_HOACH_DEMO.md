@@ -133,7 +133,8 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Giữ NoData=255, kiểm tra mask với ảnh nguồn; toàn NoData có trạng thái riêng, không coi là tối.
 - [x] Xuất COG, CSV diện tích, CSV/JSON kiểm chứng, ngưỡng và phiên bản; API tải CSV đúng tỉnh/mốc đang chọn.
 - [x] Kiểm tra tổng diện tích lớp với diện tích hợp lệ; giữ số/cờ khi độ phủ trên 100% do pixel giao biên.
-- [ ] Chạy hoặc phục hồi phần D trên đúng kho dữ liệu Windows; nhận method.json, validation_report.json và light_class_validation.csv, rà soát ảnh rỗng, mẫu số và sai lệch diện tích trước nghiệm thu.
+- [x] Đã nhận đủ bốn file kết quả Windows ngày 22/11, đối chiếu đủ 4.095 khóa và 20.475 dòng lớp; tổng lớp, tỷ lệ và metadata khớp. Ngưỡng thật: 0,5; 1,5; 3,0850000381469727; 17,459999084472656. Báo cáo: [DOI_CHIEU_KET_QUA_PHAN_D.md](DOI_CHIEU_KET_QUA_PHAN_D.md).
+- [ ] Nghiệm thu dữ liệu thật: còn 57 ảnh tháng rỗng (49 tại 07/2022), 315/315 ảnh năm có độ phủ trên 100%, 20 mốc tỷ lệ diện tích sáng trên 100%. Cần đối chiếu raster/ranh giới, hoàn thiện diện tích giao biên và rà soát chất lượng chuỗi tháng; chưa coi passed kỹ thuật là đã đạt độ chính xác địa lý.
 
 **Đạt khi:** phân lớp có thể tái lập, tổng diện tích được kiểm tra và bản đồ sử dụng đúng bộ ngưỡng đã tính.
 

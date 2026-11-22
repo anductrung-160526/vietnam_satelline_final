@@ -32,7 +32,7 @@ SQLite giữ bảng `light_class` cũ và thêm `light_class_summary`; tỷ lệ
 
 Bằng ngưỡng thuộc lớp cao hơn; NoData không thuộc lớp 0. Giá trị âm trong ảnh đã lọc làm dừng. Ảnh đầu vào cần băng bức xạ scale=1, offset=0; một băng hoặc hai băng có tên avg_rad/cf_cvg. Không áp dụng bộ ngưỡng VIIRS cho DN của DMSP.
 
-Căn cứ chi tiết và tài liệu tham khảo: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md). Chưa có method.json thật được gửi lại sau lượt chạy Windows nên tài liệu không tự điền q50/q90 bằng số kiểm thử.
+Căn cứ chi tiết và tài liệu tham khảo: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md). Đã nhận method.json thật ngày 22/11: q50=3,0850000381469727 và q90=17,459999084472656, tham chiếu 2020 với 147.598 pixel sáng theo metadata. Kết quả này thay cho mọi mốc minh họa; xem [đối chiếu dữ liệu thật](DOI_CHIEU_KET_QUA_PHAN_D.md) trước khi nghiệm thu.
 
 ## 3. Diện tích và mẫu số
 
@@ -95,4 +95,4 @@ python -m uvicorn backend.api.main:app --reload --port 8000
 
 Chọn tỉnh, năm/tháng ở thanh chung, mở màn Ảnh đêm và lớp “năm mức sáng”. Bảng cột trái có km² và % tỉnh từng lớp, diện tích có dữ liệu/độ phủ, số pixel hợp lệ/NoData và trạng thái kiểm chứng. Có nút tải CSV đúng tỉnh/mốc đang chọn; API tương ứng `/api/demo/classes.csv?province_code=01&nam=2024&thang=0`. GeoTIFF tải qua nút ảnh hiện có. Số liệu vắng chưa được thay bằng 0.
 
-Sau lượt chạy thật, gửi `validation_report.json`, `light_class_validation.csv` và `method.json` để kiểm tra ngưỡng thật, ảnh rỗng, mẫu số, độ phủ và sai lệch diện tích. Chưa có các file này thì chưa đánh dấu nghiệm thu ảnh thật hoàn tất. Trong báo cáo cần đối chiếu thêm vài tỉnh/năm và bản đồ, không chỉ dựa vào số test đạt.
+Đã nhận đủ `validation_report.json`, `light_class_validation.csv`, `light_class_areas.csv` và `method.json` ngày 22/11. Đối chiếu số học đạt, nhưng chưa nghiệm thu độ chính xác diện tích và chuỗi tháng: 57 ảnh tháng rỗng, mọi ảnh năm có độ phủ vượt 100%, 20 mốc tỷ lệ sáng vượt 100%. Xem [báo cáo và việc cần xử lý](DOI_CHIEU_KET_QUA_PHAN_D.md). Sau khi xử lý cần xuất lại báo cáo và đối chiếu vài tỉnh/năm với raster/bản đồ thực tế.

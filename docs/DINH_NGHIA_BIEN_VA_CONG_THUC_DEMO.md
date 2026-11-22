@@ -78,7 +78,7 @@ Lưu ý luồng nhập: read_economy của calculate_ntl vẫn chỉ nhận mộ
 
 Chưa có công thức tổng hợp NEI được giảng viên xác nhận. Bản demo trình bày các chỉ số thành phần: quy mô ánh sáng (SOL), mật độ (SOL/A), diện tích sáng, phân bố lớp sáng, biến động và quan hệ với GRDP. Chưa coi các đại lượng này là giá trị tiền tệ kinh tế đêm, không tự tạo trọng số, không gọi β hay tỷ lệ diện tích là NEI chính thức.
 
-Chờ chốt: NEI là chỉ số thành phần nào hay chỉ số tổng hợp; đơn vị và chuẩn hóa; trọng số nếu có; năm gốc; cách dùng GRDP; tiêu chí kiểm chứng. Dân số, form tài liệu của cô và bốn mốc thật trong method.json còn cần bổ sung. Chấp nhận giao diện phần B không thay thế kiểm chứng từng con số trên máy demo.
+Chờ chốt: NEI là chỉ số thành phần nào hay chỉ số tổng hợp; đơn vị và chuẩn hóa; trọng số nếu có; năm gốc; cách dùng GRDP; tiêu chí kiểm chứng. Dân số và form tài liệu của cô còn cần bổ sung. Đã nhận method.json thật ngày 22/11: bốn mốc 0,5; 1,5; 3,0850000381469727; 17,459999084472656 nW/cm²/sr. Báo cáo DOI_CHIEU_KET_QUA_PHAN_D.md ghi rõ 57 ảnh tháng rỗng và 20 mốc tỷ lệ sáng vượt 100%; chưa nghiệm thu độ chính xác diện tích. Chấp nhận giao diện phần B không thay thế kiểm chứng từng con số trên máy demo.
 
 ## 8. Ví dụ đối chiếu có thể tính tay
 
