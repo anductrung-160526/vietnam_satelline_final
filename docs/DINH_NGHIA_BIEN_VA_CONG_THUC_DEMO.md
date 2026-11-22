@@ -8,7 +8,7 @@ Danh mục chuẩn là bảng duy nhất trong [NIGHT_DATA_DICTIONARY.md](NIGHT_
 
 Số lượng được chương trình sinh Word đếm trực tiếp từ bảng. Đếm mỗi dòng định nghĩa một lần; không cộng lại các khóa xuất ở cả hai CSV. Đây là số mục từ điển gồm chỉ số, metadata và tham số, không đồng nghĩa số biến độc lập của mô hình. `tnl` và `sol_raw` vẫn được giữ để truy nguồn nhưng bằng nhau trên cùng đầu vào, không tính như hai nguồn thông tin độc lập.
 
-Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau phần E, danh mục có 75 mục: 16 Raw (5 định danh) và 59 Processed; gồm cả metadata/tham số, không phải 75 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
+Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`, xuất CSV và hiển thị trên app sau khi chạy kiểm chứng. Sau bổ sung sửa dữ liệu v9, danh mục có 84 mục: 16 Raw (5 định danh) và 68 Processed; gồm cả metadata/tham số, không phải 84 biến độc lập. Không còn ba công thức chỉ ở mức đề xuất như bản đầu phần C. `light_class.area_km2` là tên có tiền tố bảng để phân biệt diện tích lớp với diện tích tự nhiên tỉnh, không phải tên một cột SQLite có dấu chấm.
 
 ## 2. Ký hiệu, nguồn và quy tắc đầu vào
 
@@ -16,7 +16,7 @@ Phần D đã triển khai `valid_area_km2`, `valid_area_pct`, `class_area_pct`,
 - R_i: bức xạ pixel i của ảnh đầu vào đang tính; U là nW/cm²/sr với VIIRS, DN với DMSP. Tổng bức xạ là tổng giá trị pixel, không phải tổng công suất phát sáng vật lý; không nhân diện tích trong công thức SOL.
 - C_i: số lượt quan sát sạch mây của băng cf_cvg. Tập pixel lấy trung bình C_i phải đồng thời hợp lệ ở băng bức xạ và băng cf_cvg, với C_i ≥ 0.
 - A: diện tích tự nhiên tỉnh GADM 4.1, chiếu EPSG:6933 rồi chia 10⁶ để được km². Không đổi ranh giới giữa các năm so sánh.
-- a_i: diện tích một pixel, km². Với lưới chiếu đơn vị mét: abs(dx × dy)/10⁶. Với EPSG:4326: abs(dlon × dlat) × 111,320² × cos(latitude_center_i). Đây là xấp xỉ theo vĩ độ của code, không phải phép đo diện tích ellipsoid chính xác. Không hỗ trợ lưới xoay.
+- a_i: từ v9 fractional là diện tích phần giao pixel với tỉnh, đo trong EPSG:6933 chia 10⁶. Bản cũ trước sửa dùng diện tích cả pixel, km². Với lưới chiếu đơn vị mét: abs(dx × dy)/10⁶. Với EPSG:4326: abs(dlon × dlat) × 111,320² × cos(latitude_center_i). Đây là xấp xỉ theo vĩ độ của code, không phải phép đo diện tích ellipsoid chính xác. Không hỗ trợ lưới xoay.
 - b: ngưỡng nền, VIIRS 0,5; DMSP 0. h: ngưỡng sáng, VIIRS 1,5; DMSP 5. Pixel bằng ngưỡng được giữ trong nhóm đạt ngưỡng.
 - G_y: GRDP tỉnh năm y của cơ sở giá được chỉ định; P_y: dân số tỉnh năm y. Giá so sánh năm gốc 2010 là cơ sở chính; giá hiện hành để đối chiếu. Cả hai dùng tỷ đồng.
 - Ảnh năm VIIRS được tổng hợp median ở từng pixel từ ảnh tháng đã lọc, sau đó mới tính tổng/thống kê. Không thay bằng median của các tổng SOL tháng. Ảnh năm tổng hợp là Processed.
@@ -44,7 +44,7 @@ Chỉ áp dụng phân lớp này cho VIIRS, đơn vị nW/cm²/sr. Các mốc l
 
 A_k = tổng a_i × 1[pixel thuộc lớp k]. Tổng A_k = A_valid. class_area_pct = 100 × A_k/A đã tính offline, lưu ở light_class_summary.class_area_pcts và xuất light_class_areas.csv; API đọc tỷ lệ đã lưu. NoData=255 không thuộc năm lớp. Code từ chối ảnh đã xử lý còn giá trị âm, ngưỡng suy biến hoặc thiếu 63 ảnh tham chiếu.
 
-Diện tích lấy cả pixel giao ranh giới theo mặt nạ chuẩn bị phần A; vì vậy tổng có thể cao hơn diện tích polygon. Không ép tỷ lệ về 100%, không đổi NoData thành tối, không thay diện tích pixel bằng 0,25 km² cố định.
+Diện tích từ v9 fractional lấy phần giao pixel–polygon trong EPSG:6933, cùng ranh giới/mẫu số; không được vượt polygon ngoài sai số số thực. V2 cũ lấy cả pixel giao ranh giới nên có thể cao hơn polygon và chỉ giữ để tham chiếu. Không ép sai lệch thực về 100%, không đổi NoData thành tối, không dùng cố định 0,25 km²/pixel.
 
 Mốc 0,5 dựa trên quy tắc nền đã chốt của dự án; 1,5 theo Task 3. P50/P90 là lựa chọn thực nghiệm minh bạch cho demo, không phải chuẩn vật lý hay phân lớp kinh tế đã được nghiên cứu xác nhận. Giá trị số thực tế phải đọc từ method.json trên máy chứa ảnh; tài liệu này không điền số kiểm thử thay thế. Căn cứ và tài liệu đối chiếu: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md), EOG VIIRS Nighttime Light, Elvidge và cộng sự (2021), DOI 10.3390/rs13050922.
 
@@ -98,3 +98,7 @@ Sửa danh mục trong NIGHT_DATA_DICTIONARY.md và phần giải thích tại �
 Phần D đối chiếu từng giá trị lớp với np.digitize trên ảnh nguồn, kiểm tra mask/NoData và tổng diện tích bằng rtol=1e−10, atol=1e−8; không chỉ tin metadata TIFF. Bảng kiểm chứng lưu diện tích tự nhiên và area_source. Có thể chỉ định --areas tới province_areas.csv của phần A; nếu không, lấy area_km2 đúng tỉnh/năm/tháng từ bảng ntl đã nạp. Thiếu mẫu số thì giữ diện tích lớp nhưng tỷ lệ để trống; toàn NoData ghi no_valid_pixels, không kết luận tỉnh tối. nodata_pixels đếm cả ô ngoài tỉnh trong khung raster nên không được diễn giải là số pixel mây.
 
 Phần E xuất gdp_change_pct, mô hình hai giá và metadata model_training_period/model_n/model_beta/model_light_basis; app đọc kết quả đúng giá và phân biệt mô hình offline với hồi quy theo phạm vi xem. Cờ image_quality_flags/area_method giữ giới hạn phần D. Chưa có kết quả chạy lại E trên Windows để xác nhận hệ số thật.
+
+## 10. Sửa diện tích và tháng thiếu v9
+
+Workflow fix_demo_data tính diện tích giao pixel–tỉnh, đối chiếu raw hai băng với quy tắc FILTER xác minh được, xuất ảnh sửa riêng và bản đồ 0–12 tháng hợp lệ. Không tạo quan sát khi cf_cvg=0/NoData; các ca thiếu nguồn/lưới/quy tắc chưa xác minh có chẩn đoán cần rà soát. App đọc diagnosis và số tháng min/max/mean; không tự xem có đủ 12 file là đủ 12 quan sát. Tham chiếu SUA_DIEN_TICH_VA_THANG_THIEU.md. Database app chỉ cập nhật từ snapshot đã hoàn tất khi --publish, có backup; chưa có kết quả thật sau sửa trên E để báo đã lấp đủ 57 tháng.

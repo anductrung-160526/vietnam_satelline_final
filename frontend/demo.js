@@ -90,8 +90,15 @@ async function refreshDemo(){
       return `<tr><td><code>${thoat(f.field)}</code><small>${thoat(f.name)}</small></td><td>${value}`
         + `${f.is_provisional ? '<span class="badge">Sơ bộ</span>' : ''}</td><td>${thoat(f.unit || '')}</td></tr>`;
     }).join('');
+    const support = data.observation_support;
+    const supportValue = key => valueCell(support?.[key] === '' ? null : support?.[key] == null ? null : Number(support[key]));
+    const supportParams = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:0,kind:'support'});
+    const recoveryNames = {NO_CLOUD_FREE_OBSERVATIONS:'Ảnh gốc không có quan sát sạch mây hợp lệ; giữ thiếu dữ liệu.',NO_VALID_RADIANCE_DESPITE_CF:'Có thông tin quan sát nhưng bức xạ gốc không hợp lệ; chưa phục hồi được.',REPAIRED_FILTER_MISMATCH:'Đã sửa ảnh lọc từ quan sát hợp lệ trong ảnh gốc.',MATCHES_RAW_FILTER_RULE:'Ảnh lọc khớp quy tắc và quan sát gốc.',MISSING_RAW_OR_FILTERED_MONTHS:'Thiếu ảnh gốc hoặc ảnh tháng để kiểm tra đầy đủ năm.',GRID_MISMATCH_REQUIRES_REVIEW:'Lưới ảnh gốc và ảnh lọc khác nhau; cần đối chiếu trước khi sửa.',FILTER_RULE_UNVERIFIED:'Chưa xác minh quy tắc lọc; giữ nguyên dữ liệu.',SOURCE_READ_ERROR:'Chưa đọc được ảnh nguồn; cần kiểm tra đường dẫn/file.'};
+    recoveryNames.MISSING_CF_COVERAGE = 'Thông tin số lượt quan sát trong ảnh gốc không hợp lệ; chưa thể xác nhận quan sát.';
+    const recoveryInfo = data.recovery_audit ? `<p class="nho">Kiểm tra ảnh tháng: ${thoat(recoveryNames[data.recovery_audit.diagnosis] || data.recovery_audit.diagnosis)}</p>` : '';
+    const supportInfo = recoveryInfo + (support ? `<p class="nho">Ảnh năm ${data.year}: số tháng hợp lệ trên pixel có quan sát từ ${supportValue('valid_month_min')} đến ${supportValue('valid_month_max')}, trung bình ${supportValue('valid_month_mean')}. Diện tích không có tháng nào hợp lệ: ${supportValue('area_without_observations_km2')} km². Có file tháng không đồng nghĩa có quan sát ở mọi pixel.</p><a class="asset-link" href="/api/demo/image?${supportParams}">Tải bản đồ số tháng hợp lệ trong năm</a>` : '');
     const group = stage => `<section class="data-group ${stage.toLowerCase()}"><h2>${stage === 'Raw' ? '01 · Raw — dữ liệu đầu vào' : '02 · Processed — kết quả tính toán'}</h2>`
-      + `<div class="cuon"><table><thead><tr><th>Trường dữ liệu</th><th>Giá trị / dữ liệu nguồn</th><th>Đơn vị</th></tr></thead><tbody>${fields(stage)}</tbody></table></div></section>`;
+      + `<div class="cuon"><table><thead><tr><th>Trường dữ liệu</th><th>Giá trị / dữ liệu nguồn</th><th>Đơn vị</th></tr></thead><tbody>${fields(stage)}</tbody></table></div>${stage === 'Processed' ? supportInfo : ''}</section>`;
     $('detail-fields').innerHTML = identity + (data.is_simulated ? '<p class="canh thieu">SỐ LIỆU GIẢ LẬP — chỉ kiểm thử giao diện.</p>' : '')
       + group('Raw') + group('Processed');
     // Có thể có ảnh tỉnh đã đăng ký trước khi ghép COG toàn quốc.
@@ -119,6 +126,7 @@ function renderClassSummary(data){
   const reference = data.classes[0]?.status?.replace('empirical_reference_','');
   const methodNote = /^20\d{2}$/.test(reference) ? `Mốc 0,5 và 1,5 theo quy tắc dự án/Task 3; hai mốc còn lại là P50/P90 của pixel sáng năm ${reference}.` : 'Bộ phân lớp kiểm thử hoặc chưa có nhãn năm tham chiếu.';
   const s = data.class_summary;
+  const fractional = s?.method_version === 'viirs_brightness_classes_v3_fractional';
   const params = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:demoSelection.month});
   const audit = s ? `<p class="nho">Diện tích tự nhiên: ${valueCell(s.area_km2)} km².<br>Diện tích có dữ liệu: ${valueCell(s.valid_area_km2)} km² · độ phủ ${valueCell(s.valid_area_pct)}%.<br>Pixel hợp lệ: ${s.valid_pixels}; NoData: ${s.nodata_pixels}.<br>Kiểm chứng: ${s.validation_status === 'passed' ? 'đạt' : 'không có pixel hợp lệ'}; sai lệch tổng lớp ${valueCell(s.area_balance_error_km2)} km².</p>`
     + ((s.valid_area_pct ?? 0) > 100 ? '<p class="canh-nho">Độ phủ vượt 100%: cần đối chiếu mask và diện tích tỉnh. Tính cả pixel giao biên cũng có thể làm độ phủ vượt 100%; chưa hiệu chỉnh phần giao ranh giới.</p>' : '')
@@ -126,7 +134,7 @@ function renderClassSummary(data){
     : '<p class="nho">Chưa có báo cáo kiểm chứng phần D; cần chạy bộ phân lớp để bổ sung tỷ lệ và độ phủ.</p>';
   $('class-summary').innerHTML = '<h3>Diện tích theo mức sáng</h3><table class="class-table"><thead><tr><th>Mức / ngưỡng</th><th>km²</th><th>% tỉnh</th></tr></thead><tbody>'
     + data.classes.map((c,i) => `<tr><td><i style="background:${CLASS_COLORS[i]}"></i>${CLASS_NAMES[i]}<small>${c.lower_bound} ≤ r ${c.upper_bound === null ? '' : '< '+c.upper_bound} ${thoat(c.unit)}</small></td><td>${valueCell(c.area_km2)}</td><td>${dinhDang(c.class_area_pct,2) ?? '—'}</td></tr>`).join('')
-    + `</tbody></table>${audit}<p class="nho">${thoat(methodNote)} Ngưỡng giữ cố định giữa các năm. % tỉnh dùng diện tích tự nhiên làm mẫu số; NoData không thuộc lớp tối. Pixel giao biên được tính cả diện tích pixel.</p>`;
+    + `</tbody></table>${audit}<p class="nho">${thoat(methodNote)} Ngưỡng giữ cố định giữa các năm. % tỉnh dùng diện tích tự nhiên làm mẫu số; NoData không thuộc lớp tối. ${fractional ? 'Diện tích tính theo phần giao pixel với tỉnh trong EPSG:6933.' : 'Kết quả cũ tính cả pixel giao biên; cần tính lại diện tích phần giao.'}</p>`;
 }
 function renderDemoLayer(){
   const mode = $('layer-mode').value;

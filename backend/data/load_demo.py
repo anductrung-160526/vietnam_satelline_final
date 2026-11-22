@@ -31,11 +31,11 @@ def backup_database(db):
     return str(backup)
 
 
-def load(root, prepared, db, indices_dir=None):
+def load(root, prepared, db, indices_dir=None, manifest_path=None):
     root, prepared, db = Path(root).resolve(), Path(prepared).resolve(), Path(db)
     catalog = {p['ma_tinh'] for p in provinces()}
     prices = read_rows(prepared/'grdp_all_prices.csv')
-    manifest = read_rows(prepared/'manifest_candidates.csv')
+    manifest = read_rows(manifest_path or prepared/'manifest_candidates.csv')
     inventory = read_rows(prepared/'image_inventory.csv')
     seen = set()
     for row in prices:
@@ -46,6 +46,8 @@ def load(root, prepared, db, indices_dir=None):
         if row['unit'] != 'ty_vnd':
             raise ValueError('App hiện hiển thị GRDP theo tỷ đồng; cần đổi đơn vị trước khi nạp.')
     assets = {}
+    supports = []
+    recovery_rows = []
     for kind, items in [('processed', manifest), ('raw', inventory)]:
         for row in items:
             if row.get('province_code') not in catalog:
@@ -63,6 +65,22 @@ def load(root, prepared, db, indices_dir=None):
             if key in assets and assets[key]['path'] != str(path):
                 raise ValueError(f'Trùng ảnh {key}; cần chọn nguồn trước khi nạp.')
             assets[key] = dict(path=str(path), source=row['source'], band_names=row.get('band_names', '[]'))
+    support_file = Path(manifest_path).parent/'annual_observation_support.csv' if manifest_path else None
+    if support_file is not None and support_file.is_file():
+        for row in read_rows(support_file):
+            code, year = row['province_code'], int(row['year'])
+            path = Path(row['support_path']).resolve()
+            if code not in catalog or not path.is_relative_to(root) or not path.is_file():
+                raise ValueError('Bản đồ số tháng hợp lệ không đúng mã tỉnh/đường dẫn trong kho.')
+            supports.append((code, year, json.dumps(row, ensure_ascii=False)))
+            assets[(code,year,0,'support')] = dict(path=str(path), source='VIIRS', band_names='["valid_month_count"]')
+    recovery_file = Path(manifest_path).parent/'monthly_recovery_audit.csv' if manifest_path else None
+    if recovery_file is not None and recovery_file.is_file():
+        for row in read_rows(recovery_file):
+            code, year, month = row['province_code'], int(row['year']), int(row['month'])
+            if code not in catalog or not 1 <= month <= 12:
+                raise ValueError('Khóa báo cáo kiểm tra ảnh tháng không hợp lệ.')
+            recovery_rows.append((code,year,month,json.dumps(row,ensure_ascii=False)))
     # Kết quả đã tính theo dictionary: tên gid_1 được ánh xạ bằng danh mục chính thức.
     dictionary_rows = []
     dictionary_keys = set()
@@ -103,6 +121,8 @@ def load(root, prepared, db, indices_dir=None):
             # Chỉ cập nhật các mốc được nạp, không xóa tài sản ở mốc khác.
             connection.executemany('INSERT OR REPLACE INTO demo_asset VALUES(?,?,?,?,?,?,?)',
                                    [(*key, r['path'], r['source'], r['band_names']) for key, r in assets.items()])
+            connection.executemany('INSERT OR REPLACE INTO annual_observation_support VALUES(?,?,?)', supports)
+            connection.executemany('INSERT OR REPLACE INTO monthly_recovery_audit VALUES(?,?,?,?)', recovery_rows)
             connection.executemany('INSERT OR REPLACE INTO demo_result VALUES(?,?,?,?,?,?)', dictionary_rows)
             imported = {}
             directory = Path(indices_dir) if indices_dir else root/'VN_NTL_Panel_2004_2025/data_processed'
@@ -135,8 +155,9 @@ def main():
     parser.add_argument('--prepared', type=Path, required=True)
     parser.add_argument('--db', type=Path, default=Path(__file__).with_name('vngis.db'))
     parser.add_argument('--indices-dir', type=Path)
+    parser.add_argument('--manifest', type=Path, help='Manifest mới sau sửa ảnh; giữ nguyên bộ chuẩn bị gốc.')
     args = parser.parse_args()
-    print(json.dumps(load(args.root, args.prepared, args.db, args.indices_dir), ensure_ascii=False, indent=2))
+    print(json.dumps(load(args.root, args.prepared, args.db, args.indices_dir, args.manifest), ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

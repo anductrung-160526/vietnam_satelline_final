@@ -35,3 +35,11 @@ CREATE TABLE IF NOT EXISTS light_class_summary(
  class_area_pcts TEXT NOT NULL,
  PRIMARY KEY(province_code,year,month)
 );
+CREATE TABLE IF NOT EXISTS annual_observation_support(
+ province_code TEXT NOT NULL, year INTEGER NOT NULL, payload TEXT NOT NULL,
+ PRIMARY KEY(province_code,year)
+);
+CREATE TABLE IF NOT EXISTS monthly_recovery_audit(
+ province_code TEXT NOT NULL, year INTEGER NOT NULL, month INTEGER NOT NULL, payload TEXT NOT NULL,
+ PRIMARY KEY(province_code,year,month)
+);

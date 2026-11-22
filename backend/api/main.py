@@ -410,7 +410,7 @@ def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
 @app.get('/api/demo/image')
 def demo_image(province_code: str, nam: int = Query(..., ge=2004, le=2025),
                thang: int = Query(0, ge=0, le=12), kind: str = 'raw'):
-    if kind not in ('raw', 'processed', 'classes'):
+    if kind not in ('raw', 'processed', 'classes', 'support'):
         raise HTTPException(400, 'Loại ảnh không hợp lệ.')
     item = demo_view.asset(_code(province_code), nam, thang, kind)
     if not item:

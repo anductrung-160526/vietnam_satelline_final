@@ -18,7 +18,7 @@ import numpy as np
 from rasterio.windows import Window
 
 NODATA = -9999
-STATS_VERSION = 8  # v8: luồng hai giá GRDP, mẫu chung và cờ chất lượng phần E
+STATS_VERSION = 9  # v9: diện tích giao pixel–tỉnh, giữ SOL là tổng bức xạ pixel
 LIT_THRESHOLD = {'VIIRS': 1.5, 'DMSP': 5.0}
 BACKGROUND = {'VIIRS': 0.5, 'DMSP': 0.0}
 
@@ -44,7 +44,7 @@ def pixel_area_km2(transform, window, crs):
     return np.full((int(window.height), 1), abs(transform.a*transform.e)/1e6)
 
 
-def ntl_stats(path, threshold=None, background=0.0):
+def ntl_stats(path, threshold=None, background=0.0, area_weights=None):
     """Tính từng thống kê từ ảnh đã lọc theo tỉnh; đọc theo ô để tiết kiệm RAM.
 
     Băng 1 = bức xạ; băng 2 tùy chọn phải có tên cf_cvg.
@@ -63,6 +63,7 @@ def ntl_stats(path, threshold=None, background=0.0):
     lit_count = 0
     lit_sum = 0.0
     lit_area = 0.0
+    valid_area = 0.0
     cloud_sum = 0.0
     cloud_count = 0
 
@@ -78,6 +79,10 @@ def ntl_stats(path, threshold=None, background=0.0):
             radiation = image.read(1, window=window).astype('float64')
             valid = image.read_masks(1, window=window).astype(bool)
             valid &= np.isfinite(radiation) & (radiation != NODATA)
+            weights = area_weights[window.toslices()] if area_weights is not None else None
+            if weights is not None:
+                valid &= weights > 0
+                valid_area += float(weights[valid].sum())
             values = radiation[valid]
             if values.size == 0:
                 continue
@@ -107,7 +112,7 @@ def ntl_stats(path, threshold=None, background=0.0):
                 # lit_pop_proxy: tổng bức xạ CHỈ trên vùng sáng, không phải dân số.
                 lit_sum += float(radiation[lit_mask].sum())
                 # lit_area_km2: cộng diện tích pixel sáng theo CRS và vĩ độ.
-                areas = np.broadcast_to(
+                areas = weights if weights is not None else np.broadcast_to(
                     pixel_area_km2(image.transform, window, image.crs), radiation.shape
                 )
                 lit_area += float(areas[lit_mask].sum())
@@ -149,10 +154,12 @@ def ntl_stats(path, threshold=None, background=0.0):
         'spatial_cv': rounded(cv, 4),
         'lit_pixels': lit_count if count and threshold is not None else None,
         'lit_sol': rounded(lit_sum, 4) if count and threshold is not None else None,
-        'lit_area_km2': rounded(lit_area, 4) if count and threshold is not None else None,
+        'lit_area_km2': (lit_area if area_weights is not None else rounded(lit_area, 4)) if count and threshold is not None else None,
         'lit_pixel_pct': rounded(100 * lit_count / count, 4)
                          if count and threshold is not None else None,
         'cloud_free_obs': rounded(cloud_mean, 4),
+        **({'valid_area_km2': valid_area, 'area_method': 'pixel_polygon_intersection_epsg6933_v1'}
+           if area_weights is not None else {}),
     }
 
 
@@ -224,13 +231,25 @@ def read_manifest(path):
     return records
 
 
-def calculate(records, economy=None, calibrate=False, economy_prices=None, image_quality=None, progress=False):
+def calculate(records, economy=None, calibrate=False, economy_prices=None, image_quality=None, progress=False, area_model=None):
     annual, monthly, overlap = [], [], []
     lookup = {}
     for image_index, record in enumerate(records, 1):
         row = {k: v for k, v in record.items() if k != 'path'}
         source = row['source']
-        row.update(ntl_stats(record['path'], LIT_THRESHOLD[source], BACKGROUND[source]))
+        weights = None
+        if area_model is not None:
+            import rasterio
+            from .fractional_area import percent_area
+            expected = area_model.areas[row['province_code']]
+            if not np.isclose(row['area_km2'], expected, rtol=1e-8):
+                raise ValueError('Diện tích manifest không khớp ranh giới đã xác minh.')
+            row['area_km2'] = expected
+            with rasterio.open(record['path']) as source_image:
+                weights = area_model.weights(row['province_code'], source_image)
+        row.update(ntl_stats(record['path'], LIT_THRESHOLD[source], BACKGROUND[source], weights))
+        if area_model is not None:
+            row['valid_area_pct'] = percent_area(row['valid_area_km2'], row['area_km2'])
         row['lit_threshold'] = LIT_THRESHOLD[source]
         # sol_density: SOL sau loại nền chia diện tích tự nhiên tỉnh.
         row['sol_density'] = (round(row['sol']/row['area_km2'], 6)
@@ -238,6 +257,8 @@ def calculate(records, economy=None, calibrate=False, economy_prices=None, image
         # lit_area_pct: diện tích sáng / diện tích tự nhiên tỉnh * 100.
         row['lit_area_pct'] = (round(100*row['lit_area_km2']/row['area_km2'], 4)
                                if row['lit_area_km2'] is not None else None)
+        if area_model is not None and row['lit_area_km2'] is not None:
+            row['lit_area_pct'] = percent_area(row['lit_area_km2'], row['area_km2'])
         row['period'] = f"{row['year']}-{row['month']:02}" if row['month'] else str(row['year'])
         row['frequency'] = 'monthly' if row['month'] else 'annual'
         row['calibration'] = 'PENDING'
@@ -467,6 +488,9 @@ def add_dictionary_tables(tables, records, economy, calibrate):
         data['electrification_ratio_pct'] = row['lit_pixel_pct']
         data['tnl_ma3'] = rounded(row.get('tnl_ma3'), 4)
         data['tnl_mom_growth_pct'] = row.get('tnl_mom_growth_pct')
+        if 'area_method' in row:
+            data.update(area_method=row['area_method'], valid_area_km2=row['valid_area_km2'],
+                        valid_area_pct=row['valid_area_pct'], stats_version=STATS_VERSION)
         data_rows.append(data)
 
         # Xuất Night Economy: sol_raw/sol luôn giữ trước/sau loại nền để tham chiếu.
@@ -554,6 +578,9 @@ def main():
     prices.add_argument('--economy', type=Path, help='CSV kinh tế một giá cũ: province_code + year')
     prices.add_argument('--economy-prices', type=Path, help='grdp_all_prices.csv hai cơ sở giá của phần A')
     parser.add_argument('--class-validation', type=Path, help='light_class_validation.csv phần D, dùng cùng --economy-prices')
+    parser.add_argument('--fractional-area', action='store_true')
+    parser.add_argument('--boundaries', type=Path)
+    parser.add_argument('--boundary-metadata', type=Path)
     parser.add_argument('--calibrate', action='store_true', help='Khớp hiệu chỉnh từ >=30 cặp tỉnh DMSP/VIIRS 2013')
     parser.add_argument('--overwrite', action='store_true', help='Cho phép thay các bảng kết quả đã có')
     args = parser.parse_args()
@@ -571,8 +598,12 @@ def main():
             from .economy_indices import read_prices, read_image_quality
             price_rows = read_prices(args.economy_prices)
             quality_rows = read_image_quality(args.class_validation)
+        area_model = None
+        if args.fractional_area:
+            from .fractional_area import load_area_model
+            area_model = load_area_model(args.root, args.boundaries, args.boundary_metadata)
         tables = calculate(records, economy=read_economy(args.economy), calibrate=args.calibrate,
-                           economy_prices=price_rows, image_quality=quality_rows, progress=True)
+                           economy_prices=price_rows, image_quality=quality_rows, progress=True, area_model=area_model)
         write_tables(tables, directory, args.overwrite)
     except (ValueError, OSError) as error:
         parser.exit(1, f'Lỗi: {error}\n')

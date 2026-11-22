@@ -74,7 +74,8 @@ def read_image_quality(path):
 
 def image_flags(row, quality):
     """Kiểm tra SOL trước/sau nền và truyền giới hạn diện tích sang kết quả E."""
-    flags = ['WHOLE_PIXEL_AREA_APPROXIMATION']
+    fractional = row is not None and row.get('area_method') == 'pixel_polygon_intersection_epsg6933_v1'
+    flags = [] if fractional else ['WHOLE_PIXEL_AREA_APPROXIMATION']
     if row is None:
         return ['MISSING_IMAGE']
     raw, sol = row['sol_raw'], row['sol']
@@ -83,11 +84,15 @@ def image_flags(row, quality):
     if not row['valid_pixels']:
         flags.append('NO_VALID_PIXELS')
     if quality:
+        if fractional and quality.get('method_version') != 'viirs_brightness_classes_v3_fractional':
+            raise ValueError('Cần báo cáo D v3 fractional cùng phương pháp diện tích; không ghép báo cáo v2 cũ.')
         if int(quality['valid_pixels']) != row['valid_pixels']:
             raise ValueError('Số pixel hợp lệ của ảnh tính lại khác báo cáo D; kiểm tra đúng phiên bản ảnh.')
         coverage = number_or_none(quality['valid_area_pct'])
         if coverage is not None and coverage > 100:
             flags.append('COVERAGE_ABOVE_100')
+        if fractional and not math.isclose(float(quality['valid_area_km2']), row['valid_area_km2'], rel_tol=1e-9, abs_tol=1e-8):
+            raise ValueError('Diện tích hợp lệ khác báo cáo D v3; kiểm tra manifest/ảnh sửa.')
     else:
         flags.append('PART_D_NOT_LINKED')
     if row['lit_area_pct'] is not None and row['lit_area_pct'] > 100:
@@ -156,7 +161,7 @@ def attach_two_prices(tables, prices, quality=None, calibrate=False):
                        model_training_period=training_period if models[basis] else '',
                        model_n=models[basis]['n'] if models[basis] else None,
                        model_beta=rounded(models[basis]['beta']) if models[basis] else None,
-                       area_method='whole_pixel_approximation', comparison_note='')
+                       area_method=observation.get('area_method', 'whole_pixel_approximation') if observation else '', comparison_note='')
             if not values:
                 # Không để các giá trị cũ trong template bị gán sang cơ sở giá khác.
                 row.update(gdp=None, population=population, economy_source='', price_base_year=2010 if basis == 'so_sanh' else None,
@@ -210,4 +215,4 @@ def attach_two_prices(tables, prices, quality=None, calibrate=False):
         empty_images=sum(not r['valid_pixels'] for r in observations.values()),
         quality_linked_images=sum(key in quality for key in observations),
         quality_unlinked_images=sum(key not in quality for key in observations),
-        area_method='whole_pixel_approximation', stats_version=STATS_VERSION)]
+        area_method=next(iter({r.get('area_method', 'whole_pixel_approximation') for r in observations.values()}), ''), stats_version=STATS_VERSION)]

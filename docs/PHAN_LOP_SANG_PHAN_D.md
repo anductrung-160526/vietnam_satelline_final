@@ -1,5 +1,7 @@
 # Phần D — phân lớp sáng, diện tích và kiểm chứng
 
+**Cập nhật v9:** để sửa diện tích vượt 100% và kiểm tra/phục hồi tháng thiếu, dùng [SUA_DIEN_TICH_VA_THANG_THIEU.md](SUA_DIEN_TICH_VA_THANG_THIEU.md). Các lệnh/giới hạn v2/v8 dưới đây mô tả phiên bản trước sửa.
+
 Phạm vi: VIIRS 2020–2024, cấp 63 tỉnh trước sáp nhập. Bộ phân lớp không dùng học máy. Code, CSV, API và tài liệu đã được kiểm tra trên ảnh biết trước; chưa coi là đã nghiệm thu toàn bộ ảnh thật trên máy Windows.
 
 ## 1. Đầu ra đã bổ sung

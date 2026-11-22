@@ -1,5 +1,7 @@
 # Phần E — SOL, mật độ, biến động và hai cơ sở giá GRDP
 
+**Cập nhật v9:** để sửa diện tích vượt 100% và kiểm tra/phục hồi tháng thiếu, dùng [SUA_DIEN_TICH_VA_THANG_THIEU.md](SUA_DIEN_TICH_VA_THANG_THIEU.md). Các lệnh/giới hạn v2/v8 dưới đây mô tả phiên bản trước sửa.
+
 Đã hoàn thiện code và kiểm tra trên ảnh/số liệu biết trước. Cần chạy trên bộ ảnh thật ở E: để có hệ số và bộ kết quả thực tế; không suy SOL từ diện tích lớp hoặc dùng dữ liệu giả thay thế. Vấn đề diện tích và tháng thiếu dữ liệu phần D vẫn giữ nguyên trạng thái chưa nghiệm thu.
 
 ## 1. Phần tính đã thực hiện

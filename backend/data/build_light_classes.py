@@ -95,7 +95,7 @@ def classify_image(source, target, breaks, reference_year=None):
     return areas.tolist()
 
 
-def saved_areas(target, source, breaks, reference_year, details=False):
+def saved_areas(target, source, breaks, reference_year, details=False, area_weights=None):
     """Đọc diện tích từ COG đã tạo; chỉ dùng lại khi khớp nguồn và phương pháp."""
     areas = np.zeros(5)
     valid_pixels = nodata_pixels = 0
@@ -123,12 +123,14 @@ def saved_areas(target, source, breaks, reference_year, details=False):
             if ((source_data[source_valid] < 0).any() or (values[~valid] != 255).any()
                     or not np.array_equal(values[valid], expected)):
                 raise ValueError(f'Giá trị lớp không khớp ngưỡng/NoData của ảnh nguồn: {target}')
-            weights = np.broadcast_to(pixel_area_km2(image.transform, window, image.crs), values.shape)
-            valid_pixels += int(valid.sum())
-            nodata_pixels += int((~valid).sum())
-            valid_area += float(weights[source_valid].sum())
+            weights = (area_weights[window.toslices()] if area_weights is not None else
+                       np.broadcast_to(pixel_area_km2(image.transform, window, image.crs), values.shape))
+            effective = valid & (weights > 0)
+            valid_pixels += int(effective.sum())
+            nodata_pixels += int((~effective).sum())
+            valid_area += float(weights[effective].sum())
             for index in range(5):
-                areas[index] += float(weights[valid & (values == index)].sum())
+                areas[index] += float(weights[effective & (values == index)].sum())
     error = float(areas.sum()) - valid_area
     if not np.isclose(areas.sum(), valid_area, rtol=1e-10, atol=1e-8):
         raise ValueError(f'Tổng diện tích lớp không bằng diện tích hợp lệ: {target}')
@@ -176,7 +178,8 @@ def write_report(path, rows):
     temporary.replace(path)
 
 
-def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
+def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
+          area_model=None, method_file=None, reuse_registered=False):
     root, db = Path(root).resolve(), Path(db)
     # Đọc UTF-8 ngay từ đầu: Windows có thể mặc định cp1252.
     schema_sql = SCHEMA.read_text(encoding='utf-8')
@@ -185,6 +188,17 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
         assets = [dict(r) for r in connection.execute(
             "SELECT * FROM demo_asset WHERE kind='processed' AND source='VIIRS' AND year BETWEEN 2020 AND 2024")]
         denominators = province_areas(connection, assets, areas_csv)
+        registered = {(r['province_code'], r['year'], r['month']): r['path'] for r in connection.execute(
+            "SELECT * FROM demo_asset WHERE kind='classes'")} if reuse_registered else {}
+    fractional = area_model is not None
+    version = 'viirs_brightness_classes_v3_fractional' if fractional else METHOD_VERSION
+    if fractional:
+        for row in assets:
+            key = (row['province_code'], row['year'], row['month'])
+            expected = area_model.areas[row['province_code']]
+            if areas_csv is not None and (denominators[key][0] is None or not np.isclose(denominators[key][0], expected, rtol=1e-8)):
+                raise ValueError('CSV diện tích không khớp ranh giới đã xác minh; không trộn hai mẫu số.')
+            denominators[key] = (expected, 'verified_polygon_epsg6933:'+area_model.metadata['sha256'])
     if not assets:
         raise ValueError('Chưa nạp ảnh VIIRS cho demo; chạy load_demo trước.')
     for row in assets:
@@ -201,6 +215,16 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
                 or breaks[:2] != [0.5, 1.5] or not all(a < b for a, b in zip(breaks, breaks[1:]))):
             raise ValueError('method.json không khớp năm tham chiếu hoặc bộ ngưỡng.')
         print(f'Tiếp tục từ: {directory}', flush=True)
+    elif method_file is not None:
+        method = json.loads(Path(method_file).read_text(encoding='utf-8'))
+        breaks = method['breaks']
+        validate_breaks(breaks)
+        if method.get('reference_year') != reference_year or method.get('status') != 'empirical_demo':
+            raise ValueError('method.json không khớp phương pháp/năm tham chiếu.')
+        directory = root/'cog/light_classes'/datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        directory.mkdir(parents=True)
+        method = dict(method, preserved_reference_snapshot=str(Path(method_file).resolve()))
+        (directory/'method.json').write_text(json.dumps(method, ensure_ascii=False, indent=2), encoding='utf-8')
     else:
         breaks, sample_count = choose_thresholds(assets, reference_year)
         directory = root/'cog/light_classes'/datetime.now().strftime('%Y%m%d_%H%M%S_%f')
@@ -217,12 +241,24 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
     reused = 0
     for i, row in enumerate(assets, 1):
         target = directory/f"{row['province_code']}_VIIRS_{row['year']}_{row['month']:02}_classes.tif"
-        if resume_dir is not None and target.exists():
+        candidate = registered.get((row['province_code'], row['year'], row['month']))
+        if candidate and Path(candidate).is_file():
+            with rasterio.open(candidate) as old:
+                tags = old.tags()
+                if (Path(tags.get('SOURCE_IMAGE', '')).resolve() == Path(row['path']).resolve()
+                        and json.loads(tags.get('THRESHOLDS', 'null')) == breaks
+                        and tags.get('REFERENCE_YEAR') == str(reference_year)):
+                    target = Path(candidate)
+        if (resume_dir is not None or candidate) and target.exists():
             reused += 1
         else:
             classify_image(row['path'], target, breaks, reference_year)
         # Đối chiếu mã lớp từng pixel với ảnh nguồn kể cả khi dùng lại COG cũ.
-        checked = saved_areas(target, row['path'], breaks, reference_year, details=True)
+        weights = None
+        if fractional:
+            with rasterio.open(row['path']) as source:
+                weights = area_model.weights(row['province_code'], source)
+        checked = saved_areas(target, row['path'], breaks, reference_year, details=True, area_weights=weights)
         areas = checked['areas']
         key = (row['province_code'], row['year'], row['month'])
         area, area_source = denominators[key]
@@ -230,17 +266,23 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
         valid_pct = 100*valid_area/area if area is not None else None
         lit_area = sum(areas[2:])
         lit_pct = 100*lit_area/area if area is not None and checked['valid_pixels'] else None
+        class_percentages = [100*a/area if area is not None and checked['valid_pixels'] else None for a in areas]
+        if fractional:
+            from .fractional_area import percent_area
+            valid_pct = percent_area(valid_area, area)
+            lit_pct = percent_area(lit_area, area) if checked['valid_pixels'] else None
+            class_percentages = [percent_area(a, area) if checked['valid_pixels'] else None for a in areas]
         validation = 'no_valid_pixels' if not checked['valid_pixels'] else 'passed'
         summary = dict(province_code=key[0], year=key[1], month=key[2], area_km2=area,
                        area_source=area_source, valid_pixels=checked['valid_pixels'],
                        nodata_pixels=checked['nodata_pixels'], valid_area_km2=valid_area,
                        valid_area_pct=valid_pct, lit_area_km2=lit_area, lit_area_pct=lit_pct,
                        area_balance_error_km2=checked['area_balance_error_km2'], validation_status=validation,
-                       reference_year=reference_year, method_version=METHOD_VERSION,
-                       class_area_pcts=json.dumps([100*a/area if area is not None and checked['valid_pixels'] else None for a in areas]))
+                       reference_year=reference_year, method_version=version,
+                       class_area_pcts=json.dumps(class_percentages))
         summaries.append(tuple(summary.values()))
         summary_report.append(dict(summary, coverage_note='missing_province_area' if area is None else
-                                   'coverage_above_polygon' if valid_pct > 100 else 'intersecting_pixel',
+                                   'coverage_above_polygon' if valid_pct > 100 else 'fractional_intersection' if fractional else 'intersecting_pixel',
                                    source_path=row['path'], class_path=str(target)))
         for index, area in enumerate(areas):
             records.append((row['province_code'], row['year'], row['month'], index,
@@ -250,24 +292,25 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None):
                                      class_index=index, lower_bound=0 if index == 0 else breaks[index-1],
                                      upper_bound=breaks[index] if index < 4 else None,
                                      class_area_km2=area,
-                                     class_area_pct=100*area/summary['area_km2']
-                                     if summary['area_km2'] is not None and checked['valid_pixels'] else None,
+                                     class_area_pct=class_percentages[index],
                                      area_km2=summary['area_km2'], valid_area_km2=valid_area,
                                      unit='nW/cm²/sr', reference_year=reference_year,
-                                     method_version=METHOD_VERSION, validation_status=validation))
+                                     method_version=version, validation_status=validation))
         paths.append((row['province_code'], row['year'], row['month'], 'classes', str(target), 'VIIRS', '["light_class"]'))
         if i % 100 == 0:
             print(f'Đã kiểm tra/xử lý {i}/{len(assets)} ảnh (dùng lại {reused})', flush=True)
     write_report(directory/'light_class_areas.csv', class_report)
     write_report(directory/'light_class_validation.csv', summary_report)
     # Giữ method gốc khi tiếp tục; nhật ký kiểm chứng có phiên bản riêng.
-    report = dict(method_version=METHOD_VERSION, images=len(assets), reused_images=reused,
+    report = dict(method_version=version, images=len(assets), reused_images=reused,
                   empty_images=sum(r['valid_pixels'] == 0 for r in summary_report),
                   missing_province_area=sum(r['area_km2'] is None for r in summary_report),
                   coverage_above_100=sum((r['valid_area_pct'] or 0) > 100 for r in summary_report),
                   max_area_balance_error_km2=max(abs(r['area_balance_error_km2']) for r in summary_report),
                   breaks=breaks, reference_year=reference_year,
-                  boundary_rule='source_intersecting_pixel', area_method='calculate_ntl.pixel_area_km2',
+                  boundary_rule='pixel_polygon_intersection' if fractional else 'source_intersecting_pixel',
+                  area_method='pixel_polygon_intersection_epsg6933_v1' if fractional else 'calculate_ntl.pixel_area_km2',
+                  boundary_sha256=area_model.metadata['sha256'] if fractional else None,
                   checks=['threshold_values', 'source_mask', 'nodata_255', 'class_area_balance'],
                   completed_at=datetime.now().isoformat())
     (directory/'validation_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -292,16 +335,28 @@ def main():
     parser.add_argument('--db', type=Path, default=Path(__file__).with_name('vngis.db'))
     parser.add_argument('--reference-year', type=int, default=2020)
     parser.add_argument('--areas', type=Path, help='CSV province_areas.csv của phần A để chỉ định mẫu số tự nhiên.')
+    parser.add_argument('--fractional-area', action='store_true', help='Diện tích phần giao pixel–tỉnh trong EPSG:6933.')
+    parser.add_argument('--boundaries', type=Path)
+    parser.add_argument('--boundary-metadata', type=Path)
+    parser.add_argument('--method-file', type=Path, help='Giữ ngưỡng của snapshot tham chiếu đã chọn, tạo báo cáo mới.')
+    parser.add_argument('--reuse-registered', action='store_true', help='Dùng COG đã đăng ký nếu đúng nguồn/ngưỡng.')
     resume = parser.add_mutually_exclusive_group()
     resume.add_argument('--resume-dir', type=Path, help='Thư mục phân lớp đã có method.json.')
     resume.add_argument('--resume-latest', action='store_true', help='Dùng lại lượt phân lớp mới nhất.')
     args = parser.parse_args()
+    if (args.resume_dir or args.resume_latest) and args.method_file:
+        parser.error('--method-file tạo lượt mới; không dùng cùng tùy chọn resume.')
     if args.resume_latest:
         candidates = sorted(p.parent for p in (args.root/'cog/light_classes').glob('*/method.json'))
         if not candidates:
             parser.error('Không tìm thấy lượt phân lớp cũ có method.json.')
         args.resume_dir = candidates[-1]
-    print(json.dumps(build(args.root, args.db, args.reference_year, args.resume_dir, args.areas), ensure_ascii=False, indent=2))
+    area_model = None
+    if args.fractional_area:
+        from .fractional_area import load_area_model
+        area_model = load_area_model(args.root, args.boundaries, args.boundary_metadata)
+    print(json.dumps(build(args.root, args.db, args.reference_year, args.resume_dir, args.areas,
+                           area_model, args.method_file, args.reuse_registered), ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

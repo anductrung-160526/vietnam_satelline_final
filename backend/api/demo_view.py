@@ -111,7 +111,8 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         sample = [dict(r, grdp=r['grdp_'+price]) for r in rows if r['paired']]
         fits[price] = do_co_gian(sample, gia_so_sanh=price == 'so_sanh')
     warnings = []
-    warnings.append('Diện tích sáng và độ phủ đang ước tính theo toàn bộ pixel giao biên, chưa nghiệm thu độ chính xác diện tích. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
+    if any(r['area_method'] == 'whole_pixel_approximation' for r in rows):
+        warnings.append('Có kết quả diện tích dùng toàn bộ pixel giao biên; cần tính lại theo phần giao pixel–tỉnh. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
     if any(r['image_quality_flags'] for r in rows):
         warnings.append('Kết quả ghép có cờ chất lượng ảnh; xem cột chất lượng và CSV. Biến động độ phủ có thể ảnh hưởng chỉ số ánh sáng.')
     if any(r['is_simulated'] for r in rows):
@@ -174,6 +175,16 @@ def province_view(code, year, month):
         ne = saved.get((code, year, month, 'night_economy', 'so_sanh'), {})
         classes = []
         class_summary = None
+        observation_support = None
+        recovery_audit = None
+        if month and has_table(connection, 'monthly_recovery_audit'):
+            found_recovery = connection.execute('SELECT payload FROM monthly_recovery_audit WHERE province_code=? AND year=? AND month=?', (code,year,month)).fetchone()
+            if found_recovery:
+                recovery_audit = json.loads(found_recovery['payload'])
+        if has_table(connection, 'annual_observation_support'):
+            found_support = connection.execute('SELECT payload FROM annual_observation_support WHERE province_code=? AND year=?', (code,year)).fetchone()
+            if found_support:
+                observation_support = json.loads(found_support['payload'])
         if has_table(connection, 'light_class'):
             classes = [dict(r) for r in connection.execute(
                 'SELECT * FROM light_class WHERE province_code=? AND year=? AND month=? ORDER BY class_index',
@@ -224,5 +235,7 @@ def province_view(code, year, month):
             'fields': fields, 'raw_asset': raw_asset, 'processed_asset': processed_asset,
             'classes': classes, 'class_asset': asset(code, year, month, 'classes'), 'is_simulated': simulated,
             'class_summary': class_summary,
+            'observation_support': observation_support,
+            'recovery_audit': recovery_audit,
             'class_status': 'ready' if len(classes) == 5 else 'missing',
             'class_reason': '' if len(classes) == 5 else 'Chưa có kết quả năm mức sáng và ngưỡng đã cấu hình cho tỉnh/mốc này.'}

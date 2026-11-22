@@ -102,7 +102,7 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 
 ### C. Tài liệu định nghĩa biến và công thức
 
-Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau phần E, danh mục có 75 mục: 16 Raw (gồm 5 định danh) và 59 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 75 biến độc lập hoặc 75 cột đã có trong một file.
+Đã tạo [bản Word](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.docx) và [nguồn giải thích/công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md). Sau sửa dữ liệu v9, danh mục có 84 mục: 16 Raw (gồm 5 định danh) và 68 Processed. Ba công thức diện tích/độ phủ trước đây ở mức đề xuất đã triển khai ở phần D. Đây là số mục từ điển gồm metadata/tham số, không phải 84 biến độc lập hoặc 84 cột đã có trong một file.
 
 - [x] Cập nhật Data Dictionary theo code tính, bộ nạp, SQLite và API; ghi rõ khác biệt CSV/app, trường thiếu dữ liệu và công thức chưa có đầu ra.
 - [x] Định nghĩa diện tích từng lớp, tỷ lệ và metadata ngưỡng; đã cập nhật tỷ lệ lớp/độ phủ theo đầu ra phần D.
@@ -134,7 +134,8 @@ Tiến độ và lệnh chạy trên máy demo: [CHUAN_BI_DEMO_PHAN_A.md](CHUAN_
 - [x] Xuất COG, CSV diện tích, CSV/JSON kiểm chứng, ngưỡng và phiên bản; API tải CSV đúng tỉnh/mốc đang chọn.
 - [x] Kiểm tra tổng diện tích lớp với diện tích hợp lệ; giữ số/cờ khi độ phủ trên 100% do pixel giao biên.
 - [x] Đã nhận đủ bốn file kết quả Windows ngày 22/11, đối chiếu đủ 4.095 khóa và 20.475 dòng lớp; tổng lớp, tỷ lệ và metadata khớp. Ngưỡng thật: 0,5; 1,5; 3,0850000381469727; 17,459999084472656. Báo cáo: [DOI_CHIEU_KET_QUA_PHAN_D.md](DOI_CHIEU_KET_QUA_PHAN_D.md).
-- [ ] Nghiệm thu dữ liệu thật: còn 57 ảnh tháng rỗng (49 tại 07/2022), 315/315 ảnh năm có độ phủ trên 100%, 20 mốc tỷ lệ diện tích sáng trên 100%. Cần đối chiếu raster/ranh giới, hoàn thiện diện tích giao biên và rà soát chất lượng chuỗi tháng; chưa coi passed kỹ thuật là đã đạt độ chính xác địa lý.
+- [x] Đã triển khai v9: diện tích phần giao EPSG:6933, đối chiếu/sửa tháng theo raw và FILTER, bản đồ số tháng hợp lệ, database tạm trước xuất bản; lệnh chạy: [SUA_DIEN_TICH_VA_THANG_THIEU.md](SUA_DIEN_TICH_VA_THANG_THIEU.md).
+- [ ] Nghiệm thu lại sau chạy v9 trên Windows. Kết quả cũ trước sửa còn 57 ảnh tháng rỗng (49 tại 07/2022), 315/315 ảnh năm có độ phủ trên 100%, 20 mốc tỷ lệ diện tích sáng trên 100%. Cần đối chiếu raster/ranh giới, hoàn thiện diện tích giao biên và rà soát chất lượng chuỗi tháng; chưa coi passed kỹ thuật là đã đạt độ chính xác địa lý.
 
 **Đạt khi:** phân lớp có thể tái lập, tổng diện tích được kiểm tra và bản đồ sử dụng đúng bộ ngưỡng đã tính.
 
