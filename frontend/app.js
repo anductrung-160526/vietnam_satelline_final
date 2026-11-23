@@ -49,16 +49,15 @@ const khongDau = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().trim();
 
 /* ===================== chuyển màn ===================== */
-const MAN = {anh:'man-anh', chiso:'man-chiso', kinhte:'man-kinhte',spatial:'man-spatial'};
+const MAN = {anh:'man-anh', chiso:'man-chiso', kinhte:'man-kinhte'};
 function chuyenMan(ten){
   document.querySelectorAll('.thanh-man button').forEach(b =>
     b.setAttribute('aria-selected', String(b.dataset.man === ten)));
   for(const [k, id] of Object.entries(MAN)) $(id).hidden = k !== ten;
-  for(const id of ['context-year','context-month'])$(id).closest('label').hidden=ten==='spatial';
-  if(ten!=='spatial')syncContext();
+  document.querySelector('.shared-context').hidden=ten==='kinhte';
+  syncContext();
   if(ten === 'anh' && banDo) banDo.resize();
-  if(ten === 'kinhte') requestAnimationFrame(() => economyChart?.resize());
-  if(ten === 'spatial') refreshSpatial();
+  if(ten === 'kinhte') dungManKinhTe();
   /* ECharts không đo được khung đang ẩn, nên phải vẽ lại sau khi màn hiện ra. */
   if(ten === 'chiso' && !$('o-chart').hidden) requestAnimationFrame(veDuong);
 }

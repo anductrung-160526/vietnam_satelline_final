@@ -184,3 +184,14 @@ def test_changed_sql_statistics_cannot_be_published_as_same_f_snapshot(spatial_f
     with pytest.raises(ValueError,match='SOL trong SQLite'):
         build(root,report,db,2020,2021,99,publish=True,area_model=model,expected_count=4)
     assert db.read_bytes()==before
+
+
+def test_moran_can_show_single_year_of_existing_run(spatial_fixture):
+    root,db,report,model=spatial_fixture
+    result=build(root,report,db,2020,2021,99,7,publish=True,area_model=model,expected_count=4)
+    client=TestClient(app)
+    data=client.get('/api/spatial?year_start=2021&year_end=2021').json()
+    assert data['status']=='ready' and data['moran']==[dict(year=2021,moran_i=result['moran'][1]['moran_i'])]
+    csv_response=client.get('/api/spatial/file',params=dict(kind='moran',year_start=2021,year_end=2021,run_id=result['run_id'],expected_snapshot=result['dataset_id']))
+    assert csv_response.status_code==200
+    assert len(csv_response.content.decode('utf-8-sig').splitlines())==2

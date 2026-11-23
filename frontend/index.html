@@ -17,7 +17,6 @@
       <button role="tab" aria-selected="true" data-man="anh">Ảnh đêm</button>
       <button role="tab" aria-selected="false" data-man="chiso">Chỉ số đêm</button>
       <button role="tab" aria-selected="false" data-man="kinhte">Chỉ số kinh tế đêm</button>
-      <button role="tab" aria-selected="false" data-man="spatial">Phân tích không gian</button>
     </nav>
     <span id="trang-thai" class="pill">đang tải…</span>
   </header>
@@ -96,18 +95,12 @@
   <!-- ===================== MÀN 3 — CHỈ SỐ KINH TẾ ĐÊM ===================== -->
   <div class="than rong" id="man-kinhte" hidden>
     <aside class="loc" id="loc-kinhte"></aside>
-    <section class="vung-bang" id="vung-kinhte"></section>
-  </div>
-  <div class="than rong" id="man-spatial" hidden>
-    <aside class="loc" id="loc-spatial">
-      <label for="spatial-start">Năm đầu · VIIRS</label><select id="spatial-start"></select>
-      <label for="spatial-end">Năm cuối · VIIRS</label><select id="spatial-end"></select>
-      <button id="spatial-load" type="button">Xem phân tích</button>
-      <p>Moran dùng dữ liệu theo năm của các tỉnh đủ điều kiện.</p>
-    </aside>
-    <section class="vung-bang"><div id="spatial-results" aria-live="polite"></div>
-
-
+    <section class="vung-bang" id="vung-kinhte">
+      <div id="economy-results" aria-live="polite"></div>
+      <details id="economy-moran" class="economy-moran">
+        <summary>Tự tương quan không gian · Moran’s I</summary>
+        <div id="spatial-results" aria-live="polite"></div>
+      </details>
     </section>
   </div>
 </div>

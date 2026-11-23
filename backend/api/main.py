@@ -567,7 +567,7 @@ def demo_data_csv(moc: str='2024',province_code: str='',chi_so: str='',expected_
 
 @app.get('/api/spatial')
 def spatial(year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024,ge=2004,le=2025)):
-    if year_start>=year_end:raise HTTPException(400,'Năm đầu phải nhỏ hơn năm cuối.')
+    if year_start>year_end:raise HTTPException(400,'Năm đầu phải nhỏ hơn hoặc bằng năm cuối.')
     from .spatial_view import read_spatial
     result=read_spatial(year_start,year_end)
     if result['status']!='ready':return {k:result[k] for k in ('status','snapshot_id','message','available_pairs') if k in result}

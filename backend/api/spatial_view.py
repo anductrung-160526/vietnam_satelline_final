@@ -15,7 +15,8 @@ def read_spatial(year_start,year_end):
         reports=[json.loads(row[0]) for row in rows]
         pairs=sorted({(r['year_start'],r['year_end']) for r in reports})
         missing['available_pairs']=pairs
-        report=next((r for r in reports if r['year_start']==year_start and r['year_end']==year_end),None)
+        eligible=[r for r in reports if r['year_start']<=year_start and r['year_end']>=year_end]
+        report=next((r for r in eligible if r['dataset_id']==snapshot),eligible[0] if eligible else None)
         if report is None:return missing
         reason=None
         if report.get('version')!=1:reason='Phiên bản P1 không được code hiện tại hỗ trợ; cần cập nhật code.'
@@ -29,4 +30,5 @@ def read_spatial(year_start,year_end):
         if reason:return dict(status='stale',snapshot_id=snapshot,message=reason,available_pairs=pairs)
         if any(signature_status(record)!='ready' for record in report['files'].values()):
             return dict(status='stale',snapshot_id=snapshot,message='File kết quả P1 đã mất/đổi; cần tính lại.',available_pairs=pairs)
-    return dict(report,status='ready',snapshot_id=snapshot,available_pairs=pairs)
+    return dict(report,status='ready',snapshot_id=snapshot,available_pairs=pairs,
+                moran=[r for r in report['moran'] if year_start<=r['year']<=year_end])
