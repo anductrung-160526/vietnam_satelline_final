@@ -148,7 +148,7 @@ function renderClassSummary(data){
 function renderDemoLayer(){
   const mode = $('layer-mode').value;
   const data = demoDetails;
-  let item = mode === 'processed' ? data?.processed_asset : mode === 'classes' ? data?.class_asset : data?.raw_asset;
+  let item = mode === 'classes' ? data?.class_asset : data?.processed_asset;
   const unavailable=item?.available===false ? item.reason : '';
   if(item?.available===false)item=null;
   const legacyMoc = cacMoc.find(m => maMoc(m) === contextPeriod());
@@ -156,17 +156,17 @@ function renderDemoLayer(){
   const tileTemplate = data?.tiles || thongTinNen?.tiles;
   $('nut-tai-anh').disabled = demoSnapshotChanged || (!item && !(mode === 'processed' && legacyMoc && !unavailable));
   let reason = '';
-  if(!demoSelection.code) reason = mode === 'processed' ? '' : 'Chọn một tỉnh để xem băng gốc hoặc năm mức sáng.';
+  if(!demoSelection.code) reason = mode === 'processed' ? '' : 'Chọn một tỉnh để xem phân vùng cường độ ánh sáng.';
   else if(!item) reason = unavailable || (mode === 'classes' ? (data?.class_reason || 'Chưa có kết quả phân lớp.') : 'Chưa đăng ký ảnh nguồn ở mốc này.');
   if(!tileTemplate) reason = 'Chưa có dịch vụ ô bản đồ; vẫn có thể xem bảng và tải GeoTIFF.';
-  $('layer-status').textContent = reason || (mode === 'cf_cvg' ? 'Raw · số lượt quan sát sạch mây/pixel.' : mode === 'avg_rad' ? 'Raw · bức xạ của sản phẩm đầu vào.' : mode === 'classes' ? 'Processed · năm mức sáng, NoData được để trống.' : 'Processed · ảnh bức xạ đã xử lý.');
+  $('layer-status').textContent = reason || (mode === 'classes' ? 'Phân vùng theo ngưỡng cường độ ánh sáng; vùng không có dữ liệu được để trống.' : 'Phân bố bức xạ ánh sáng ban đêm.');
   if(!banDo || !banDo.isStyleLoaded()) return;
   if(!demoSelection.code && mode === 'processed') return; // Giữ ảnh toàn quốc của app cũ.
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
   if(banDo.getSource('anh-dem')) banDo.removeSource('anh-dem');
   if(!item || !tileTemplate){ dongThangMau(); return; }
   let suffix = mode === 'classes' ? '&nodata=255&resampling=nearest&colormap=' + encodeURIComponent(JSON.stringify(Object.fromEntries(CLASS_COLORS.map((c,i) => [i,[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16),255]]))))
-    : `&bidx=${mode === 'cf_cvg' ? 2 : 1}&rescale=0,${mode === 'cf_cvg' ? 20 : 60}&colormap_name=inferno&nodata=-9999`;
+    : '&bidx=1&rescale=0,60&colormap_name=inferno&nodata=-9999';
   const feature = ranhGioi?.features.find(f => String(f.properties.province_code).padStart(2,'0') === demoSelection.code);
   const source = {type:'raster',tileSize:256,tiles:[tileTemplate + encodeURIComponent(item.export_path || item.path) + suffix]};
   if(feature) source.bounds = bienDo(feature).flat();
@@ -174,15 +174,14 @@ function renderDemoLayer(){
   banDo.addLayer({id:'anh-dem',type:'raster',source:'anh-dem',paint:{'raster-opacity':1,'raster-resampling':mode === 'classes' ? 'nearest' : 'linear'}}, banDo.getLayer('mat-na-lop') ? 'mat-na-lop' : undefined);
   if(mode === 'classes'){
     $('thang-mau').style.display = '';
-    $('thang-mau').innerHTML = '<span>Năm mức sáng · xem ngưỡng và diện tích ở cột trái</span>';
+    $('thang-mau').innerHTML = '<span>Phân vùng cường độ ánh sáng · ngưỡng và diện tích ở cột trái</span>';
   }else{
-    moThangMau({source: mode === 'cf_cvg' ? 'VIIRS' : data?.source || item.source});
-    if(mode === 'cf_cvg') $('thang-mau').innerHTML = '<span>0 → 20 lượt · thang hiển thị, không phải giới hạn dữ liệu</span>';
+    moThangMau({source: data?.source || item.source});
   }
 }
 function downloadSelectedImage(){
   const mode = $('layer-mode').value;
-  const kind = mode === 'classes' ? 'classes' : mode === 'processed' ? 'processed' : 'raw';
+  const kind = mode === 'classes' ? 'classes' : 'processed';
   const item = demoDetails?.[kind === 'raw' ? 'raw_asset' : kind === 'classes' ? 'class_asset' : 'processed_asset'];
   if(demoSnapshotChanged || item?.available===false)return;
   if(demoSelection.code && item){
