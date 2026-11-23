@@ -8,6 +8,8 @@ Tab **Chỉ số đêm** trình bày đặc trưng bức xạ và điểm ảnh.
 
 `predicted_gdp` là **GRDP ước lượng từ ánh sáng**, không gọi là dự báo tương lai hoặc GDP kinh tế đêm. `light_gdp_elasticity` là **Tỷ số tăng trưởng ánh sáng–GRDP**, không đồng nhất với hệ số β của hồi quy mức log–log và không diễn giải như quan hệ nhân quả.
 
+`predicted_gdp` vẫn được tính, giữ trong API và CSV; không hiển thị trong bảng Dữ liệu thống kê hoặc bộ chọn cột của bảng. Danh mục đầy đủ bên dưới vẫn giữ định nghĩa và công thức của chỉ số này.
+
 ## Danh mục hiển thị
 
 Khoá dòng: `province_code`, `province_name`, `year`, `month`; tháng bằng 0 là dòng năm. Các khoá đứng trước 25 trường dưới đây: 2 Raw, 23 Processed. Trong mỗi nhóm, các biến có cùng cách đo lường đặt liền nhau. `U` là DN với DMSP hoặc nW/cm²/sr với VIIRS; chỉ so sánh trong cùng thang đo. Raw là dữ liệu đầu vào của dự án; tổng và thống kê tính từ ảnh, kể cả `sol_raw`, đều là Processed.

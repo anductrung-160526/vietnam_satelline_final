@@ -259,7 +259,8 @@ async function dungManKinhTe(){
     const bases=basis==='compare'?['so_sanh','hien_hanh']:[selected];
     const label=b=>b==='so_sanh'?'Giá so sánh':'Giá hiện hành';
     const scope=code ? danhSachTinh.find(p=>p.province_code===code)?.province_name || code : 'Toàn bộ tỉnh';
-    const allColumns=data.columns;
+    // GRDP ước lượng vẫn được tính và xuất CSV, nhưng không nằm trong bảng/bộ chọn cột.
+    const allColumns=data.columns.filter(c=>c.field!=='predicted_gdp');
     const regression=data.regression_rows;
     if(economySelectedFields===null)economySelectedFields=new Set(allColumns.map(c=>c.field));
     const visible=allColumns.filter(c=>economySelectedFields.has(c.field));
@@ -270,7 +271,7 @@ async function dungManKinhTe(){
     }
     $('economy-indicators').innerHTML=families.join('');
     $('economy-indicators').onchange=event=>{const field=event.target.dataset.economyField;if(!field)return;event.target.checked?economySelectedFields.add(field):economySelectedFields.delete(field);dungManKinhTe();};
-    if(visible.length)params.set('fields',visible.map(c=>c.field).join(','));
+    if(visible.length)params.set('fields',data.columns.filter(c=>c.field==='predicted_gdp' || economySelectedFields.has(c.field)).map(c=>c.field).join(','));
     const columns=[{field:'province_name',name:'Tỉnh',stage:'identity'},{field:'year',name:'Năm',stage:'identity'},{field:'month',name:'Tháng',stage:'identity'},...visible];
     const cell=(r,f)=>f==='province_name'?thoat(r[f]):['year','month'].includes(f)?String(r[f]??0):dinhDang(r[f],2)??'—';
     const groups=[['identity','Định danh'],['Raw','Dữ liệu đầu vào · Raw'],['Processed','Chỉ số tính toán · Processed']].map(([stage,label])=>{const count=columns.filter(c=>c.stage===stage).length;return count?`<th colspan="${count}" class="economy-group-${stage}">${label}</th>`:'';}).join('');
