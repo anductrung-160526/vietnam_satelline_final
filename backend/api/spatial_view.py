@@ -9,7 +9,7 @@ from backend.data.dataset import signature_status,snapshot_status
 def read_spatial(year_start,year_end):
     with store.connect() as connection:
         connection.execute('BEGIN');snapshot=current_id(connection)
-        missing=dict(status='missing',snapshot_id=snapshot,message='Chưa có kết quả P1 cho cặp năm này. Chạy bộ tính P1 trên dữ liệu đã kiểm chứng F.')
+        missing=dict(status='missing',snapshot_id=snapshot,message='Database đang mở chưa có kết quả P1 cho cặp năm này. Nếu đã chạy thành công, kiểm tra database hoặc phục hồi bản đã kiểm chứng trước khi tính lại.')
         if not has_table(connection,'spatial_run'):return missing
         rows=connection.execute('SELECT payload FROM spatial_run ORDER BY rowid DESC').fetchall()
         reports=[json.loads(row[0]) for row in rows]

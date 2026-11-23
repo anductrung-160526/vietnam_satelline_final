@@ -345,7 +345,7 @@ async function napMoc(buocMoi, preferred = null){
   document.querySelectorAll('.buoc').forEach(b =>
     b.classList.toggle('dang-chon', b.dataset.buoc === buoc));
   let data;
-  try{ data = await layJSON(`/api/basemap?buoc=${buocMoi}`); }
+  try{ data = await layJSON(`/api/basemap?buoc=${buocMoi}${demoSelection.code ? '&province_code='+encodeURIComponent(demoSelection.code):''}`); }
   catch{ data = null; }
   if(request !== timelineRequest) return;
   thongTinNen = data;
@@ -357,11 +357,7 @@ async function napMoc(buocMoi, preferred = null){
     chon.innerHTML = '<option>— chưa có ảnh —</option>';
     chon.disabled = truot.disabled = true;
     doiAnhNen(-1);
-    nhacThoiGian(buoc === 'thang'
-      ? 'Chưa có ảnh theo tháng. Chạy: '
-        + '<code>python -m backend.data.build_monthly_cogs --root E:\\SatelliteData</code>'
-      : 'Chưa có ảnh theo năm. Chạy: '
-        + '<code>python -m backend.data.build_cogs --root E:\\SatelliteData --kinds VIIRS DMSP</code>');
+    nhacThoiGian('Chưa có sổ ảnh cho mốc này trong database đang mở. Kiểm tra dữ liệu đã nạp hoặc phục hồi bản P1 đã kiểm chứng; không cần tạo lại ảnh ngay.');
     return;
   }
   chon.disabled = truot.disabled = false;

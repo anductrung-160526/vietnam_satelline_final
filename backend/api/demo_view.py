@@ -29,15 +29,15 @@ def prices(connection, year_from, year_to, code=None):
         for row in connection.execute('SELECT * FROM economy_prices WHERE '+where, args):
             result[(row['province_code'], row['year'], row['price_basis'])] = dict(row)
     # Tương thích DB cũ; không lấy số cũ ghi đè dòng mới, kể cả dòng mới có giá trị NULL.
-    for row in connection.execute('SELECT * FROM economy WHERE '+where, args):
-        basis = row['grdp_price_basis']
-        if basis not in ('so_sanh', 'hien_hanh'):
-            continue
-        key = (row['province_code'], row['year'], basis)
-        if key not in result:
-            result[key] = dict(row)
-            result[key]['grdp'] = row['grdp'] if row['grdp'] is not None else row['gdp']
-            result[key]['unit'] = 'unknown'
+    if has_table(connection,'economy'):
+        for record in connection.execute('SELECT * FROM economy WHERE '+where,args):
+            row=dict(record);basis=row.get('grdp_price_basis')
+            for target in ('so_sanh','hien_hanh'):
+                explicit=row.get('grdp_'+target)
+                value=explicit if explicit is not None else (row.get('grdp') if row.get('grdp') is not None else row.get('gdp')) if basis==target else None
+                if value is None and row.get('population') is None:continue
+                key=(row['province_code'],row['year'],target)
+                if key not in result:result[key]=dict(row,grdp=value,price_basis=target,unit=row.get('unit') or 'unknown')
     return result
 
 
@@ -71,7 +71,7 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         catalog = {r['province_code']: dict(r) for r in connection.execute('SELECT * FROM province')}
         versions=snapshot_status(connection);provenance=provenance_rows(connection)
         image_info={key:observation_info(connection,*key,0,versions,provenance) for key in night}
-    keys = sorted({k[:2] for k in data})
+    keys = sorted({k[:2] for k in data} | {k for k in night if not code or k[0]==code})
     rows = []
     for province, year in keys:
         a = data.get((province, year, 'so_sanh'), {})

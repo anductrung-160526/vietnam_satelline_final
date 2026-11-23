@@ -264,6 +264,12 @@ def indicators():
     out = []
     with connect() as connection:
         for entry in INDICATORS:
+            if entry['bang']=='economy_prices':
+                from .demo_view import prices
+                records=[(c,y,r) for (c,y,b),r in prices(connection,2004,2025).items() if b==entry['price_basis'] and r.get('population' if entry['ma']=='population' else 'grdp') is not None]
+                years=[y for c,y,r in records]
+                out.append(dict(entry,so_tinh=len({c for c,y,r in records}),nam_tu=min(years) if years else None,nam_den=max(years) if years else None))
+                continue
             exists=connection.execute("SELECT 1 FROM main.sqlite_master WHERE name=?",(entry['bang'],)).fetchone()
             column=entry.get('column',entry['ma'])
             where=f'"{column}" IS NOT NULL';args=()
@@ -351,6 +357,15 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
                 bang = entry.get('bang_thang') if loai == 'thang' else entry.get('bang')
                 if not bang:
                     continue
+                if bang=='economy_prices':
+                    from .demo_view import prices
+                    yearly=prices(connection,year,year)
+                    for (code,_,basis),item in yearly.items():
+                        if basis!=entry['price_basis']:continue
+                        value=item.get('population' if entry['ma']=='population' else 'grdp')
+                        o[(entry['ma'],code,ten_moc(loai,year,month))]=value
+                        if item.get('source'):nguon.setdefault(code,set()).add(item['source'])
+                    continue
                 co_co = bang in ('ntl_annual', 'ntl_monthly')
                 cot_co = ',obs_status' if co_co else ",''"
                 if loai == 'thang':
@@ -361,14 +376,6 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
                     cau = (f'SELECT province_code,"{entry.get("column",entry["ma"])}",source{cot_co} FROM {bang} '
                            f'WHERE year=?' + ('' if bang != 'ntl_monthly' else ' AND month=0'))
                     tham = (year,)
-                if bang=='economy_prices':
-                    exists=connection.execute("SELECT 1 FROM sqlite_master WHERE name='economy_prices'").fetchone()
-                    if exists:
-                        cau+=' AND price_basis=?';tham=(*tham,entry['price_basis'])
-                    else:
-                        column='population' if entry['ma']=='population' else 'COALESCE(grdp,gdp)'
-                        cau=f"SELECT province_code,{column},source,'' FROM economy WHERE year=? AND grdp_price_basis=?"
-                        tham=(year,entry['price_basis'])
                 for ma_tinh, gia_tri, src, flag in connection.execute(cau, tham):
                     khoa = (entry['ma'], ma_tinh, ten_moc(loai, year, month))
                     o[khoa] = gia_tri

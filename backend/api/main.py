@@ -72,7 +72,8 @@ def health():
         count = len(store.provinces())
     except FileNotFoundError as error:
         return JSONResponse({'ok': False, 'ly_do': str(error)}, status_code=503)
-    return {'ok': True, 'so_tinh': count, 'db': str(store.database_path()),
+    from backend.data.database_status import inspect_database
+    return {'ok': True, 'so_tinh': count, 'data_status':inspect_database(store.database_path()), 'db': str(store.database_path()),
             'thu_muc_giao_dien': str(WEB), 'dau_van_giao_dien': dau_van_giao_dien(),
             'van_tay_tung_tep': van_tay_tung_tep()}
 
@@ -179,14 +180,27 @@ def get_coverage():
 
 
 @app.get('/api/basemap')
-def basemap(buoc: str = Query('nam', description="'nam' hoặc 'thang'")):
+def basemap(buoc: str = Query('nam', description="'nam' hoặc 'thang'"),province_code: str=''):
     """Danh sách mốc thời gian có ảnh nền đêm, cho thanh trượt trên bản đồ."""
     if buoc not in ('nam', 'thang'):
         raise HTTPException(400, "buoc phải là 'nam' hoặc 'thang'")
     muc = store.cog_years('NTL', buoc)
+    steps=store.cac_buoc_thoi_gian('NTL')
+    if province_code:
+        from .provenance import has_table,available_asset
+        code=_code(province_code)
+        with store.connect() as connection:
+            if has_table(connection,'demo_asset'):
+                registered=[]
+                for row in connection.execute("SELECT year,month FROM demo_asset WHERE province_code=? AND kind='processed' ORDER BY year,month",(code,)):
+                    item=available_asset(connection,code,row['year'],row['month'],'processed')
+                    if item and item['available']:registered.append(dict(year=row['year'],month=row['month'],path=item['export_path'],source=item['source']))
+                if registered:
+                    muc=[r for r in registered if (r['month']==0)==(buoc=='nam')]
+                    steps={'nam':sum(r['month']==0 for r in registered),'thang':sum(r['month']>0 for r in registered)}
     # TiTiler 0.19 có {tileMatrixSetId} trong đường dẫn; thiếu đoạn này là 404 mọi ô bản đồ.
     return {'buoc': buoc,
-            'co_san': store.cac_buoc_thoi_gian('NTL'),
+            'co_san': steps,
             'nam': sorted({m['year'] for m in muc}),
             'chi_tiet': muc,
             'tiles': TILE_URL if _titiler_ready() else None,
@@ -519,6 +533,12 @@ def demo_dataset():
         datasets=snapshot_status(connection)
         row=connection.execute("SELECT value FROM demo_schema_meta WHERE key='version'").fetchone() if demo_view.has_table(connection,'demo_schema_meta') else None
     return dict(snapshot_id=demo_snapshot_id(),demo_schema_version=int(row[0]) if row else None,datasets=list(datasets.values()))
+
+
+@app.get('/api/demo/status')
+def demo_status():
+    from backend.data.database_status import inspect_database
+    return inspect_database(store.database_path())
 
 
 @app.get('/api/demo/data')

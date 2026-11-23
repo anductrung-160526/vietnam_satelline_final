@@ -59,7 +59,7 @@ def purge(db):
                 sql=f'DELETE FROM {table} WHERE province_code=? AND year=?';args=[code,year]
                 if 'month' in cols:sql+=' AND month=?';args.append(month)
                 count=connection.execute(sql,args).rowcount
-                if count:counts[table]=counts.get(table,0)+counts.get(table,0)+count
+                if count:counts[table]=counts.get(table,0)+count
         for (table,) in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall():
             if not table.replace('_','').isalnum():continue
             cols=[c[1] for c in connection.execute(f'PRAGMA table_info("{table}")')]

@@ -21,7 +21,7 @@ REPO = HERE.parent.parent
 
 # Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
 # tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
-# An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
+# DB còn chứa sổ ảnh và kết quả F/P1: migration phải giữ dữ liệu, không xóa file.
 SCHEMA_VERSION = 10
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
@@ -55,33 +55,36 @@ def load_provinces(connection):
 
 
 def mo(db):
-    """Mở cơ sở dữ liệu, dựng lại từ đầu nếu schema đã đổi.
-
-    Dựng lại là xoá sạch, nên mọi lối vào đều phải để lại một cơ sở dữ liệu dùng được:
-    danh mục 63 tỉnh luôn được nạp. Thiếu bước này thì chạy build_cogs sau khi đổi schema
-    sẽ xoá hết tỉnh và giao diện báo "0 tỉnh" — đã xảy ra thật.
-    """
-    path = Path(db)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    da_dung_lai = False
-    if path.exists():
-        thu = sqlite3.connect(path)
-        cu = thu.execute('PRAGMA user_version').fetchone()[0]
-        thu.close()
-        if cu != SCHEMA_VERSION:
-            print(f'  Cấu trúc bảng đổi ({cu} -> {SCHEMA_VERSION}): dựng lại {path.name}.')
-            print('  >>> Chỉ số đã nạp trước đó MẤT. Chạy lại:'
-                  ' python -m backend.data.build_indices --root <gốc dữ liệu>')
-            path.unlink()
-            da_dung_lai = True
-    connection = sqlite3.connect(path)
-    connection.executescript((HERE / 'schema.sql').read_text(encoding='utf-8'))
+    """Mở DB và thêm cột/bảng còn thiếu; không xóa dữ liệu khi đổi schema."""
+    path=Path(db);path.parent.mkdir(parents=True,exist_ok=True)
+    existed=path.is_file();connection=sqlite3.connect(path)
+    version=connection.execute('PRAGMA user_version').fetchone()[0]
+    if version>SCHEMA_VERSION:
+        connection.close();raise ValueError('Database có schema mới hơn code; cập nhật code trước.')
+    schema=(HERE/'schema.sql').read_text(encoding='utf-8')
+    if existed and version!=SCHEMA_VERSION:
+        from datetime import datetime
+        backup=path.with_name(path.name+'.backup_migration_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f'))
+        with sqlite3.connect(backup) as target:connection.backup(target)
+        print(f'  Sao lưu trước migration: {backup}')
+    # Dùng schema mẫu để tìm cột cần thêm. Giữ cả bảng/cột cũ, sổ ảnh và kết quả F/P1.
+    with sqlite3.connect(':memory:') as template:
+        template.executescript(schema)
+        for (table,) in template.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"):
+            present={r[1] for r in connection.execute(f'PRAGMA table_info("{table}")')}
+            if not present:continue
+            for cid,name,dtype,notnull,default,pk in template.execute(f'PRAGMA table_info("{table}")'):
+                if name in present:continue
+                if pk:connection.close();raise ValueError(f'Bảng {table} thiếu khóa {name}; cần migration riêng, không reset.')
+                definition=f'"{name}" {dtype}'
+                if default is not None:definition+=' DEFAULT '+default
+                connection.execute(f'ALTER TABLE "{table}" ADD COLUMN {definition}')
+    connection.executescript(schema)
     connection.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
     if connection.execute('SELECT COUNT(*) FROM province').fetchone()[0] == 0:
         load_provinces(connection)
         connection.commit()
-        if not da_dung_lai:
-            print('  Đã nạp danh mục 63 tỉnh.')
+        print('  Đã nạp danh mục 63 tỉnh.')
     return connection
 
 
@@ -242,6 +245,11 @@ def load_table(connection, root, table, candidates, monthly, repo_fallback=True)
 
 def build(root, db, repo_fallback=True):
     connection = mo(db)
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='demo_schema_meta'").fetchone():
+        active=connection.execute("SELECT value FROM demo_schema_meta WHERE key='current_dataset'").fetchone()
+        if active:
+            connection.close()
+            raise ValueError('Database đang dùng snapshot F/P1. Không nạp đè bằng build_indices; dùng load_demo/verify_demo hoặc recover_demo đúng bộ dữ liệu.')
     report = {'province': load_provinces(connection)}
     for table, (candidates, monthly) in SOURCES.items():
         report[table] = load_table(connection, root, table, candidates, monthly, repo_fallback)
