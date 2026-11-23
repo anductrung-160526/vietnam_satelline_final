@@ -783,7 +783,7 @@ class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
 
     def test_an_indicator_without_a_monthly_table_is_empty_on_a_monthly_period(self):
         body = self.client.get('/api/panel', params={
-            'chi_so': 'population', 'moc': '2024-02', 'province_code': '01'}).json()
+            'chi_so': 'grdp_so_sanh', 'moc': '2024-02', 'province_code': '01'}).json()
         self.assertEqual(body['dong'][0]['gia_tri'], [None])
 
     def test_a_malformed_period_is_rejected_not_guessed(self):
@@ -1004,7 +1004,7 @@ class GdpReadsTheColumnThatHasTheNumbers(unittest.TestCase):
 
     def test_no_monthly_table_is_declared(self):
         from backend.api import store
-        for ma in ('population', 'grdp_so_sanh', 'grdp_hien_hanh'):
+        for ma in ('grdp_so_sanh', 'grdp_hien_hanh'):
             with self.subTest(chi_so=ma):
                 self.assertIsNone(store.BY_CODE[ma].get('bang_thang'))
 
@@ -1015,12 +1015,11 @@ class GdpReadsTheColumnThatHasTheNumbers(unittest.TestCase):
             connection.execute(
                 'INSERT OR REPLACE INTO economy(province_code,year,population,grdp,'
                 'grdp_price_basis) VALUES(?,?,?,?,?)', ('01', 2024, 8_500_000, 1234.5, 'so_sanh'))
-        nam = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+        nam = client.get('/api/panel', params={'chi_so': 'grdp_so_sanh',
                                                'moc': '2024', 'province_code': '01'}).json()
         co = {d['chi_so']: d['gia_tri'][0] for d in nam['dong']}
-        self.assertEqual(co['population'], 8_500_000)
         self.assertEqual(co['grdp_so_sanh'], 1234.5, 'grdp phải được rót theo grdp_price_basis')
-        thang = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+        thang = client.get('/api/panel', params={'chi_so': 'grdp_so_sanh',
                                                  'moc': '2024-07', 'province_code': '01'}).json()
-        self.assertEqual([d['gia_tri'][0] for d in thang['dong']], [None, None],
+        self.assertEqual([d['gia_tri'][0] for d in thang['dong']], [None],
                          'chế độ tháng phải trống, không được lặp số của năm')

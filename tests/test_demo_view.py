@@ -39,7 +39,7 @@ def test_raw_before_processed_and_no_fake_population(database):
     data = client.get('/api/demo/province?province_code=01&nam=2024').json()
     stages = [r['stage'] for r in data['fields']]
     assert stages == sorted(stages,key=lambda s:0 if s=='Raw' else 1)
-    assert next(r for r in data['fields'] if r['field']=='population')['value'] is None
+    assert not any(r['field']=='population' for r in data['fields'])
     assert next(r for r in data['fields'] if r['field']=='sol_raw')['stage']=='Processed'
     assert data['class_status']=='missing' and data['classes']==[]
     assert client.get('/api/demo/image?province_code=01&nam=2024&kind=raw').status_code==404

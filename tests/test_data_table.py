@@ -19,14 +19,14 @@ def test_monthly_table_and_csv_share_identity_raw_processed_order(integrated):
     data=response.json();columns=data['columns'];fields=[c['field'] for c in columns]
     groups=[c['group'] for c in columns]
     assert groups==sorted(groups,key=['identity','raw','processed'].index)
-    assert fields.index('avg_rad')<fields.index('population')<fields.index('sol_raw')
+    assert fields.index('avg_rad')<fields.index('grdp_so_sanh')<fields.index('sol_raw')
     assert data['snapshot_id']==checked['dataset_id']
     assert [r['month'] for r in data['rows']]==[0,7,8]
     annual,july,august=data['rows']
     assert annual['avg_rad'] is None and 'grdp_frequency' not in annual
     assert july['avg_rad'].endswith('#band=1') and july['cf_cvg'].endswith('#band=2')
     assert july['grdp_so_sanh'] is None and annual['grdp_so_sanh']==100
-    assert july['population'] is None and july['sol']==20
+    assert 'population' not in july and july['sol']==20
     assert august['sol'] is None and august['total_pixels']==0
     export=client.get('/api/demo/data.csv',params=dict(params,expected_snapshot=data['snapshot_id']))
     reader=csv.DictReader(io.StringIO(export.content.decode('utf-8-sig')));rows=list(reader)

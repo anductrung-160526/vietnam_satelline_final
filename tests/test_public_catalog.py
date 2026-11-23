@@ -14,12 +14,13 @@ def test_catalog_monthly_nulls_and_public_csv(integrated):
     db,*_=integrated
     client=TestClient(app)
     fields={r['ma'] for r in client.get('/api/indicators').json()['chi_so']}
-    assert {'population','grdp_so_sanh','grdp_hien_hanh','min_rad','background_threshold','background_pixels','lit_threshold'}<=fields
+    assert {'grdp_so_sanh','grdp_hien_hanh','min_rad','background_threshold','background_pixels','lit_threshold'}<=fields
     assert 'sol_cal' not in fields and 'NDVI_mean' not in fields and 'cloud_free_obs' not in fields
     data=client.get('/api/demo/data?province_code=01&moc=2022,2022-07').json()
     assert all(is_public(c['field']) for c in data['columns'])
     annual,month=data['rows'];assert annual['grdp_so_sanh']==100
-    for f in ('population','grdp_so_sanh','grdp_hien_hanh'):assert month[f] is None
+    assert 'population' not in fields and 'population' not in month
+    for f in ('grdp_so_sanh','grdp_hien_hanh'):assert month[f] is None
     assert month['min_rad'] is not None and 'dataset_id' not in month and 'valid_area_km2' not in month
     params=dict(province_code='01',moc='2022,2022-07',chi_so='grdp_so_sanh,min_rad,background_threshold')
     export=client.get('/api/demo/data.csv',params=params)
@@ -48,3 +49,15 @@ def test_fake_rows_hidden_then_physically_deleted_and_real_rows_preserved(integr
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT COUNT(*) FROM ntl_annual WHERE source LIKE '%GIA_LAP%'").fetchone()[0]==0
         assert c.execute("SELECT sol FROM ntl_annual WHERE year=2022").fetchone()[0]==20
+
+
+def test_population_is_absent_from_all_public_economic_outputs(integrated):
+    client=TestClient(app)
+    payload=client.get('/api/demo/economy?province_code=01&nam_tu=2022&nam_den=2022').json()
+    assert 'population_missing' not in payload
+    assert payload['dong'] and all('population' not in row for row in payload['dong'])
+    for endpoint,query in [('data.csv','province_code=01&moc=2022'),('economy.csv','province_code=01&nam_tu=2022&nam_den=2022')]:
+        rows=list(csv.DictReader(io.StringIO(client.get('/api/demo/'+endpoint+'?'+query).content.decode('utf-8-sig'))))
+        assert rows and 'population' not in rows[0]
+    fields=client.get('/api/demo/province?province_code=01&nam=2022').json()['fields']
+    assert not any(f['field']=='population' for f in fields)

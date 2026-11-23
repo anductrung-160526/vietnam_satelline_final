@@ -199,11 +199,11 @@ async function dungManKinhTe(){
   const request=++economyRequest,year=demoSelection.year,month=demoSelection.month;
   const params=new URLSearchParams({nam_tu:year,nam_den:year,price_basis:economyBasis,thang:month});
   if(demoSelection.code)params.set('province_code',demoSelection.code);
-  $('loc-kinhte').innerHTML='<p>Dân số và hai loại GRDP chỉ hiển thị theo năm. Chọn tháng thì các giá trị này để trống.</p>';
+  $('loc-kinhte').innerHTML='<p>Hai loại GRDP chỉ hiển thị theo năm. Chọn tháng thì các giá trị này để trống.</p>';
   try{
     const data=await layJSON('/api/demo/economy?'+params);if(request!==economyRequest)return;
     if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
-    const columns=[['province_name','Tỉnh'],['year','Năm'],['population','Dân số'],['grdp_so_sanh','GRDP so sánh (tỷ đồng)'],['grdp_hien_hanh','GRDP hiện hành (tỷ đồng)'],['sol','SOL'],['gdp_change_pct','Thay đổi GRDP (%)']];
-    $('vung-kinhte').innerHTML='<h2>Dữ liệu kinh tế đêm</h2>'+(!data.dong.some(r=>r.grdp_so_sanh!=null || r.grdp_hien_hanh!=null)?'<p class="canh">Chưa có GRDP năm trong database đang mở. Kiểm tra dữ liệu đã nạp hoặc phục hồi lượt P1 đã kiểm chứng.</p>':'')+(data.population_missing?'<p class="nho">Chưa có nguồn dân số thật trong database. Bộ Excel GRDP trước đây không chứa dân số.</p>':'')+'<div class="cuon"><table><thead><tr>'+columns.map(c=>`<th>${c[1]}</th>`).join('')+'</tr></thead><tbody>'+data.dong.map(r=>'<tr>'+columns.map(([f])=>`<td>${f==='province_name'?thoat(r[f]):dinhDang(r[f],2)??'—'}</td>`).join('')+'</tr>').join('')+'</tbody></table></div>'+`<a class="asset-link" href="/api/demo/economy.csv?${params}">Tải CSV</a>`;
+    const columns=[['province_name','Tỉnh'],['year','Năm'],['grdp_so_sanh','GRDP so sánh (tỷ đồng)'],['grdp_hien_hanh','GRDP hiện hành (tỷ đồng)'],['sol','SOL'],['gdp_change_pct','Thay đổi GRDP (%)']];
+    $('vung-kinhte').innerHTML='<h2>Dữ liệu kinh tế đêm</h2>'+(!data.dong.some(r=>r.grdp_so_sanh!=null || r.grdp_hien_hanh!=null)?'<p class="canh">Chưa có GRDP năm trong database đang mở. Kiểm tra dữ liệu đã nạp hoặc phục hồi lượt P1 đã kiểm chứng.</p>':'')+'<div class="cuon"><table><thead><tr>'+columns.map(c=>`<th>${c[1]}</th>`).join('')+'</tr></thead><tbody>'+data.dong.map(r=>'<tr>'+columns.map(([f])=>`<td>${f==='province_name'?thoat(r[f]):dinhDang(r[f],2)??'—'}</td>`).join('')+'</tr>').join('')+'</tbody></table></div>'+`<a class="asset-link" href="/api/demo/economy.csv?${params}">Tải CSV</a>`;
   }catch(error){if(request===economyRequest)$('vung-kinhte').textContent=error.message;}
 }

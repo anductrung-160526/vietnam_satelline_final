@@ -1,12 +1,12 @@
 # Định nghĩa biến và công thức kinh tế đêm
 
-Danh mục hiển thị hiện tại là NIGHT_DATA_DICTIONARY.md: 44 mục, 11 Raw (5 định danh) và 33 Processed. Bảng trên app và CSV giữ định danh → Raw → Processed. Tên trường tiếng Anh chữ thường, diễn giải tiếng Việt. Đây là danh mục hiển thị, không phải danh sách mọi tham số kiểm tra nội bộ của phần mềm.
+Danh mục hiển thị hiện tại là NIGHT_DATA_DICTIONARY.md: 43 mục, 10 Raw (5 định danh) và 33 Processed. Bảng trên app và CSV giữ định danh → Raw → Processed. Tên trường tiếng Anh chữ thường, diễn giải tiếng Việt. Đây là danh mục hiển thị, không phải danh sách mọi tham số kiểm tra nội bộ của phần mềm.
 
 ## Dữ liệu năm và tháng
 
-Dân số, GRDP giá so sánh và GRDP hiện hành chỉ xuất giá trị ở dòng năm (month=0). Dòng tháng luôn null, xuất CSV là ô trống. Không lặp GRDP năm xuống tháng, không chia 12 hoặc nội suy. Thiếu dân số thật thì để trống. GRDP so sánh của bộ dữ liệu dùng giá gốc năm 2010, đơn vị tỷ đồng; 2024 sơ bộ theo nguồn.
+GRDP giá so sánh và GRDP hiện hành chỉ xuất giá trị ở dòng năm (month=0). Dòng tháng luôn null, xuất CSV là ô trống. Không lặp GRDP năm xuống tháng, không chia 12 hoặc nội suy. GRDP so sánh của bộ dữ liệu dùng giá gốc năm 2010, đơn vị tỷ đồng; 2024 sơ bộ theo nguồn.
 
-Raw gồm nguồn và băng ảnh đầu vào, số liệu kinh tế thật. avg_rad và cf_cvg trong bảng là tham chiếu băng ảnh Raw, không phải một số đại diện cho tỉnh. Ảnh năm median là đầu vào đã xử lý, không được gán thành băng Raw.
+Raw gồm nguồn và băng ảnh đầu vào, GRDP thật. avg_rad và cf_cvg trong bảng là tham chiếu băng ảnh Raw, không phải một số đại diện cho tỉnh. Ảnh năm median là đầu vào đã xử lý, không được gán thành băng Raw.
 
 ## Tổng và phân bố ánh sáng
 
@@ -33,3 +33,5 @@ Chỉ giữ moran_i trong danh mục và app. I = (n/S0) × tổng_i tổng_j(W_
 App loại các dòng có nguồn/trạng thái GIA_LAP, SIMULATED hoặc SYNTHETIC. Lệnh backend.data.purge_simulated xóa vật lý các dòng đánh dấu này, có backup và transaction, không suy đoán dòng giả từ độ lớn số liệu. Các fixture kiểm thử tách khỏi database phục vụ app.
 
 Bỏ tnl vì trùng sol_raw trên cùng đầu vào; bỏ gdp vì đã có hai trường GRDP riêng; bỏ frequency vì month đã xác định năm/tháng; bỏ các trường truy nguồn/độ phủ dư khỏi danh mục hiển thị. lit_pop_proxy dùng tên thống nhất lit_sol. Các nhóm người dùng yêu cầu bỏ không còn trong bộ lọc/bảng/CSV công khai. Các kiểm tra và dữ liệu kỹ thuật phục vụ toàn vẹn, mask, phiên bản tiếp tục chạy nội bộ, không sửa công thức hay buộc tính lại ảnh.
+
+Trường population đã bỏ khỏi danh mục, bộ lọc, bảng, CSV và màn kinh tế; không còn yêu cầu nạp dân số để sử dụng app.

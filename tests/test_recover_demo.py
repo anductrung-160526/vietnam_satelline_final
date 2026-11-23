@@ -66,8 +66,8 @@ def test_both_legacy_grdp_columns_are_read_even_without_price_label(tmp_path,mon
     c.commit();c.close();monkeypatch.setenv('VNGIS_DB',str(db))
     client=TestClient(app)
     for _ in range(2):
-        data=client.get('/api/panel?province_code=01&moc=2024,2024-07&chi_so=population,grdp_so_sanh,grdp_hien_hanh').json()
-        assert [r['gia_tri'] for r in data['dong']]==[[8500000,None],[100,None],[200,None]]
+        data=client.get('/api/panel?province_code=01&moc=2024,2024-07&chi_so=grdp_so_sanh,grdp_hien_hanh').json()
+        assert [r['gia_tri'] for r in data['dong']]==[[100,None],[200,None]]
         # An empty modern table must not make genuine legacy values disappear.
         from backend.data.dataset import migrate_demo
         with sqlite3.connect(db) as c:migrate_demo(c)

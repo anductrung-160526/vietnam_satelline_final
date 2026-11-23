@@ -36,6 +36,6 @@ Mở http://127.0.0.1:8000/api/demo/status hoặc /api/health (data_status). N�
 
 Với bộ đã xác nhận F/P1 trước đó, cần có economy_prices, demo_asset, light_class và spatial_run cùng snapshot. Chỉ số NTL có số chưa đủ để kết luận các màn đã nạp đủ. Sau phục hồi, chọn Hà Nội/năm 2024 kiểm hai loại GRDP; xem ảnh và lớp sáng; mở Moran 2020–2024. Không chạy build_cogs/build_indices chỉ vì UI báo thiếu sổ ảnh nếu các ảnh đã có trước đó.
 
-## Dân số
+## Danh mục hiện hành
 
-File Excel GRDP đã nhận trước đây không có dân số. Báo cáo E trước đó cũng xác nhận population_missing. Việc phục hồi không sinh dân số. Nếu chưa nạp nguồn dân số thật, dân số năm tiếp tục null và app ghi rõ lý do; không khôi phục dân số giả cũ để lấp ô trống. Dòng tháng luôn null cho cả ba trường kinh tế.
+Theo yêu cầu mới, population đã được bỏ khỏi từ điển, bộ lọc, bảng và CSV xuất. App không yêu cầu nạp dân số. Các kiểm tra tương thích database cũ giữ nội bộ.

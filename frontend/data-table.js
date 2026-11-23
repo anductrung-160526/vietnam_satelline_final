@@ -45,7 +45,7 @@ function renderWideTable(){
   table.innerHTML=`<thead><tr>${groupHeader}</tr><tr>`
     +wideData.columns.map(c=>`<th class="group-${c.group}" title="${thoat(c.name)}"><code>${thoat(c.field)}</code><small>${thoat(c.name)}</small></th>`).join('')
     +'</tr></thead><tbody>'+rows.map(row=>'<tr>'+wideData.columns.map(c=>cell(row,c)).join('')+'</tr>').join('')+'</tbody>';
-  $('data-table-summary').textContent=`${wideData.rows.length.toLocaleString('vi-VN')} dòng · ${wideData.columns.length} cột · định danh → Raw → Processed. Tháng 0 là dòng năm. Dân số và GRDP ở dòng tháng để trống.`;
+  $('data-table-summary').textContent=`${wideData.rows.length.toLocaleString('vi-VN')} dòng · ${wideData.columns.length} cột · định danh → Raw → Processed. Tháng 0 là dòng năm. GRDP ở dòng tháng để trống.`;
 
   $('data-page').textContent=`Trang ${widePage+1}/${pages} · dòng ${rows.length ? start+1:0}–${start+rows.length}`;
   $('data-prev').disabled=widePage===0;$('data-next').disabled=widePage===pages-1;

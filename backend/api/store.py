@@ -17,7 +17,7 @@ NIGHT_FIELDS = ('year', 'source', 'sol', 'sol_density', 'sol_change_pct',
                 'area_km2', 'note', 'calibration', 'status')
 # Không có DAY_FIELDS: Night Data Dictionary không định nghĩa chỉ số ảnh ngày, và
 # phạm vi dự án đã thu về chỉ còn kinh tế đêm.
-ECONOMY_FIELDS = ('year', 'population', 'gdp', 'gdp_per_capita', 'source')
+ECONOMY_FIELDS = ('year', 'gdp', 'gdp_per_capita', 'source')
 
 # Sentinel-2 trước 2019 là phản xạ đỉnh khí quyển, từ 2019 là phản xạ bề mặt.
 # Quyết định đã được giảng viên chấp nhận; app phải nói ra để không ai so sánh mù.
@@ -247,7 +247,6 @@ INDICATORS = (
 )
 from backend.core.public_fields import is_public
 INDICATORS=tuple(e for e in INDICATORS if is_public(e['ma']) and e['bang'].startswith('ntl_'))+(
-    dict(ma='population',ten='Dân số (năm)',don_vi='người',bang='economy_prices',column='population',price_basis='so_sanh',chu_so=0),
     dict(ma='grdp_so_sanh',ten='GRDP giá so sánh (năm)',don_vi='tỷ đồng',bang='economy_prices',column='grdp',price_basis='so_sanh',chu_so=2),
     dict(ma='grdp_hien_hanh',ten='GRDP giá hiện hành (năm)',don_vi='tỷ đồng',bang='economy_prices',column='grdp',price_basis='hien_hanh',chu_so=2),
     dict(ma='min_rad',ten='Bức xạ nhỏ nhất',don_vi='nW/cm²/sr',bang='ntl_annual',bang_thang='ntl_monthly',column='rad_min',chu_so=4),

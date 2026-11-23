@@ -413,7 +413,7 @@ function dsTinhLoc(){
 }
 
 function dsChiSoLoc(){
-  /* Trước đây lọc bỏ mọi chỉ số thuộc bảng economy, nên dân số và GRDP không bao giờ
+  /* Trước đây lọc bỏ mọi chỉ số thuộc bảng economy, nên GRDP không bao giờ
      hiện trong bộ lọc. Nay bày cả: chúng chỉ có theo năm, và chế độ xem tháng trả về
      trống chứ không lặp lại số của năm. */
   const li = danhMuc.map(e =>

@@ -421,6 +421,9 @@ def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
     if thang:
         for row in result['dong']:
             for field in ('population','grdp','grdp_so_sanh','grdp_hien_hanh','gdp_change_pct'):row[field]=None
+    for row in result['dong']:
+        row.pop('population',None);row.pop('sol_per_capita',None)
+    result.pop('population_missing',None)
     result.setdefault('snapshot_id',demo_snapshot_id())
     return result
 
