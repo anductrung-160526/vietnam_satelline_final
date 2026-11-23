@@ -403,13 +403,10 @@ def add_dictionary_tables(tables, records, economy, calibrate):
         if calibration:
             row['calibration'] = 'DMSP_TO_VIIRS_POWER_OVERLAP2013_v1'
 
-    # Các cột _cal chỉ để tương thích schema app; dictionary gộp trong một tên.
-    annual_by_key = {(r['province_code'], r['year']): r for r in annual}
-    for row in annual:
-        value = row['sol_cal']
-        row['sol_density_cal'] = rounded(value / row['area_km2']) if value is not None else None
-        previous = annual_by_key.get((row['province_code'], row['year']-1))
-        row['sol_change_cal_pct'] = pct(value, previous['sol_cal']) if previous and row['year'] != 2010 else None
+    # KHÔNG sinh sol_density_cal và sol_change_cal_pct. Night Data Dictionary ghi rõ
+    # "không thêm field sol_density_cal vào dictionary", và sol_change_cal_pct không
+    # có trong từ điển. Chuỗi đã hiệu chỉnh là một chế độ xem: một tên sol_density,
+    # một tên sol_change_pct, còn tử số dùng sol hay sol_cal thì ghi ở light_basis.
 
     # tnl_ma3 và tnl_mom_growth_pct: theo các DÒNG tháng của từng tỉnh, như Task 3.
     # Không thay thế chúng bằng sol_ma3/sol_change_mom_pct của app (cửa sổ tháng lịch).
@@ -433,8 +430,7 @@ def add_dictionary_tables(tables, records, economy, calibrate):
     # predicted_gdp: khớp mô hình trên VIIRS 2014–2025, GRDP giá so sánh, >=10 điểm.
     # Không dùng hệ số này như light_gdp_elasticity: hai phép tính khác nhau.
     training = [(r['sol_cal'], r['gdp']) for r in annual
-                if r['year'] >= 2014 and r['price_basis'] == 'so_sanh'
-                and 'GIA_LAP' not in r['economy_source'].upper()]
+                if r['year'] >= 2014 and r['price_basis'] == 'so_sanh']
     gdp_model = fit_log_model(training, minimum=10)
     annual_lookup = {(r['province_code'], r['year']): r for r in annual}
     for row in annual:

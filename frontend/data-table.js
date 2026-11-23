@@ -1,6 +1,8 @@
 "use strict";
 let wideData=null,widePage=0,wideRequest=0,wideQuery=null;
 const WIDE_PAGE_SIZE=100;
+/* app.js hỏi trước khi nạp: bảng chi tiết chỉ gọi API khi người dùng mở tới nó. */
+function wideTableNeedsLoad(){return wideData===null;}
 function invalidateWideTable(){++wideRequest;wideData=null;wideQuery=null;renderWideTable();}
 function wideParams(){
   const params=thamSoBang();params.delete('ham');

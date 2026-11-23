@@ -172,15 +172,6 @@ def get_tong_hop(nam: int = Query(..., ge=1990, le=2100),
     return data
 
 
-@app.get('/api/kinh-te-dem')
-def get_kinh_te_dem(nam_tu: int = Query(2014, ge=1990, le=2100),
-                    nam_den: int = Query(YEAR_MAX, ge=1990, le=2100)):
-    """Bảng kinh tế đêm và hệ số co giãn β. Chưa có số liệu thì trả mảng rỗng, không lỗi."""
-    if nam_tu > nam_den:
-        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    return store.kinh_te_dem(nam_tu, nam_den)
-
-
 @app.get('/api/coverage')
 def get_coverage():
     """Năm nào đã có dữ liệu gì — dùng cho trang trạng thái và báo cáo tiến độ."""
@@ -430,7 +421,7 @@ def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
         raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
     fields = ['province_code', 'province_name', 'year', 'month', 'population', 'grdp_so_sanh',
               'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
-              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated',
+              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh',
               'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
               'model_training_period', 'model_n', 'model_beta','dataset_id','stats_version','sol_unit',
               'provenance_consistent','provenance_reason','source_image_path','source_image_sha256']

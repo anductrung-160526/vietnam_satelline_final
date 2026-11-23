@@ -78,7 +78,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(response.headers['content-type'], 'application/zip')
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             names = archive.namelist()
-            for part in ('chi_so_dem.csv', 'chi_so_ngay.csv', 'chi_so_kinh_te.csv', 'DOC_TRUOC.txt'):
+            for part in ('chi_so_dem.csv', 'chi_so_kinh_te.csv', 'DOC_TRUOC.txt'):
                 self.assertIn(part, names)
             self.assertTrue(any(n.startswith('anh_dem/') for n in names))
             # Phần trống phải nói ra là trống, không được là file rỗng im lặng.
@@ -97,7 +97,7 @@ class ApiTest(unittest.TestCase):
     def test_health_and_coverage_do_not_crash_on_an_empty_database(self):
         self.assertTrue(self.client.get('/api/health').json()['ok'])
         body = self.client.get('/api/coverage').json()
-        self.assertEqual(set(body), {'dem', 'ngay', 'economy', 'cog_image'})
+        self.assertEqual(set(body), {'dem', 'economy', 'cog_image'})
 
     def test_the_province_list_is_loaded_from_the_pipelines_own_file(self):
         """Không có danh sách tỉnh thứ hai trong app: nó phải đến từ task_pipeline."""
@@ -185,21 +185,6 @@ class WritableDatabaseTest(unittest.TestCase):
 
     def setUp(self):
         self.db, self.client, _ = fresh_database(self)
-
-    def test_the_toa_warning_rides_along_with_any_2015_2018_day_row(self):
-        """Sentinel-2 2015–2018 là TOA; ai tải dữ liệu cũng phải đọc được cảnh báo đó."""
-        import sqlite3
-        from backend.api import store
-        with sqlite3.connect(self.db) as connection:
-            connection.execute(
-                'INSERT OR REPLACE INTO day_annual(province_code,year,source,NDVI_mean) VALUES(?,?,?,?)',
-                ('01', 2017, 'SENTINEL2', 0.42))
-        data = store.indices('01', 2004, 2025)
-        self.assertEqual(len(data['ngay']), 1)
-        self.assertTrue(any('TOA' in w for w in data['canh_bao']))
-        panel = self.client.get('/api/panel', params={'chi_so': 'NDVI_mean',
-                                                      'nam_tu': 2015, 'nam_den': 2018}).json()
-        self.assertIn('detail',panel)  # Chỉ số ngày đã bỏ khỏi danh mục công khai.
 
     def test_the_choropleth_gives_the_range_the_legend_needs(self):
         import sqlite3
@@ -367,13 +352,6 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
         hop_le = self._ten_cot_hop_le()
         thieu = [f for f in store.NIGHT_FIELDS if f not in hop_le]
         self.assertEqual(thieu, [], f'Cột đêm không có trong CODEBOOK: {thieu}')
-
-    def test_every_day_field_appears_in_derive(self):
-        from backend.api import store
-        # months_used do build_indices tạo khi gộp tháng lên năm.
-        hop_le = self._ten_cot_hop_le() | {'months_used'}
-        thieu = [f for f in store.DAY_FIELDS if f not in hop_le]
-        self.assertEqual(thieu, [], f'Cột ngày không có trong CODEBOOK: {thieu}')
 
     def test_every_indicator_code_is_a_column_of_its_table(self):
         import sqlite3
@@ -669,7 +647,11 @@ class EconomyIndicatorDocTest(unittest.TestCase):
         bo_qua = self.DE_XUAT | {
             'province_code', 'year', 'economy', 'population', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
             'stable_lights', 'data_processed', 'metadata', 'backend', 'derive',
-            'ntl_annual', '_hc'}
+            'ntl_annual', '_hc',
+            # Tài liệu nhắc ba tên này để nói chúng ĐÃ BỊ GỠ theo Night Data
+            # Dictionary, không phải để giới thiệu cột đang có. Bỏ qua chúng,
+            # nếu không thì mỗi lần ghi lại một quyết định là test đỏ.
+            'sol_density_cal', 'sol_change_cal_pct', 'light_basis'}
         ten = {t for t in re.findall(r'`([a-z0-9_]+)`', text)
                if '.' not in t and '/' not in t}
         thieu = sorted(t for t in ten - thuc - bo_qua)
@@ -963,7 +945,7 @@ class TimeFunctionsOnThePanel(unittest.TestCase):
         """sol_cal đã quy về cùng thang VIIRS nên đi qua mốc 2013 được."""
         body = self._goi(chi_so='sol_cal', moc='2012,2013,2014,2015',
                          province_code='27', ham='cagr')
-        self.assertIn('detail',body)  # Trường hiệu chỉnh không còn công khai.
+        self.assertIn('detail',body)
 
     def test_2010_still_blocks_even_the_calibrated_column(self):
         """Mốc 2010 chưa hiệu chỉnh ở BẤT KỲ cột nào, kể cả cột _cal."""
@@ -1007,138 +989,38 @@ class TheFlagsTravelWithTheValues(unittest.TestCase):
         self.assertIn('vệ tinh', body['chu_giai_co']['B'])
 
 
-class TheNightEconomyScreen(unittest.TestCase):
-    """Màn 3: ánh sáng bình quân đầu người và hệ số co giãn β."""
 
-    def _nap(self, co_so_gia='so_sanh', so_nam=12):
-        import math
+
+class GdpReadsTheColumnThatHasTheNumbers(unittest.TestCase):
+    """economy.gdp rỗng 100% trên dữ liệu thật; số nằm ở economy.grdp.
+
+    Đọc nhầm cột thì bảng ra một cột toàn dấu gạch mà không có gì báo lỗi, và người
+    dùng tưởng chưa có số liệu kinh tế. Đã xảy ra thật, phát hiện ngày 23/11/2026.
+    """
+
+    def test_retired_gdp_alias_is_not_public(self):
+        _,client,_=fresh_database(self)
+        self.assertEqual(client.get('/api/panel',params={'chi_so':'gdp','moc':'2024'}).status_code,400)
+
+    def test_no_monthly_table_is_declared(self):
+        from backend.api import store
+        for ma in ('population', 'grdp_so_sanh', 'grdp_hien_hanh'):
+            with self.subTest(chi_so=ma):
+                self.assertIsNone(store.BY_CODE[ma].get('bang_thang'))
+
+    def test_monthly_view_returns_nothing_for_them(self):
         import sqlite3
         db, client, _ = fresh_database(self)
-        with sqlite3.connect(db) as con:
-            # Mã tỉnh của Cục Thống kê KHÔNG liên tục (không có 03, 05): phải lấy mã thật,
-            # nếu không phép nối với bảng province sẽ loại bớt dòng.
-            ma_that = [r[0] for r in con.execute(
-                'SELECT province_code FROM province ORDER BY number LIMIT 6')]
-            for i, ma in enumerate(ma_that):
-                for t in range(so_nam):
-                    nam = 2014 + t
-                    sol = 1000 * (1 + 0.2 * i) * (1.07 ** t)
-                    grdp = math.exp(2.0 + 0.8 * math.log(sol))
-                    con.execute('INSERT OR REPLACE INTO ntl_annual'
-                                '(province_code,year,source,sol) VALUES(?,?,?,?)',
-                                (ma, nam, 'VIIRS', sol))
-                    con.execute('INSERT OR REPLACE INTO economy'
-                                '(province_code,year,population,grdp,grdp_price_basis) '
-                                'VALUES(?,?,?,?,?)', (ma, nam, 1_000_000 * (i + 1),
-                                                      grdp, co_so_gia))
-        return client
-
-    def test_an_empty_economy_table_is_not_an_error(self):
-        """App phải chạy được khi cô chưa gửi số liệu."""
-        _, client, _ = fresh_database(self)
-        r = client.get('/api/kinh-te-dem')
-        self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertEqual(body['dong'], [])
-        self.assertIsNone(body['hoi_quy'])
-        self.assertTrue(body['canh_bao'])
-
-    def test_beta_comes_back_from_real_rows(self):
-        body = self._nap().get('/api/kinh-te-dem').json()
-        self.assertAlmostEqual(body['hoi_quy']['beta'], 0.8, places=5)
-        self.assertEqual(body['hoi_quy']['n'], 72, '6 tỉnh × 12 năm')
-
-    def test_light_per_capita_is_on_every_row(self):
-        body = self._nap().get('/api/kinh-te-dem').json()
-        r = body['dong'][0]
-        self.assertAlmostEqual(r['sol_per_capita'], r['sol'] / r['population'], places=9)
-
-    def test_current_prices_warn_loudly(self):
-        body = self._nap(co_so_gia='hien_hanh').get('/api/kinh-te-dem').json()
-        self.assertTrue(any('GIÁ HIỆN HÀNH' in c for c in body['canh_bao']))
-
-    def test_a_missing_price_basis_also_warns(self):
-        body = self._nap(co_so_gia=None).get('/api/kinh-te-dem').json()
-        self.assertTrue(any('Chưa biết' in c for c in body['canh_bao']))
-
-    def test_each_province_gets_its_own_beta_when_long_enough(self):
-        body = self._nap(so_nam=12).get('/api/kinh-te-dem').json()
-        self.assertTrue(all(r['beta_tinh'] is not None for r in body['dong']))
-        ngan = self._nap(so_nam=4).get('/api/kinh-te-dem').json()
-        self.assertTrue(all(r['beta_tinh'] is None for r in ngan['dong']))
-
-    def test_the_sample_csv_has_the_columns_the_loader_expects(self):
-        import csv
-        from backend.data import build_indices
-        mau = REPO / 'backend' / 'data' / 'economy_mau.csv'
-        self.assertTrue(mau.is_file(), 'tệp mẫu để cô điền số liệu')
-        with mau.open(encoding='utf-8-sig') as f:
-            cot = set(next(csv.reader(f)))
-        _, _, _ = fresh_database(self)
-        import sqlite3
-        from backend.api import store
-        with sqlite3.connect(store.database_path()) as con:
-            that = {r[1] for r in con.execute('PRAGMA table_info(economy)')}
-        self.assertTrue(cot <= that, f'cột thừa trong tệp mẫu: {cot - that}')
-        for bat_buoc in ('province_code', 'year', 'population', 'grdp', 'grdp_price_basis'):
-            self.assertIn(bat_buoc, cot)
-
-
-def test_ranh_gioi_doc_duoc_ca_khoa_cu(tmp_path, monkeypatch):
-    """GeoJSON dựng trước đợt đổi tên cột mang khoá ma_tinh — vẫn phải cắt được.
-
-    Lỗi đã gặp: build_boundaries ghi 'ma_tinh' còn giao diện đọc 'province_code',
-    nên chọn Hà Nội thì bản đồ không cắt theo ranh giới mà không báo lỗi gì rõ ràng.
-    """
-    from backend.api import main as api
-    o = {'type': 'Polygon', 'coordinates': [[[105., 20.], [106., 20.], [106., 21.], [105., 20.]]]}
-    cu = tmp_path / 'cu.geojson'
-    cu.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
-        {'type': 'Feature', 'properties': {'ma_tinh': '01', 'ten_tinh': 'Hà Nội'},
-         'geometry': o}]}), encoding='utf-8')
-    monkeypatch.setenv('VNGIS_BOUNDARIES', str(cu))
-    assert api._hinh_tinh('01') is not None, 'không đọc được khoá ma_tinh cũ'
-
-    moi = tmp_path / 'moi.geojson'
-    moi.write_text(json.dumps({'type': 'FeatureCollection', 'features': [
-        {'type': 'Feature', 'properties': {'province_code': '01', 'province_name': 'Hà Nội'},
-         'geometry': o}]}), encoding='utf-8')
-    monkeypatch.setenv('VNGIS_BOUNDARIES', str(moi))
-    assert api._hinh_tinh('01') is not None
-
-
-def test_build_boundaries_ghi_khoa_tieng_anh():
-    """Bản dựng mới phải ghi đúng tên khoá mà frontend/app.js đang đọc."""
-    nguon = Path('backend/data/build_boundaries.py').read_text(encoding='utf-8')
-    assert "'province_code': code" in nguon
-    assert "'ma_tinh': code" not in nguon
-
-
-def test_gia_lap_kinh_te_khoi_phuc_dung_beta(tmp_path):
-    """Số giả lập phải (a) mang nhãn GIA_LAP, (b) để hồi quy tìm lại đúng beta đã cấy.
-
-    Nếu ước lượng không trả lại con số đã cấy thì phép hồi quy sai, chứ không phải
-    dữ liệu sai — đây là cách duy nhất kiểm được do_co_gian trên bộ số đã biết đáp án.
-    """
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        'gia_lap', Path(__file__).resolve().parent.parent / 'backend' / 'data' / 'gia_lap_kinh_te.py')
-    gia_lap = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(gia_lap)
-    from backend.core.chi_so import do_co_gian
-
-    import math
-    import random
-    rng = random.Random(3)
-    theo_tinh = {f'{i:02d}': {n: math.exp(rng.gauss(10, 1.2)) for n in range(2014, 2026)}
-                 for i in range(1, 64)}
-    dong = gia_lap.sinh(theo_tinh, beta=0.45, alpha=9.0, nhieu=0.2)
-    assert len(dong) == 63 * 12
-    assert all('GIA_LAP' in d['source'] for d in dong), 'thiếu nhãn giả lập'
-    assert all(d['grdp'] > 0 and d['population'] > 0 for d in dong)
-
-    for d in dong:
-        d['sol'] = theo_tinh[d['province_code']][d['year']]
-    ket = do_co_gian(dong, gia_so_sanh=True)
-    assert abs(ket['beta'] - 0.45) < 0.06, f"beta lệch quá: {ket['beta']}"
-    assert ket['n'] == 63 * 12
+        with sqlite3.connect(db) as connection:
+            connection.execute(
+                'INSERT OR REPLACE INTO economy(province_code,year,population,grdp,'
+                'grdp_price_basis) VALUES(?,?,?,?,?)', ('01', 2024, 8_500_000, 1234.5, 'so_sanh'))
+        nam = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+                                               'moc': '2024', 'province_code': '01'}).json()
+        co = {d['chi_so']: d['gia_tri'][0] for d in nam['dong']}
+        self.assertEqual(co['population'], 8_500_000)
+        self.assertEqual(co['grdp_so_sanh'], 1234.5, 'grdp phải được rót theo grdp_price_basis')
+        thang = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+                                                 'moc': '2024-07', 'province_code': '01'}).json()
+        self.assertEqual([d['gia_tri'][0] for d in thang['dong']], [None, None],
+                         'chế độ tháng phải trống, không được lặp số của năm')

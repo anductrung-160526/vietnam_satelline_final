@@ -21,7 +21,6 @@ Ngày trích xuất: {thoi_diem}
 
 Nội dung:
   chi_so_dem.csv       chỉ số ánh sáng ban đêm theo năm
-  chi_so_ngay.csv      chỉ số ảnh quang học ban ngày theo năm
   chi_so_kinh_te.csv   dân số, GDP (nguồn: giảng viên cung cấp)
   anh_dem/             ảnh ánh sáng ban đêm (GeoTIFF) của các năm đã chọn
 
@@ -61,9 +60,6 @@ def build(code, year_from, year_to, include_images=True, timestamp=''):
         archive.writestr('chi_so_dem.csv', _csv_bytes(
             data['dem'], store.NIGHT_FIELDS,
             'Chưa có chỉ số ánh sáng đêm cho tỉnh/giai đoạn này.'))
-        archive.writestr('chi_so_ngay.csv', _csv_bytes(
-            data['ngay'], store.DAY_FIELDS,
-            'Chưa có chỉ số ảnh ngày cho tỉnh/giai đoạn này.'))
         archive.writestr('chi_so_kinh_te.csv', _csv_bytes(
             data['economy'], store.ECONOMY_FIELDS,
             'Chưa có dữ liệu kinh tế (dân số, GDP) — chờ giảng viên cung cấp.'))

@@ -417,7 +417,10 @@ function dsTinhLoc(){
 }
 
 function dsChiSoLoc(){
-  const li = danhMuc.filter(e => e.bang !== 'economy').map(e =>
+  /* Trước đây lọc bỏ mọi chỉ số thuộc bảng economy, nên dân số và GRDP không bao giờ
+     hiện trong bộ lọc. Nay bày cả: chúng chỉ có theo năm, và chế độ xem tháng trả về
+     trống chứ không lặp lại số của năm. */
+  const li = danhMuc.map(e =>
     `<li><label><input type="checkbox" data-chiso="${e.ma}"`
     + `${chon.chiSo.has(e.ma) ? ' checked' : ''}>`
     + `<span>${thoat(e.ten)} <span class="dv">(${thoat(e.don_vi)})</span></span>`
@@ -456,7 +459,7 @@ function dsHam(){
   return `<ul class="ds" id="ds-ham">` + Object.entries(HAM).map(([ma, ten]) =>
     `<li><label><input type="checkbox" data-ham="${ma}"><span>${ten}</span></label></li>`
   ).join('') + '</ul>'
-  + '<p class="canh-nho">Mỗi hàm thành một cột phụ trong chế độ So sánh thời gian. Tốc độ tăng trưởng và '
+  + '<p class="canh-nho">Mỗi hàm thành một cột phụ bên phải bảng. Tốc độ tăng trưởng và '
   + 'thay đổi toàn kỳ từ chối chạy khi khoảng bắc qua mốc đổi vệ tinh.</p>';
 }
 
@@ -595,7 +598,9 @@ function thamSoBang(){
 }
 
 async function napBang(){
-  loadWideTable();
+  /* Đổi bộ lọc thì bảng chi tiết thành cũ. Nạp lại ngay nếu đang mở nó, còn không
+     thì chỉ đánh dấu để doiXem() nạp lúc người dùng bấm sang. */
+  if(tableMode==='chitiet') loadWideTable(); else invalidateWideTable();
   const o = $('canh-bao-bang');
   if(!chon.chiSo.size || !chon.moc.size){
     duLieuBang = null;
@@ -715,12 +720,18 @@ function veDuong(){
 let tableMode='bang';
 function doiXem(mode){
   tableMode=mode;
-  $('o-data-table').hidden=mode!=='bang';
-  $('data-table-summary').hidden=$('data-table-pages').hidden=mode!=='bang';
-  $('o-bang').hidden = mode!=='sosanh';
+  /* 'bang' là BẢNG CŨ: tỉnh × chỉ số × mốc thời gian, cùng các cột hàm thời gian.
+     Bảng rộng định danh → Raw → Processed lùi về nút 'Chi tiết'. */
+  $('o-bang').hidden = mode!=='bang';
+  $('o-data-table').hidden = mode!=='chitiet';
+  $('data-table-summary').hidden=$('data-table-pages').hidden=mode!=='chitiet';
   $('o-chart').hidden = mode!=='chart';
   document.querySelectorAll('#xem-chiso button').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.xem===mode)));
+  /* Bảng chi tiết gọi /api/demo/data, nặng hơn hẳn /api/panel. Chỉ nạp khi thật sự
+     mở tới nó, và chỉ khi bộ lọc đã đổi kể từ lần nạp trước. */
+  if(mode==='chitiet' && typeof wideTableNeedsLoad==='function' && wideTableNeedsLoad())
+    loadWideTable();
   if(mode==='chart') requestAnimationFrame(veDuong);
 }
 
@@ -782,7 +793,7 @@ function doiXem(mode){
     b.onclick = () => doiXem(b.dataset.xem);
   });
   $('nut-csv').onclick = () => {
-    if(tableMode==='bang')downloadWideTable();
+    if(tableMode==='chitiet')downloadWideTable();
     else window.location = '/api/panel.csv?' + thamSoBang();
   };
   addEventListener('resize', () => { bieuDo?.resize(); economyChart?.resize(); });

@@ -9,17 +9,14 @@ DEFAULT_DB = Path(__file__).resolve().parent.parent / 'data' / 'vngis.db'
 # Tên cột lấy đúng theo backend/core/chi_so.py. Đổi tên ở đây mà không đổi ở derive thì
 # bảng vẫn nạp được dòng nhưng cột rỗng, và không có gì báo lỗi — đã xảy ra thật.
 NIGHT_FIELDS = ('year', 'source', 'sol', 'sol_density', 'sol_change_pct',
-                'sol_cal', 'sol_density_cal', 'sol_change_cal_pct',
+                'sol_cal',
                 'sol_raw', 'background_threshold', 'background_pixels',
                 'rad_mean', 'rad_std', 'rad_min', 'rad_max', 'rad_cv',
                 'valid_pixels', 'lit_pixels', 'lit_area_km2', 'lit_area_pct',
                 'lit_sol', 'lit_threshold',
                 'area_km2', 'note', 'calibration', 'status')
-DAY_FIELDS = ('year', 'source', 'reflectance_type',
-              'NDVI_mean', 'NDVI_std', 'NDBI_mean', 'NDBI_std',
-              'MNDWI_mean', 'MNDWI_std', 'BSI_mean', 'BSI_std',
-              'valid_area_pct', 'valid_area_km2', 'area_km2',
-              'months_used', 'status')
+# Không có DAY_FIELDS: Night Data Dictionary không định nghĩa chỉ số ảnh ngày, và
+# phạm vi dự án đã thu về chỉ còn kinh tế đêm.
 ECONOMY_FIELDS = ('year', 'population', 'gdp', 'gdp_per_capita', 'source')
 
 # Sentinel-2 trước 2019 là phản xạ đỉnh khí quyển, từ 2019 là phản xạ bề mặt.
@@ -31,10 +28,6 @@ CHU_GIAI_CO = {
     'O': 'không có ảnh',
     'U': 'ít lượt quan sát sạch mây, độ tin cậy thấp',
 }
-
-TOA_YEARS = range(2015, 2019)
-TOA_WARNING = ('Sentinel-2 2015–2018 là phản xạ đỉnh khí quyển (TOA, L1C); từ 2019 là phản xạ '
-               'bề mặt (L2A). So sánh trực tiếp giữa hai giai đoạn cần nêu rõ khác biệt này.')
 
 # Mốc đổi vệ tinh thứ hai, nằm GIỮA giai đoạn DMSP và chưa được hiệu chỉnh.
 # NOAA không hiệu chuẩn các vệ tinh DMSP với nhau, và F16 (đến 2009) với F18
@@ -67,8 +60,7 @@ def provinces():
     with connect() as connection:
         rows = connection.execute(
             'SELECT t.province_code,t.number,t.province_name,t.slug,t.gid_1,'
-            ' (SELECT COUNT(*) FROM ntl_annual n WHERE n.province_code=t.province_code) AS so_nam_dem,'
-            ' (SELECT COUNT(*) FROM day_annual d WHERE d.province_code=t.province_code) AS so_nam_ngay'
+            ' (SELECT COUNT(*) FROM ntl_annual n WHERE n.province_code=t.province_code) AS so_nam_dem'
             ' FROM province t ORDER BY t.number').fetchall()
     return [dict(row) for row in rows]
 
@@ -96,11 +88,8 @@ def indices(code, year_from=2004, year_to=2025):
         if not found:
             return None
         night = _series(connection, 'ntl_annual', NIGHT_FIELDS, code, year_from, year_to)
-        day = _series(connection, 'day_annual', DAY_FIELDS, code, year_from, year_to)
         economy = _series(connection, 'economy', ECONOMY_FIELDS, code, year_from, year_to)
     warnings = []
-    if any(row['year'] in TOA_YEARS for row in day):
-        warnings.append(TOA_WARNING)
     # derive.py ghi calibration='PENDING'; CLAUDE.md lại nói 'CHUA_HIEU_CHINH'. Nhận cả hai,
     # và chốt bằng source: chuỗi có cả DMSP lẫn VIIRS thì chắc chắn bắc qua mốc đổi vệ tinh.
     nam_dem = [int(row['year']) for row in night if row.get('year') is not None]
@@ -118,16 +107,10 @@ def indices(code, year_from=2004, year_to=2025):
         warnings.append('Chuỗi ánh sáng đêm CHƯA hiệu chỉnh liên vệ tinh DMSP–VIIRS: '
                         'chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025). '
                         'Chạy: python3 -m task_pipeline.harmonize')
-    fake = any(row.get('status') == 'GIA_LAP' for row in night + day) \
-        or any(row.get('source') == 'GIA_LAP' for row in economy)
-    if fake:
-        warnings.insert(0, 'SỐ LIỆU GIẢ LẬP — chỉ để minh họa giao diện, tuyệt đối không dùng '
-                           'cho báo cáo hay kết luận. Chỉ số thật chưa tính xong.')
     return {'province_code': code, 'province_name': found['province_name'], 'slug': found['slug'],
-            'gia_lap': fake,
             'nam_tu': year_from, 'nam_den': year_to,
-            'dem': night, 'ngay': day, 'economy': economy,
-            'thieu_du_lieu': {'dem': not night, 'ngay': not day, 'economy': not economy},
+            'dem': night, 'economy': economy,
+            'thieu_du_lieu': {'dem': not night, 'economy': not economy},
             'canh_bao': warnings}
 
 
@@ -174,7 +157,7 @@ def coverage():
     """Số liệu cho trang trạng thái: năm nào đã có gì. Dùng để báo cáo tiến độ."""
     with connect() as connection:
         out = {}
-        for key, table in (('dem', 'ntl_annual'), ('ngay', 'day_annual'), ('economy', 'economy')):
+        for key, table in (('dem', 'ntl_annual'), ('economy', 'economy')):
             rows = connection.execute(
                 f'SELECT year,COUNT(*) AS so_tinh FROM {table} GROUP BY year ORDER BY year').fetchall()
             out[key] = [dict(row) for row in rows]
@@ -380,8 +363,12 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
                     tham = (year,)
                 if bang=='economy_prices':
                     exists=connection.execute("SELECT 1 FROM sqlite_master WHERE name='economy_prices'").fetchone()
-                    if not exists:continue
-                    cau+=' AND price_basis=?';tham=(*tham,entry['price_basis'])
+                    if exists:
+                        cau+=' AND price_basis=?';tham=(*tham,entry['price_basis'])
+                    else:
+                        column='population' if entry['ma']=='population' else 'COALESCE(grdp,gdp)'
+                        cau=f"SELECT province_code,{column},source,'' FROM economy WHERE year=? AND grdp_price_basis=?"
+                        tham=(year,entry['price_basis'])
                 for ma_tinh, gia_tri, src, flag in connection.execute(cau, tham):
                     khoa = (entry['ma'], ma_tinh, ten_moc(loai, year, month))
                     o[khoa] = gia_tri

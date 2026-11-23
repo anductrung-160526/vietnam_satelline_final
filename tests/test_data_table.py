@@ -39,7 +39,7 @@ def test_monthly_table_and_csv_share_identity_raw_processed_order(integrated):
 
 def test_filters_missing_month_and_invalid_inputs(integrated):
     client=TestClient(app)
-    data=client.get('/api/demo/data?province_code=01&moc=2022-07&chi_so=sol,sol_density_cal').json()
+    data=client.get('/api/demo/data?province_code=01&moc=2022-07&chi_so=sol,sol_density').json()
     fields=[c['field'] for c in data['columns']]
     assert 'sol' in fields and 'sol_density' in fields and 'rad_mean' not in fields and 'mean_rad' not in fields
     assert 'avg_rad' in fields and 'grdp_so_sanh' not in fields

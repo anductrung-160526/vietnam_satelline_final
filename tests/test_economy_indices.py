@@ -92,7 +92,12 @@ def test_missing_price_population_and_common_sample(inputs):
         read_prices(file)
 
 
-def test_price_units_population_conflict_and_fake_exclusion(inputs):
+def test_price_units_and_population_conflict(inputs):
+    """Đơn vị khác tỷ đồng và dân số mâu thuẫn giữa hai cơ sở giá đều phải nổ ngay.
+
+    Phần kiểm "loại dòng GIA_LAP khỏi mô hình" đã bỏ cùng toàn bộ mạch dữ liệu giả lập
+    ngày 23/11/2026: không còn nguồn nào sinh ra nhãn đó nữa.
+    """
     records, prices, file = inputs
     prices[0]['unit'] = 'usd'
     write_csv(file, prices)
@@ -100,12 +105,6 @@ def test_price_units_population_conflict_and_fake_exclusion(inputs):
     prices[0]['unit'] = 'ty_vnd';prices[1]['population'] = 200
     write_csv(file, prices)
     with pytest.raises(ValueError, match='Dân số khác nhau'):read_prices(file)
-    prices[1]['population'] = 100
-    for row in prices: row['source'] = 'GIA_LAP'
-    write_csv(file, prices)
-    tables = calculate(records, economy_prices=read_prices(file))
-    assert tables['calculation_models'] == []
-    assert not any(r['paired'] for r in tables['night_economy'])
 
 
 def test_quality_changed_support_and_2010_transition(inputs):
@@ -127,7 +126,7 @@ def test_quality_changed_support_and_2010_transition(inputs):
     second = dict(first, year=2010)
     legacy = calculate([first, second])
     assert legacy['ntl_annual'][1]['sol_change_pct'] is None
-    assert legacy['ntl_annual'][1]['sol_change_cal_pct'] is None
+    assert 'sol_change_cal_pct' not in legacy['ntl_annual'][1], 'từ điển không có cột này'
     assert legacy['night_economy'][1]['sol_change_pct'] is None
 
 
