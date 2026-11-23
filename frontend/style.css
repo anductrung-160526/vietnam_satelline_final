@@ -300,3 +300,5 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 .economy-table-scroll thead tr:first-child th{top:0;height:30px;text-align:left;}
 .economy-table-scroll thead tr:nth-child(2) th{top:30px;}
 .economy-group-Raw{background:#123242;}.economy-group-Processed{background:#3a301a;}
+.classification-method{margin-top:12px;font-size:.8rem;line-height:1.6;}
+.classification-method summary{cursor:pointer;color:var(--chu);}

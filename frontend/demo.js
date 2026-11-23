@@ -9,7 +9,6 @@ let economyChart = null;
 let economyChartRenderer = null;
 let demoDetails = null;
 let economyBasis = 'so_sanh';
-const CLASS_NAMES = ['Tối / dưới ngưỡng nền','Sáng yếu','Sáng vừa','Sáng mạnh','Rất sáng'];
 let demoSnapshotInitialized=false, demoSnapshotId=null, demoSnapshotChanged=false;
 function checkDemoSnapshot(data){
   // Thiếu metadata nghĩa là chưa biết, không phải dataset đã bị xóa/đổi.
@@ -134,24 +133,26 @@ async function refreshDemo(){
   }
 }
 function renderClassSummary(data){
-  if(data.class_status !== 'ready'){
-    $('class-summary').innerHTML = `<p class="empty-state">${thoat(data.class_reason)}</p>`; return;
-  }
-  const reference = data.classes[0]?.status?.replace('empirical_reference_','');
-  const methodNote = /^20\d{2}$/.test(reference) ? `0,50 là ngưỡng nền của dự án; 1,50 kế thừa Task 3. Hai mốc còn lại là P50/P90 của pixel có r ≥ 1,50 trong năm tham chiếu ${reference}. Lựa chọn P50/P90 là quy ước thống kê thực nghiệm, chưa phải ngưỡng kinh tế được kiểm chứng hoặc chuẩn do EOG quy định.` : 'Bộ phân lớp kiểm thử hoặc chưa có nhãn năm tham chiếu.';
-  const s = data.class_summary;
-  const fractional = s?.method_version === 'viirs_brightness_classes_v3_fractional';
+  if(data.source!=='VIIRS'){$('class-summary').textContent='Bộ phân lớp cường độ bức xạ này chỉ áp dụng ảnh VIIRS.';return;}
+  const config=data.classification_config;
+  if(!config){$('class-summary').textContent='Cần tải lại ứng dụng để đồng bộ bộ ngưỡng phân lớp.';return;}
+  const ready=data.classification_current && data.class_status==='ready';
+  const rows=ready?data.classes:config.classes.map(c=>({...c,area_km2:null,class_area_pct:null,unit:config.unit}));
   const params = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:demoSelection.month});
   if(demoSnapshotId)params.set('expected_snapshot',demoSnapshotId);
-  const audit = `<a class="asset-link" href="/api/demo/classes.csv?${params}">Tải CSV lớp sáng</a>`;
-  $('class-summary').innerHTML = '<h3>Diện tích theo mức sáng</h3><table class="class-table"><thead><tr><th>Mức / ngưỡng</th><th>km²</th><th>% tỉnh</th></tr></thead><tbody>'
-    + data.classes.map((c,i) => `<tr><td><i style="background:${CLASS_COLORS[i]}"></i>${CLASS_NAMES[i]}<small>${dinhDang(c.lower_bound,2)} ≤ r ${c.upper_bound === null ? '' : '< '+dinhDang(c.upper_bound,2)} ${thoat(c.unit)}</small></td><td>${valueCell(c.area_km2)}</td><td>${dinhDang(c.class_area_pct,2) ?? '—'}</td></tr>`).join('')
-    + `</tbody></table>${audit}<p class="nho">${thoat(methodNote)} Ngưỡng giữ cố định giữa các năm. % tỉnh dùng diện tích tự nhiên làm mẫu số; NoData không thuộc lớp tối. ${fractional ? 'Diện tích tính theo phần giao pixel với tỉnh trong EPSG:6933.' : 'Kết quả cũ tính cả pixel giao biên; cần tính lại diện tích phần giao.'}</p>`;
+  const audit=ready?`<a class="asset-link" href="/api/demo/classes.csv?${params}">Tải CSV lớp sáng</a>`:'';
+  $('class-summary').innerHTML='<h3>Diện tích theo cường độ bức xạ</h3>'
+    +(!ready?'<p class="canh">Chưa có kết quả đã kiểm chứng theo bộ ngưỡng 0,50 / 2,00 / 10,00 / 20,00 cho ảnh này. Diện tích để trống đến khi cập nhật phân lớp.</p>':'')
+    +'<table class="class-table"><thead><tr><th>Mức / ngưỡng</th><th>km²</th><th>% tỉnh</th></tr></thead><tbody>'
+    +rows.map((c,i)=>`<tr><td><i style="background:${CLASS_COLORS[i]}"></i>${thoat(config.classes[i].name)}<small>${dinhDang(c.lower_bound,2)} ≤ r ${c.upper_bound===null?'':'< '+dinhDang(c.upper_bound,2)} ${thoat(c.unit)}</small></td><td>${valueCell(c.area_km2)}</td><td>${dinhDang(c.class_area_pct,2)??'—'}</td></tr>`).join('')
+    +`</tbody></table>${audit}<details class="classification-method"><summary>Căn cứ phân lớp</summary><p>${config.sources.map(s=>`<a href="${thoat(s.url)}" target="_blank" rel="noopener noreferrer">${thoat(s.title)}</a>`).join('<br>')}</p><p class="nho">${thoat(config.interpretation)} Ngưỡng giữ cố định giữa các năm; NoData không thuộc lớp thấp nhất. Diện tích tính theo phần giao pixel–tỉnh. Ngưỡng tính pixel sáng 1,50 là tham số riêng, không phải mốc phân lớp này.</p></details>`;
 }
+let demoLayerScheduled=false;
 function renderDemoLayer(){
   const mode = $('layer-mode').value;
   const data = demoDetails;
   let item = mode === 'classes' ? data?.class_asset : data?.processed_asset;
+  if(mode==='classes' && !data?.classification_current)item=null;
   const unavailable=item?.available===false ? item.reason : '';
   if(item?.available===false)item=null;
   const legacyMoc = cacMoc.find(m => maMoc(m) === contextPeriod());
@@ -160,10 +161,17 @@ function renderDemoLayer(){
   $('nut-tai-anh').disabled = demoSnapshotChanged || (!item && !(mode === 'processed' && legacyMoc && !unavailable));
   let reason = '';
   if(!demoSelection.code) reason = mode === 'processed' ? '' : 'Chọn một tỉnh để xem phân vùng cường độ ánh sáng.';
-  else if(!item) reason = unavailable || (mode === 'classes' ? (data?.class_reason || 'Chưa có kết quả phân lớp.') : 'Chưa đăng ký ảnh nguồn ở mốc này.');
+  else if(!item) reason = unavailable || (mode === 'classes' ? 'Chưa có phân lớp đã kiểm chứng theo bộ ngưỡng tài liệu cho ảnh này.' : 'Chưa đăng ký ảnh nguồn ở mốc này.');
   if(!tileTemplate) reason = 'Chưa có dịch vụ ô bản đồ; vẫn có thể xem bảng và tải GeoTIFF.';
   $('layer-status').textContent = reason || (mode === 'classes' ? 'Phân vùng theo ngưỡng cường độ ánh sáng; vùng không có dữ liệu được để trống.' : 'Phân bố bức xạ ánh sáng ban đêm.');
-  if(!banDo || !banDo.isStyleLoaded()) return;
+  if(mode==='classes'){
+    if(item && tileTemplate)moThangMau({source:data.source});else dongThangMau();
+  }
+  if(!banDo)return;
+  if(!banDo.isStyleLoaded()){
+    if(!demoLayerScheduled){demoLayerScheduled=true;banDo.once('idle',()=>{demoLayerScheduled=false;renderDemoLayer();});}
+    return;
+  }
   if(!demoSelection.code && mode === 'processed') return; // Giữ ảnh toàn quốc của app cũ.
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
   if(banDo.getSource('anh-dem')) banDo.removeSource('anh-dem');
@@ -175,15 +183,11 @@ function renderDemoLayer(){
   if(feature) source.bounds = bienDo(feature).flat();
   banDo.addSource('anh-dem', source);
   banDo.addLayer({id:'anh-dem',type:'raster',source:'anh-dem',paint:{'raster-opacity':1,'raster-resampling':mode === 'classes' ? 'nearest' : 'linear'}}, banDo.getLayer('mat-na-lop') ? 'mat-na-lop' : undefined);
-  if(mode === 'classes'){
-    $('thang-mau').style.display = '';
-    $('thang-mau').innerHTML = '<span>Phân vùng cường độ ánh sáng · ngưỡng và diện tích ở cột trái</span>';
-  }else{
-    moThangMau({source: data?.source || item.source});
-  }
+  moThangMau({source: data?.source || item.source});
 }
 function downloadSelectedImage(){
   const mode = $('layer-mode').value;
+  if(mode==='classes' && !demoDetails?.classification_current)return;
   const kind = mode === 'classes' ? 'classes' : 'processed';
   const item = demoDetails?.[kind === 'raw' ? 'raw_asset' : kind === 'classes' ? 'class_asset' : 'processed_asset'];
   if(demoSnapshotChanged || item?.available===false)return;

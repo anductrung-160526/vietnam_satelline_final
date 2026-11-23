@@ -71,6 +71,8 @@ Get-ChildItem "E:\SatelliteData\_demo_preparation" -Filter grdp_all_prices.csv -
 
 ## 3. Căn cứ của năm mức sáng
 
+> Bộ ngưỡng hiện hành đã chuyển sang **0,50 / 2,00 / 10,00 / 20,00** theo Ozturk & Ozturk (2025), Bảng 3. Phần P50/P90 bên dưới là lịch sử của bản demo trước. Cập nhật diện tích và bản đồ bằng lệnh tại [Phân lớp sáng phần D](PHAN_LOP_SANG_PHAN_D.md); không đổi nhãn dữ liệu cũ thành ngưỡng mới.
+
 Đây là **phân loại bức xạ thực nghiệm cho demo**, không phải chuẩn phân loại hoạt động kinh tế, đất đô thị hoặc mức sống. Không khẳng định các tài liệu tham khảo quy định chính xác năm khoảng này cho Việt Nam.
 
 Đơn vị: nW/cm²/sr, chỉ áp dụng VIIRS. Không dùng chung ngưỡng với DN của DMSP.

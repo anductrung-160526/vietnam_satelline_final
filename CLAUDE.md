@@ -26,6 +26,7 @@
 - Chỉ số tính theo tháng (DMSP theo năm), cấp tỉnh, 63 tỉnh trước sáp nhập.
 
 ## Quyết định đã chốt
+- **Phân lớp bức xạ VIIRS theo tài liệu (23/11/2026):** bốn mốc 0,50 / 2,00 / 10,00 / 20,00 nW/cm²/sr, theo Ozturk & Ozturk (2025), Bảng 3. Không dùng P50/P90 cho lượt mới, không đổi nhãn kết quả cũ. Mã lớp 0–4: thấp nhất, rất thấp, thấp, trung bình, cao; chưa là các mức phát triển kinh tế đã kiểm chứng cho Việt Nam. Ngưỡng pixel sáng 1,50 và lọc nền SOL 0,50 là các tham số riêng, giữ nguyên công thức. Cập nhật bằng `backend.data.update_light_classes`; kiểm chứng raster/diện tích trên candidate.db trước xuất bản, giữ snapshot chỉ số và kết quả Moran hiện hành.
 - **CÓ hiệu chỉnh liên kết DMSP–VIIRS** (chốt 09/11/2026, đảo lại quyết định trước đó).
   Tự khớp mô hình trên năm chồng lấn 2013 của chính bộ dữ liệu này; **không** dùng bộ dữ liệu
   harmonized bên ngoài (Li et al.) và không lấy thêm VIIRS 2013 từ nguồn khác.

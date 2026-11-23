@@ -105,7 +105,9 @@ def compare_rasters(start_path,end_path,code,area_model,breaks):
         a=domain&np.isfinite(before);b=domain&np.isfinite(after);common=a&b
         first=np.searchsorted(breaks,np.where(common,before,0),side='right')
         last=np.searchsorted(breaks,np.where(common,after,0),side='right')
-        lit_a=first>=2;lit_b=last>=2
+        # Lớp bức xạ có thể bắt đầu ở 2,00; pixel sáng của chỉ số vẫn theo ngưỡng 1,50.
+        from .calculate_ntl import LIT_THRESHOLD
+        lit_a=before>=LIT_THRESHOLD['VIIRS'];lit_b=after>=LIT_THRESHOLD['VIIRS']
         classes=np.full(end.shape,255,dtype='uint8')
         masks=[common&~lit_a&~lit_b,common&lit_a&lit_b&(first==last),common&~lit_a&lit_b,
                common&lit_a&~lit_b,common&lit_a&lit_b&(last>first),common&lit_a&lit_b&(last<first)]

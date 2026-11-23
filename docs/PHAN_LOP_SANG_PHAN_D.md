@@ -1,5 +1,20 @@
 # Phần D — phân lớp sáng, diện tích và kiểm chứng
 
+**Bộ ngưỡng hiện hành từ 23/11/2026:** 0,50 / 2,00 / 10,00 / 20,00 nW/cm²/sr theo tài liệu; thay bộ P50/P90 cho lượt phân lớp mới. Lớp 0–4 lần lượt là Thấp nhất, Rất thấp, Thấp, Trung bình, Cao. Bằng ngưỡng thuộc lớp cao hơn; NoData=255. Nguồn: [Ozturk & Ozturk (2025), Bảng 3, trang 72](https://doi.org/10.3986/AGS.14506), kế thừa Hügli (2021), Hale & Arlettaz (2019); xem thêm [Widmer và cộng sự (2022), Bảng 4.2](https://www.eionet.europa.eu/etcs/etc-he/products/etc-he-products/etc-he-report-2022-8-review-and-assessment-of-available-information-on-light-pollution-in-europe). Đây là các lớp bức xạ, chưa phải chuẩn phân loại phát triển kinh tế cho Việt Nam. Các phần P50/P90 bên dưới lưu lịch sử triển khai.
+
+Dừng server, cập nhật code và chạy trên máy có ảnh:
+
+```powershell
+git pull origin night-app
+python -m backend.data.update_light_classes --root "E:\SatelliteData" --publish
+```
+
+Lệnh chỉ cập nhật ảnh và diện tích từng lớp trong phạm vi VIIRS 2020–2024 đã nạp. Nguồn phải còn khớp F, ranh giới phải đúng SHA đã kiểm chứng. Tạo ảnh mới, tính diện tích giao pixel–tỉnh, kiểm mask/mã lớp/tổng diện tích và đăng ký bản xuất trên candidate.db; có backup trước khi xuất bản. Báo cáo ở `E:\SatelliteData\_demo_classification\<lượt>\classification_report.json`; `method.json` ở đường dẫn `classification.method` trong báo cáo. `reference_year=0` nghĩa là bộ ngưỡng tài liệu không có năm tham chiếu.
+
+Không sửa ảnh bức xạ, SOL, GRDP, hồi quy hoặc Moran. Ngưỡng tính `lit_area_km2` vẫn là 1,50; không suy diện tích này bằng tổng các lớp >=2,00. Kết quả P1 cũ mô tả thay đổi lớp theo bộ cũ được giữ lịch sử; màn hiện hành chỉ dùng Moran theo mật độ SOL nên không cần tính lại P1. Không chạy lại F từ báo cáo phân lớp cũ để ghi đè bộ mới; báo cáo cập nhật này kiểm chứng riêng các lớp mới.
+
+Nếu lệnh dừng giữa chừng sau khi tạo ảnh, có thể chạy lại với `--resume-dir "<thư mục chứa method.json của bộ tài liệu>" --publish`. Không truyền thư mục P50/P90 cũ. Khi chưa cập nhật xong, app hiển thị mốc mới nhưng để trống diện tích và ẩn ảnh lớp cũ, tránh gắn sai nhãn. Sau khi hoàn thành, chạy lại server và Ctrl+F5.
+
 **Cập nhật v9:** để sửa diện tích vượt 100% và kiểm tra/phục hồi tháng thiếu, dùng [SUA_DIEN_TICH_VA_THANG_THIEU.md](SUA_DIEN_TICH_VA_THANG_THIEU.md). Các lệnh/giới hạn v2/v8 dưới đây mô tả phiên bản trước sửa.
 
 Phạm vi: VIIRS 2020–2024, cấp 63 tỉnh trước sáp nhập. Bộ phân lớp không dùng học máy. Code, CSV, API và tài liệu đã được kiểm tra trên ảnh biết trước; chưa coi là đã nghiệm thu toàn bộ ảnh thật trên máy Windows.

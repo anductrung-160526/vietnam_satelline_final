@@ -1,8 +1,8 @@
-"""Năm mức sáng cho demo VIIRS, ngưỡng cố định từ năm tham chiếu 2020.
+"""Phân lớp cường độ bức xạ VIIRS: 0.50 / 2.00 / 10.00 / 20.00, kế thừa tài liệu.
 
-0.5: ngưỡng nền dự án; 1.5: ngưỡng sáng Task 3.
-Hai mốc còn lại: P50/P90 của pixel sáng (>=1.5) trong 63 ảnh năm tham chiếu.
-Đây là phân loại bức xạ thực nghiệm, không phải chuẩn phân lớp kinh tế/phân loại đô thị.
+Lượt mới mặc định theo Ozturk & Ozturk (2025), giữ diện tích phần giao pixel–tỉnh.
+Bộ P50/P90 chỉ còn dùng khi phục hồi lượt legacy hoặc yêu cầu --scheme legacy.
+Ngưỡng pixel sáng 1.5 độc lập với các mốc phân lớp.
 python -m backend.data.build_light_classes --root E:\\SatelliteData
 """
 import argparse
@@ -16,7 +16,8 @@ import numpy as np
 import rasterio
 from rasterio.shutil import copy as raster_copy
 
-from .calculate_ntl import windows, pixel_area_km2
+from .calculate_ntl import windows, pixel_area_km2, LIT_THRESHOLD
+from backend.core.light_classification import BREAKS, SCHEME as FIXED_SCHEME, METHOD_VERSION as FIXED_VERSION, configuration
 from .load_demo import backup_database, SCHEMA
 from .prepare_grdp import provinces
 
@@ -25,8 +26,9 @@ METHOD_VERSION = 'viirs_brightness_classes_v2'
 
 def validate_breaks(breaks):
     if (len(breaks) != 4 or not all(np.isfinite(b) for b in breaks)
-            or breaks[:2] != [0.5, 1.5] or not all(a < b for a, b in zip(breaks, breaks[1:]))):
-        raise ValueError('Cần bốn ngưỡng hữu hạn tăng nghiêm ngặt, bắt đầu 0.5 và 1.5.')
+            or (list(breaks)!=BREAKS and list(breaks[:2]) != [0.5, 1.5])
+            or not all(a < b for a, b in zip(breaks, breaks[1:]))):
+        raise ValueError('Cần bộ ngưỡng tài liệu [0.5,2,10,20] hoặc bộ ngưỡng legacy bắt đầu 0.5 và 1.5.')
 
 
 def validate_radiance(image):
@@ -86,7 +88,7 @@ def classify_image(source, target, breaks, reference_year=None):
                     for index in range(5):
                         areas[index] += float(weights[classes == index].sum())
                 result.set_band_description(1, 'light_class')
-                result.update_tags(THRESHOLDS=json.dumps(breaks), METHOD='PROJECT_0.5_TASK3_1.5_REFERENCE_BRIGHT_P50_P90',
+                result.update_tags(THRESHOLDS=json.dumps(breaks), METHOD=FIXED_SCHEME if list(breaks)==BREAKS else 'PROJECT_0.5_TASK3_1.5_REFERENCE_BRIGHT_P50_P90',
                                    BOUNDARY_RULE='source_intersecting_pixel', SOURCE_IMAGE=str(source),
                                    REFERENCE_YEAR=str(reference_year) if reference_year is not None else 'test_or_unspecified')
         raster_copy(temporary, target, driver='COG', COMPRESS='DEFLATE', RESAMPLING='NEAREST')
@@ -99,7 +101,7 @@ def saved_areas(target, source, breaks, reference_year, details=False, area_weig
     """Đọc diện tích từ COG đã tạo; chỉ dùng lại khi khớp nguồn và phương pháp."""
     areas = np.zeros(5)
     valid_pixels = nodata_pixels = 0
-    valid_area = 0.0
+    valid_area = lit_area = 0.0
     validate_breaks(breaks)
     with rasterio.open(target) as image, rasterio.open(source) as original:
         validate_radiance(original)
@@ -129,13 +131,15 @@ def saved_areas(target, source, breaks, reference_year, details=False, area_weig
             valid_pixels += int(effective.sum())
             nodata_pixels += int((~effective).sum())
             valid_area += float(weights[effective].sum())
+            # Diện tích pixel sáng vẫn dùng 1,50; không suy từ lớp >=2,00 của bộ mới.
+            lit_area += float(weights[effective & (source_data >= LIT_THRESHOLD['VIIRS'])].sum())
             for index in range(5):
                 areas[index] += float(weights[effective & (values == index)].sum())
     error = float(areas.sum()) - valid_area
     if not np.isclose(areas.sum(), valid_area, rtol=1e-10, atol=1e-8):
         raise ValueError(f'Tổng diện tích lớp không bằng diện tích hợp lệ: {target}')
     result = dict(areas=areas.tolist(), valid_pixels=valid_pixels, nodata_pixels=nodata_pixels,
-                  valid_area_km2=valid_area, area_balance_error_km2=error)
+                  valid_area_km2=valid_area, lit_area_km2=lit_area, area_balance_error_km2=error)
     return result if details else result['areas']
 
 
@@ -179,7 +183,7 @@ def write_report(path, rows):
 
 
 def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
-          area_model=None, method_file=None, reuse_registered=False):
+          area_model=None, method_file=None, reuse_registered=False, scheme=None):
     root, db = Path(root).resolve(), Path(db)
     # Đọc UTF-8 ngay từ đầu: Windows có thể mặc định cp1252.
     schema_sql = SCHEMA.read_text(encoding='utf-8')
@@ -190,8 +194,18 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
         denominators = province_areas(connection, assets, areas_csv)
         registered = {(r['province_code'], r['year'], r['month']): r['path'] for r in connection.execute(
             "SELECT * FROM demo_asset WHERE kind='classes'")} if reuse_registered else {}
+    if scheme not in (None,'literature','legacy'):raise ValueError('Bộ phân lớp không hợp lệ.')
+    supplied_method=None
+    if resume_dir is not None or method_file is not None:
+        supplied_path=Path(resume_dir)/'method.json' if resume_dir is not None else Path(method_file)
+        supplied_method=json.loads(supplied_path.read_text(encoding='utf-8'))
+    supplied_fixed=supplied_method is not None and supplied_method.get('scheme')==FIXED_SCHEME
+    fixed = scheme=='literature' or supplied_fixed or (scheme is None and supplied_method is None)
+    if scheme=='legacy' and supplied_fixed:raise ValueError('method.json thuộc bộ ngưỡng tài liệu, không phải legacy.')
+    if fixed and area_model is None:
+        from .fractional_area import load_area_model
+        area_model=load_area_model(root)
     fractional = area_model is not None
-    version = 'viirs_brightness_classes_v3_fractional' if fractional else METHOD_VERSION
     if fractional:
         for row in assets:
             key = (row['province_code'], row['year'], row['month'])
@@ -204,7 +218,18 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
     for row in assets:
         if not Path(row['path']).resolve().is_relative_to(root):
             raise ValueError('Ảnh tham chiếu nằm ngoài --root.')
-    if resume_dir is not None:
+    if fixed:
+        breaks=list(BREAKS);reference_year=0
+        if supplied_method is not None and (not supplied_fixed or supplied_method.get('breaks')!=breaks
+                or supplied_method.get('reference_year')!=0 or supplied_method.get('status')!='literature_based'):
+            raise ValueError('Không tiếp tục lượt P50/P90 cũ bằng bộ ngưỡng tài liệu.')
+        directory=Path(resume_dir).resolve() if resume_dir is not None else root/'cog/light_classes'/datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        if not directory.is_relative_to(root/'cog/light_classes'):raise ValueError('Thư mục phân lớp phải trong kho dữ liệu.')
+        directory.mkdir(parents=True,exist_ok=resume_dir is not None)
+        method=dict(configuration(),reference_year=0,status='literature_based',
+                    lit_threshold=LIT_THRESHOLD['VIIRS'],boundary_rule='pixel_polygon_intersection')
+        (directory/'method.json').write_text(json.dumps(method,ensure_ascii=False,indent=2),encoding='utf-8')
+    elif resume_dir is not None:
         directory = Path(resume_dir).resolve()
         if not directory.is_relative_to(root/'cog/light_classes'):
             raise ValueError('Thư mục tiếp tục phải nằm trong <root>/cog/light_classes.')
@@ -236,6 +261,7 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
               'sources': ['Task3-GEO_NTL_Images.ipynb (ngưỡng 1.5)', 'CLAUDE.md (ngưỡng nền 0.5)',
                           'https://eogdata.mines.edu/products/vnl/index.html (xử lý nhất quán giữa các năm; không quy định năm ngưỡng của dự án)']}
         (directory/'method.json').write_text(json.dumps(method, ensure_ascii=False, indent=2), encoding='utf-8')
+    version = FIXED_VERSION if fixed else 'viirs_brightness_classes_v3_fractional' if fractional else METHOD_VERSION
     records, paths = [], []
     summaries, class_report, summary_report = [], [], []
     reused = 0
@@ -264,7 +290,7 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
         area, area_source = denominators[key]
         valid_area = checked['valid_area_km2']
         valid_pct = 100*valid_area/area if area is not None else None
-        lit_area = sum(areas[2:])
+        lit_area = checked['lit_area_km2']
         lit_pct = 100*lit_area/area if area is not None and checked['valid_pixels'] else None
         class_percentages = [100*a/area if area is not None and checked['valid_pixels'] else None for a in areas]
         if fractional:
@@ -287,7 +313,7 @@ def build(root, db, reference_year=2020, resume_dir=None, areas_csv=None,
         for index, area in enumerate(areas):
             records.append((row['province_code'], row['year'], row['month'], index,
                             0 if index == 0 else breaks[index-1], breaks[index] if index < 4 else None,
-                            area, f'empirical_reference_{reference_year}', 'nW/cm²/sr', 'VIIRS'))
+                            area, FIXED_SCHEME if fixed else f'empirical_reference_{reference_year}', 'nW/cm²/sr', 'VIIRS'))
             class_report.append(dict(province_code=key[0], year=key[1], month=key[2],
                                      class_index=index, lower_bound=0 if index == 0 else breaks[index-1],
                                      upper_bound=breaks[index] if index < 4 else None,
@@ -340,6 +366,7 @@ def main():
     parser.add_argument('--boundary-metadata', type=Path)
     parser.add_argument('--method-file', type=Path, help='Giữ ngưỡng của snapshot tham chiếu đã chọn, tạo báo cáo mới.')
     parser.add_argument('--reuse-registered', action='store_true', help='Dùng COG đã đăng ký nếu đúng nguồn/ngưỡng.')
+    parser.add_argument('--scheme',choices=('literature','legacy'),help='Lượt mới mặc định dùng tài liệu 0.5/2/10/20; legacy dành cho phục hồi lịch sử.')
     resume = parser.add_mutually_exclusive_group()
     resume.add_argument('--resume-dir', type=Path, help='Thư mục phân lớp đã có method.json.')
     resume.add_argument('--resume-latest', action='store_true', help='Dùng lại lượt phân lớp mới nhất.')
@@ -356,7 +383,7 @@ def main():
         from .fractional_area import load_area_model
         area_model = load_area_model(args.root, args.boundaries, args.boundary_metadata)
     print(json.dumps(build(args.root, args.db, args.reference_year, args.resume_dir, args.areas,
-                           area_model, args.method_file, args.reuse_registered), ensure_ascii=False, indent=2))
+                           area_model, args.method_file, args.reuse_registered,args.scheme), ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

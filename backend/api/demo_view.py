@@ -266,10 +266,15 @@ def province_view(code, year, month):
         definition=describe(item['field'])
         if definition:
             item.update(name=definition['name'],definition=definition['definition'],formula=definition['formula'])
+    from backend.core.light_classification import configuration, matches_current
+    classification_current=bool(matches_current(classes,class_summary) and class_asset
+                                and class_asset['available'] and class_asset['verification_status']=='verified'
+                                and data_provenance['consistent'] and processed_asset and processed_asset['available'])
     simulated = 'GIA_LAP' in str(observation.get('source', '')).upper() or observation.get('status') == 'GIA_LAP'
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
             'fields': [f for f in fields if is_public(f['field'])], 'raw_asset': raw_asset, 'processed_asset': processed_asset,
             'classes': classes, 'class_asset': class_asset, 'is_simulated': simulated,
+            'classification_config':configuration(),'classification_current':classification_current,
             'snapshot_id':request_snapshot,
             'class_summary': class_summary,
             'observation_support': observation_support,

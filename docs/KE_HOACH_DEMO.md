@@ -1,4 +1,4 @@
-> Giao diện hiện hành: ba tab chính; hồi quy đã khôi phục trong Chỉ số kinh tế đêm, Moran gộp thành mục thu gọn ở cùng màn. Ngưỡng hiển thị hai chữ số thập phân. Xem GIAO_DIEN_HOI_QUY_VA_MORAN.md.
+> Giao diện hiện hành: ba tab chính; màn kinh tế có hai subtab Dữ liệu thống kê và Phân tích định lượng (hồi quy và Moran). Bộ ngưỡng phân lớp mới 0,50 / 2,00 / 10,00 / 20,00 theo tài liệu; dùng `backend.data.update_light_classes` để cập nhật raster và diện tích, xem PHAN_LOP_SANG_PHAN_D.md. Ngưỡng pixel sáng 1,50 vẫn là tham số riêng.
 
 > Danh mục hiện hành: 46 mục (10 Raw, 36 Processed), đã bỏ population. Màn kinh tế có 25 trường ngoài định danh (2 Raw, 23 Processed), gồm ba chỉ số ghép được yêu cầu khôi phục; xem CHI_SO_KINH_TE_DEM.md. Các mô tả danh mục cũ bên dưới là lịch sử triển khai.
 
