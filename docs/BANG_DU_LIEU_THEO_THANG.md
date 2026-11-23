@@ -1,3 +1,5 @@
+> Giao diện hiện tại: tab Chỉ số đêm chỉ còn Bảng và Biểu đồ. Subtab Chi tiết và phân trang chi tiết đã bỏ; nút Tải CSV dùng bộ lọc của bảng so sánh thời gian. Các mô tả API bảng ngang dưới đây chỉ dành cho công cụ xuất dữ liệu.
+
 # Bảng dữ liệu theo tháng — danh mục đã thu gọn
 
 Mỗi dòng là tỉnh–năm hoặc tỉnh–tháng. Cột từ trái sang phải: định danh → Raw → Processed. Chọn năm VIIRS để xem dòng năm và 12 tháng, hoặc tick độc lập trong bộ lọc. Tải CSV xuất toàn bộ các dòng đã lọc; bảng phân trang 100 dòng.

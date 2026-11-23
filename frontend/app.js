@@ -594,9 +594,6 @@ function thamSoBang(){
 }
 
 async function napBang(){
-  /* Đổi bộ lọc thì bảng chi tiết thành cũ. Nạp lại ngay nếu đang mở nó, còn không
-     thì chỉ đánh dấu để doiXem() nạp lúc người dùng bấm sang. */
-  if(tableMode==='chitiet') loadWideTable(); else invalidateWideTable();
   const o = $('canh-bao-bang');
   if(!chon.chiSo.size || !chon.moc.size){
     duLieuBang = null;
@@ -713,21 +710,11 @@ function veDuong(){
   bieuDo.resize();
 }
 
-let tableMode='bang';
 function doiXem(mode){
-  tableMode=mode;
-  /* 'bang' là BẢNG CŨ: tỉnh × chỉ số × mốc thời gian, cùng các cột hàm thời gian.
-     Bảng rộng định danh → Raw → Processed lùi về nút 'Chi tiết'. */
   $('o-bang').hidden = mode!=='bang';
-  $('o-data-table').hidden = mode!=='chitiet';
-  $('data-table-summary').hidden=$('data-table-pages').hidden=mode!=='chitiet';
   $('o-chart').hidden = mode!=='chart';
   document.querySelectorAll('#xem-chiso button').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.xem===mode)));
-  /* Bảng chi tiết gọi /api/demo/data, nặng hơn hẳn /api/panel. Chỉ nạp khi thật sự
-     mở tới nó, và chỉ khi bộ lọc đã đổi kể từ lần nạp trước. */
-  if(mode==='chitiet' && typeof wideTableNeedsLoad==='function' && wideTableNeedsLoad())
-    loadWideTable();
   if(mode==='chart') requestAnimationFrame(veDuong);
 }
 
@@ -788,10 +775,7 @@ function doiXem(mode){
   document.querySelectorAll('#xem-chiso button').forEach(b => {
     b.onclick = () => doiXem(b.dataset.xem);
   });
-  $('nut-csv').onclick = () => {
-    if(tableMode==='chitiet')downloadWideTable();
-    else window.location = '/api/panel.csv?' + thamSoBang();
-  };
+  $('nut-csv').onclick = () => { window.location = '/api/panel.csv?' + thamSoBang(); };
   addEventListener('resize', () => { bieuDo?.resize(); economyChart?.resize(); });
 
   await dungBanDo();
