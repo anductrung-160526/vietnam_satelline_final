@@ -1,5 +1,7 @@
 # P1 — Moran và thay đổi vùng sáng
 
+> Giao diện hiện hành: **Chỉ số kinh tế đêm → Phân tích định lượng → Moran’s I**. Moran được tính trước theo từng năm và đọc từ kết quả đã kiểm chứng. Khi chọn khoảng rộng hơn lượt đã lưu (ví dụ chọn 2015–2024 trong khi chỉ có kết quả 2020–2024), app hiển thị các năm đã có và liệt kê năm còn thiếu. CSV chỉ xuất các kết quả có thật. Không tự tính thêm, nội suy hoặc thay ô thiếu bằng 0; không ghép các snapshot. Nếu nhiều lượt cùng snapshot, chọn lượt có nhiều năm nằm trong khoảng yêu cầu nhất, ưu tiên lượt mới hơn khi bằng nhau. Các hướng dẫn giao diện tab riêng bên dưới là lịch sử triển khai.
+
 Đã có code, API, màn **Phân tích không gian**, CSV/GeoTIFF/GeoJSON và kiểm thử bằng dữ liệu biết trước. Cần chạy trên kho Windows và gửi spatial_report.json trước khi xác nhận kết quả 63 tỉnh thật. P1 là phân tích cấp tỉnh/ảnh tỉnh, không phải công thức NEI tổng hợp.
 
 ## Chạy trên máy demo

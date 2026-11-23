@@ -32,6 +32,21 @@ SQLite giữ bảng `light_class` cũ và thêm `light_class_summary`; tỷ lệ
 
 0,5 là ngưỡng nền hiện có của dự án; 1,5 theo Task 3. q50/q90 tính một lần bằng phân vị tuyến tính trên toàn bộ pixel sáng hợp lệ r≥1,5 của 63 ảnh năm VIIRS 2020. Lấy theo số pixel, chưa có trọng số diện tích; pixel giao biên có thể lặp giữa tỉnh. Dùng cố định qua các năm/tháng, không chia theo max từng ảnh. Đây là phân loại bức xạ thực nghiệm; không khẳng định năm lớp tương ứng trực tiếp với mức kinh tế, loại đất hoặc mức sống.
 
+### Mức độ căn cứ của từng mốc
+
+| Mốc hiển thị (nW/cm²/sr) | Nguồn và ý nghĩa | Giới hạn diễn giải |
+|---|---|---|
+| 0,50 | Tham số lọc nền đã được chọn trong dự án (`CLAUDE.md`); pixel dưới ngưỡng không đóng góp vào SOL. | Chưa có kiểm định riêng chứng minh 0,50 là ngưỡng nhiễu tối ưu cho mọi tỉnh/tháng của bộ ảnh này. Không gọi là chuẩn EOG. |
+| 1,50 | Kế thừa notebook `Task3-GEO_NTL_Images.ipynb`: ô code số 7, câu lệnh `lit_mask = rad.gte(1.5)`. | Đây là căn cứ từ quy trình đầu vào, chưa phải bằng chứng độc lập rằng mọi pixel đạt ngưỡng có hoạt động kinh tế hoặc mọi pixel dưới ngưỡng không có hoạt động. |
+| 3,09 | P50 của tập pixel sáng r ≥ 1,50 trong năm tham chiếu 2020; metadata người dùng gửi ghi giá trị đầy đủ 3,0850000381469727. | Phân vị mô tả phân bố bức xạ; lựa chọn P50 là quy ước thống kê của bản demo, chưa được tối ưu theo biến kinh tế. |
+| 17,46 | P90 của cùng tập tham chiếu; metadata ghi 17,459999084472656. | “Rất sáng” là đuôi 10% pixel sáng của tập tham chiếu, không phải 10% diện tích hay nhóm 10% tỉnh phát triển nhất. |
+
+`method.json` người dùng gửi ghi 147.598 pixel sáng tham chiếu. Các số trên có thể kiểm tra từ metadata; việc tái tính độc lập P50/P90 cần chính bộ ảnh tham chiếu trên máy Windows. Bộ sửa diện tích v9 giữ ngưỡng tham chiếu đã lưu, không tự khẳng định đã khớp lại phân vị sau khi sửa mask. Chỉ làm tròn hai chữ số khi hiển thị; tính toán giữ toàn bộ độ chính xác trong metadata.
+
+Không sử dụng số ngẫu nhiên khi chọn ngưỡng. Tuy nhiên, việc chọn năm 2020 và P50/P90 vẫn là quyết định phương pháp, không tự trở thành chuẩn khoa học vì có công thức. Trước khi sử dụng như kết quả nghiên cứu chính thức, cần đối chiếu nhiễu nền/quan sát sạch mây, bản đồ và kiểm tra độ nhạy với các ngưỡng/phân vị thay thế trên cùng miền quan sát. Các tài liệu EOG trong phần B hỗ trợ nguyên tắc xử lý ảnh, không xác nhận chính xác bốn mốc này.
+
+Moran hiện tại dùng `sol_density` và trọng số tiếp giáp tỉnh, không dùng mã lớp 0–4. P50/P90 chỉ đổi phân lớp và diện tích từng lớp, không trực tiếp đi vào Moran. Ngưỡng nền 0,50 có ảnh hưởng đến SOL và do đó có thể ảnh hưởng Moran.
+
 Bằng ngưỡng thuộc lớp cao hơn; NoData không thuộc lớp 0. Giá trị âm trong ảnh đã lọc làm dừng. Ảnh đầu vào cần băng bức xạ scale=1, offset=0; một băng hoặc hai băng có tên avg_rad/cf_cvg. Không áp dụng bộ ngưỡng VIIRS cho DN của DMSP.
 
 Căn cứ chi tiết và tài liệu tham khảo: [GIAO_DIEN_DEMO_PHAN_B.md](GIAO_DIEN_DEMO_PHAN_B.md). Đã nhận method.json thật ngày 22/11: q50=3,0850000381469727 và q90=17,459999084472656, tham chiếu 2020 với 147.598 pixel sáng theo metadata. Kết quả này thay cho mọi mốc minh họa; xem [đối chiếu dữ liệu thật](DOI_CHIEU_KET_QUA_PHAN_D.md) trước khi nghiệm thu.

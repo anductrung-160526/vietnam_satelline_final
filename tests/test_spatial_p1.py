@@ -195,3 +195,30 @@ def test_moran_can_show_single_year_of_existing_run(spatial_fixture):
     csv_response=client.get('/api/spatial/file',params=dict(kind='moran',year_start=2021,year_end=2021,run_id=result['run_id'],expected_snapshot=result['dataset_id']))
     assert csv_response.status_code==200
     assert len(csv_response.content.decode('utf-8-sig').splitlines())==2
+
+
+def test_moran_shows_available_years_when_filter_exceeds_saved_run(spatial_fixture):
+    root,db,report,model=spatial_fixture
+    result=build(root,report,db,2020,2021,99,7,publish=True,area_model=model,expected_count=4)
+    client=TestClient(app)
+    query=dict(year_start=2015,year_end=2024)
+    data=client.get('/api/spatial',params=query).json()
+    assert data['status']=='ready' and data['run_id']==result['run_id']
+    assert data['available_years']==[2020,2021]
+    assert data['missing_years']==[2015,2016,2017,2018,2019,2022,2023,2024]
+    assert data['moran']==[dict(year=r['year'],moran_i=r['moran_i']) for r in result['moran']]
+    export=client.get('/api/spatial/file',params=dict(query,kind='moran',run_id=data['run_id'],expected_snapshot=data['snapshot_id']))
+    assert export.status_code==200
+    lines=export.content.decode('utf-8-sig').splitlines()
+    assert len(lines)==3 and lines[1].startswith('2020,') and lines[2].startswith('2021,')
+
+    # Một lượt snapshot cũ phủ nhiều năm hơn không được ghi đè kết quả hiện hành.
+    old=dict(result,run_id='old_run',dataset_id='old_dataset',year_start=2015,year_end=2024,
+             moran=[dict(year=y,moran_i=999) for y in range(2015,2025)])
+    with sqlite3.connect(db) as connection:
+        connection.execute('INSERT INTO spatial_run VALUES(?,?,?)',('old_run','old_dataset',json.dumps(old)))
+    assert client.get('/api/spatial',params=query).json()['run_id']==result['run_id']
+
+    # Đọc phần giao năm vẫn phải kiểm chữ ký nguồn, không dùng số đã lỗi thời.
+    Path(result['source_signatures'][0]['path']).unlink()
+    assert client.get('/api/spatial',params=query).json()['status']=='stale'

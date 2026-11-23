@@ -138,7 +138,7 @@ function renderClassSummary(data){
     $('class-summary').innerHTML = `<p class="empty-state">${thoat(data.class_reason)}</p>`; return;
   }
   const reference = data.classes[0]?.status?.replace('empirical_reference_','');
-  const methodNote = /^20\d{2}$/.test(reference) ? `Mốc 0,50 và 1,50 theo quy tắc dự án/Task 3; hai mốc còn lại là P50/P90 của pixel sáng năm ${reference}.` : 'Bộ phân lớp kiểm thử hoặc chưa có nhãn năm tham chiếu.';
+  const methodNote = /^20\d{2}$/.test(reference) ? `0,50 là ngưỡng nền của dự án; 1,50 kế thừa Task 3. Hai mốc còn lại là P50/P90 của pixel có r ≥ 1,50 trong năm tham chiếu ${reference}. Lựa chọn P50/P90 là quy ước thống kê thực nghiệm, chưa phải ngưỡng kinh tế được kiểm chứng hoặc chuẩn do EOG quy định.` : 'Bộ phân lớp kiểm thử hoặc chưa có nhãn năm tham chiếu.';
   const s = data.class_summary;
   const fractional = s?.method_version === 'viirs_brightness_classes_v3_fractional';
   const params = new URLSearchParams({province_code:demoSelection.code,nam:demoSelection.year,thang:demoSelection.month});

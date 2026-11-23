@@ -583,7 +583,9 @@ def spatial(year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024
     from .spatial_view import read_spatial
     result=read_spatial(year_start,year_end)
     if result['status']!='ready':return {k:result[k] for k in ('status','snapshot_id','message','available_pairs') if k in result}
-    return dict(status='ready',snapshot_id=result['snapshot_id'],run_id=result['run_id'],moran=[dict(year=r['year'],moran_i=r['moran_i']) for r in result['moran']])
+    return dict(status='ready',snapshot_id=result['snapshot_id'],run_id=result['run_id'],
+                available_years=result['available_years'],missing_years=result['missing_years'],
+                moran=[dict(year=r['year'],moran_i=r['moran_i']) for r in result['moran']])
 
 
 @app.get('/api/spatial/file')
