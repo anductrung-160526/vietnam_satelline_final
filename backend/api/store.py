@@ -254,7 +254,12 @@ INDICATORS=tuple(e for e in INDICATORS if is_public(e['ma']) and e['bang'].start
     dict(ma='background_pixels',ten='Số pixel dưới ngưỡng nền',don_vi='pixel',bang='ntl_annual',bang_thang='ntl_monthly',chu_so=0),
     dict(ma='lit_threshold',ten='Ngưỡng xác định pixel sáng',don_vi='nW/cm²/sr hoặc DN',bang='ntl_annual',bang_thang='ntl_monthly',chu_so=4),
 )
-for entry in INDICATORS:entry.setdefault('mo_ta',entry['ten'])
+from backend.core.indicator_catalog import describe,ECONOMY_PRIMARY
+for entry in INDICATORS:
+    meta=describe(entry['ma'])
+    if meta:
+        entry.update(ten=meta['name'],mo_ta=meta['definition'],definition=meta['definition'],formula=meta['formula'],field=meta['field'],scope=meta['table'],group=meta['group'],stage=meta['stage'])
+    entry.setdefault('mo_ta',entry['ten'])
 BY_CODE = {entry['ma']: entry for entry in INDICATORS}
 
 
@@ -263,6 +268,7 @@ def indicators():
     out = []
     with connect() as connection:
         for entry in INDICATORS:
+            if entry.get('field') in ECONOMY_PRIMARY:continue
             if entry['bang']=='economy_prices':
                 from .demo_view import prices
                 records=[(c,y,r) for (c,y,b),r in prices(connection,2004,2025).items() if b==entry['price_basis'] and r.get('population' if entry['ma']=='population' else 'grdp') is not None]

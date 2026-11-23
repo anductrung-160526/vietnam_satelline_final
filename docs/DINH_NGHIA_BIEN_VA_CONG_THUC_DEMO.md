@@ -1,6 +1,6 @@
 # Định nghĩa biến và công thức kinh tế đêm
 
-Danh mục hiển thị hiện tại là NIGHT_DATA_DICTIONARY.md: 43 mục, 10 Raw (5 định danh) và 33 Processed. Bảng trên app và CSV giữ định danh → Raw → Processed. Tên trường tiếng Anh chữ thường, diễn giải tiếng Việt. Đây là danh mục hiển thị, không phải danh sách mọi tham số kiểm tra nội bộ của phần mềm.
+Danh mục hiển thị hiện tại là NIGHT_DATA_DICTIONARY.md: 46 mục, 10 Raw (5 định danh) và 36 Processed. Bảng trên app và CSV giữ định danh → Raw → Processed. Tên trường tiếng Anh chữ thường, diễn giải tiếng Việt. Đây là danh mục hiển thị, không phải danh sách mọi tham số kiểm tra nội bộ của phần mềm.
 
 ## Dữ liệu năm và tháng
 
@@ -23,6 +23,16 @@ Năm lớp sáng dùng các ngưỡng VIIRS cố định của bộ D: 0,5; 1,5;
 ## Biến động theo thời gian
 
 sol_change_pct là thay đổi năm trước trong cùng nguồn. sol_change_mom_pct so tháng lịch liền trước, sol_change_yoy_pct so cùng tháng năm trước. Thiếu mốc tham chiếu hoặc mẫu số không dương thì trống. sol_ma3 dùng ba tháng lịch đủ dữ liệu. tnl_ma3 và tnl_mom_growth_pct là tên tương thích Task 3 cho cửa sổ theo quan sát, khác cửa sổ tháng lịch; không gộp hai công thức. gdp_change_pct chỉ có theo năm và theo cơ sở giá so sánh khi hiển thị chính.
+
+## Quan hệ ánh sáng–GRDP và thuật ngữ
+
+Tên hiển thị của sol là “Quy mô kinh tế đêm theo ánh sáng (SOL)”; sol_density là “Mật độ kinh tế đêm theo ánh sáng”. Đây là các chỉ báo đại diện, không phải giá trị tiền tệ của kinh tế đêm. Thống kê mean_rad, std_rad, min_rad và max_rad gọi là bức xạ, không gọi là quy mô kinh tế.
+
+light_gdp_elasticity = sol_change_pct / gdp_change_pct là tỷ số tăng trưởng ánh sáng–GRDP; mẫu số bằng 0 hoặc thiếu thì null. sol_gdp_ratio = sol / GRDP là cường độ ánh sáng trên GRDP. Chọn giá hiện hành thì cả tăng trưởng và tỷ số dùng giá hiện hành; chế độ đối chiếu dùng giá so sánh cho các cột ghép. Không trộn hai cơ sở giá trong một công thức.
+
+predicted_gdp = exp(α + β × ln(sol)) là GRDP ước lượng từ ánh sáng. Hồi quy OLS có hệ số chặn: ln(GRDP) = α + β × ln(sol) + ε. Hai cơ sở giá dùng chung mẫu tỉnh–năm VIIRS, SOL và hai GRDP dương, nguồn gốc nhất quán, theo bộ lọc hiện tại. Không đủ 10 quan sát hoặc phương sai ln(sol) bằng 0 thì không ước lượng. Tính với hệ số chưa làm tròn, không lấy dự báo đã lưu từ mẫu khác. β không phải tỷ số tăng trưởng của từng tỉnh–năm; mô hình không chứng minh nhân quả. Phép exp chưa hiệu chỉnh sai lệch log nên không khẳng định dự báo trung bình không chệch trên thang gốc.
+
+Bảng tháng để null mọi chỉ số ghép cần GRDP năm; biểu đồ hồi quy vẫn dùng quan sát năm. Chi tiết tên chuẩn, công thức, thứ tự 2 Raw và 23 Processed của màn kinh tế ở CHI_SO_KINH_TE_DEM.md. Bộ lọc Chỉ số đêm giữ các đặc trưng ảnh; các chỉ số kinh tế đã chuyển sang tab Chỉ số kinh tế đêm. Nút ⓘ ở bên phải từng mục giải thích định nghĩa và công thức bằng tiếng Việt.
 
 ## Moran
 

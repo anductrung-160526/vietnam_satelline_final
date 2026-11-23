@@ -14,7 +14,11 @@ def test_catalog_monthly_nulls_and_public_csv(integrated):
     db,*_=integrated
     client=TestClient(app)
     fields={r['ma'] for r in client.get('/api/indicators').json()['chi_so']}
-    assert {'grdp_so_sanh','grdp_hien_hanh','min_rad','background_threshold','background_pixels','lit_threshold'}<=fields
+    assert {'min_rad','lit_threshold'}<=fields
+    moved={'grdp_so_sanh','grdp_hien_hanh','background_threshold','background_pixels','sol','sol_density'}
+    assert not moved & fields
+    economic_columns=client.get('/api/demo/economy').json()['columns']
+    assert moved <= {c['field'] for c in economic_columns}
     assert 'sol_cal' not in fields and 'NDVI_mean' not in fields and 'cloud_free_obs' not in fields
     data=client.get('/api/demo/data?province_code=01&moc=2022,2022-07').json()
     assert all(is_public(c['field']) for c in data['columns'])

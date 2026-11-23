@@ -1,6 +1,6 @@
 > Giao diện hiện hành: ba tab chính; hồi quy đã khôi phục trong Chỉ số kinh tế đêm, Moran gộp thành mục thu gọn ở cùng màn. Ngưỡng hiển thị hai chữ số thập phân. Xem GIAO_DIEN_HOI_QUY_VA_MORAN.md.
 
-> Cập nhật tiếp: đã bỏ population khỏi app và từ điển; danh mục hiện tại 43 mục (10 Raw, 33 Processed).
+> Danh mục hiện hành: 46 mục (10 Raw, 36 Processed), đã bỏ population. Màn kinh tế có 25 trường ngoài định danh (2 Raw, 23 Processed), gồm ba chỉ số ghép được yêu cầu khôi phục; xem CHI_SO_KINH_TE_DEM.md. Các mô tả danh mục cũ bên dưới là lịch sử triển khai.
 
 > Cập nhật danh mục ngày 23/11/2026: app chỉ dùng 44 mục (11 Raw, 33 Processed); dân số/GRDP chỉ theo năm, dòng tháng null; Moran chỉ còn moran_i. Các hạng mục phân tích/metadata đã bỏ dưới đây là lịch sử triển khai, không phải danh mục giao diện hiện hành. Xem BANG_DU_LIEU_THEO_THANG.md.
 

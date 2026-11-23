@@ -63,15 +63,15 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
     with store.connect() as connection:
         connection.execute('BEGIN')
         request_snapshot=current_id(connection)
-        data = prices(connection, year_from, year_to, code)
+        data = prices(connection, year_from-1, year_to, code)
         saved = dictionary_results(connection, year_from, year_to)
         night = {(r['province_code'], r['year']): dict(r) for r in connection.execute(
-            'SELECT province_code,year,sol,source,status FROM ntl_annual WHERE year BETWEEN ? AND ?',
-            (year_from, year_to))}
+            'SELECT * FROM ntl_annual WHERE year BETWEEN ? AND ?',
+            (year_from-1, year_to))}
         catalog = {r['province_code']: dict(r) for r in connection.execute('SELECT * FROM province')}
         versions=snapshot_status(connection);provenance=provenance_rows(connection)
         image_info={key:observation_info(connection,*key,0,versions,provenance) for key in night}
-    keys = sorted({k[:2] for k in data} | {k for k in night if not code or k[0]==code})
+    keys = sorted(k for k in ({k[:2] for k in data} | {k for k in night if not code or k[0]==code}) if year_from<=k[1]<=year_to)
     rows = []
     for province, year in keys:
         a = data.get((province, year, 'so_sanh'), {})
@@ -124,13 +124,16 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
     for price in ('so_sanh', 'hien_hanh'):
         sample = [dict(r, grdp=r['grdp_'+price]) for r in rows if r['paired']]
         fits[price] = do_co_gian(sample, gia_so_sanh=price == 'so_sanh')
+    from backend.core.economic_metrics import add_economic_metrics
+    from backend.core.indicator_catalog import describe_economy
+    add_economic_metrics(rows,night,data,basis,fits)
     warnings = []
     if any(not r['provenance_consistent'] for r in rows):
-        warnings.append('Có dòng thiếu nguồn hoặc khác snapshot; giữ số đã lưu để tra cứu, loại khỏi mẫu hồi quy hiện tại. Xem CSV để biết lý do.')
+        warnings.append('Có dòng chưa khớp nguồn gốc dữ liệu; hệ thống loại khỏi mẫu hồi quy hiện tại. Kiểm tra kết quả nạp và kiểm chứng dữ liệu.')
     if any(r['area_method'] == 'whole_pixel_approximation' for r in rows):
         warnings.append('Có kết quả diện tích dùng toàn bộ pixel giao biên; cần tính lại theo phần giao pixel–tỉnh. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
     if any(r['image_quality_flags'] for r in rows):
-        warnings.append('Kết quả ghép có cờ chất lượng ảnh; xem cột chất lượng và CSV. Biến động độ phủ có thể ảnh hưởng chỉ số ánh sáng.')
+        warnings.append('Kiểm tra nội bộ phát hiện ảnh cần rà soát; biến động độ phủ có thể ảnh hưởng chỉ số ánh sáng.')
     if any(r['is_simulated'] for r in rows):
         warnings.append('SỐ LIỆU GIẢ LẬP — chỉ dùng kiểm thử giao diện, không dùng cho báo cáo.')
     if basis in ('hien_hanh', 'compare'):
@@ -139,7 +142,7 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         warnings.append('Có dòng cần đối chiếu nguồn; dữ liệu được giữ nguyên và chưa tự động loại khỏi mẫu hồi quy.')
     if rows and not any(r['paired'] for r in rows):
         warnings.append('Chưa có mẫu chung đủ hai loại GRDP và SOL dương; chưa ước lượng mô hình đối chiếu.')
-    return {'dong': rows, 'hoi_quy': fits, 'canh_bao': warnings, 'price_basis': basis,
+    return {'dong': rows, 'columns':describe_economy(), 'hoi_quy': fits, 'canh_bao': warnings, 'price_basis': basis,
             'snapshot_id':request_snapshot,
             'nam_tu': year_from, 'nam_den': year_to, 'paired_count': sum(r['paired'] for r in rows),
             'province_code': code, 'population_missing': all(r['population'] is None for r in rows)}
@@ -258,6 +261,11 @@ def province_view(code, year, month):
     if month:
         for item in fields:
             if item['field'] in ('population','grdp_so_sanh','grdp_hien_hanh'):item.update(value=None,reason='Chỉ có dữ liệu theo năm.')
+    from backend.core.indicator_catalog import describe
+    for item in fields:
+        definition=describe(item['field'])
+        if definition:
+            item.update(name=definition['name'],definition=definition['definition'],formula=definition['formula'])
     simulated = 'GIA_LAP' in str(observation.get('source', '')).upper() or observation.get('status') == 'GIA_LAP'
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
             'fields': [f for f in fields if is_public(f['field'])], 'raw_asset': raw_asset, 'processed_asset': processed_asset,

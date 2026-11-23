@@ -284,3 +284,19 @@ thead th.ham-o{color:var(--nhan);text-transform:none;letter-spacing:0;font-size:
 #economy-results p {line-height:1.6;}
 #loc-kinhte label {margin-top:18px;}
 @media(max-width:1100px){.economy-layout{grid-template-columns:1fr;}}
+
+.ds .indicator-row{display:grid;grid-template-columns:minmax(0,1fr) 24px;align-items:start;gap:5px;}
+.indicator-row label{min-width:0;}
+.indicator-info{width:20px;height:20px;padding:0;border:1px solid #6b8eb9;border-radius:50%;color:#9bc5ff;background:transparent;font:italic 600 13px Georgia,serif;cursor:pointer;margin-top:3px;}
+.indicator-info:hover,.indicator-info:focus-visible{background:#23436b;color:white;outline:2px solid #6aa9ff;}
+.indicator-help{position:fixed;z-index:10000;width:min(420px,calc(100vw - 24px));box-sizing:border-box;max-height:calc(100vh - 24px);overflow:auto;padding:20px;background:#172238;color:#e8edf5;border:1px solid #567398;border-radius:10px;box-shadow:0 12px 40px #0009;font-size:.88rem;line-height:1.65;}
+.indicator-help h3{font-size:1rem;margin:0 25px 12px 0;}
+.indicator-help p{margin:10px 0;}
+.help-close{position:absolute;top:8px;right:10px;font-size:22px;padding:0 6px;cursor:pointer;}
+.indicator-section{font-size:.85rem;margin:20px 0 8px;color:var(--nhan);}
+#economy-indicators .ds{max-height:none;}
+#economy-indicators label{margin:0;}
+.economy-table-scroll th{min-width:130px;white-space:normal;}
+.economy-table-scroll thead tr:first-child th{top:0;height:30px;text-align:left;}
+.economy-table-scroll thead tr:nth-child(2) th{top:30px;}
+.economy-group-Raw{background:#123242;}.economy-group-Processed{background:#3a301a;}

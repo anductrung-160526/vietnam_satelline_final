@@ -3,6 +3,7 @@ import json
 import re
 from . import store
 from backend.core.public_fields import is_public
+from backend.core.indicator_catalog import describe
 from .demo_view import PROCESSED,FIELD_ALIASES,has_table,prices,result_number
 from .provenance import current_id
 from backend.data.dataset import snapshot_status,provenance_rows
@@ -100,7 +101,10 @@ def data_table(periods,codes=None,selected=None):
     names.update(NUMERIC)
     columns=[dict(field=f,name=names.get(f,f),group='identity' if f in IDENTITY_FIELDS else 'raw' if f in RAW_FIELDS else 'processed',
                   numeric=f in NUMERIC or f in ('population','grdp_so_sanh','grdp_hien_hanh','year','month','price_base_year')) for f in fields]
-    warnings=['Dân số và GRDP chỉ có ở dòng năm; dòng tháng để trống.',
+    for column in columns:
+        entry=describe(column['field'])
+        if entry:column.update(name=entry['name'],definition=entry['definition'],formula=entry['formula'])
+    warnings=['GRDP chỉ có ở dòng năm; dòng tháng để trống.',
               'avg_rad/cf_cvg là tham chiếu băng ảnh Raw, không phải một giá trị pixel đại diện cho tỉnh.']
     if snapshot and not versions.get(snapshot,{}).get('available'):warnings.append('CSV snapshot nền đã mất/đổi; cần kiểm chứng lại.')
     if any(r['status']=='GIA_LAP' for r in results):warnings.append('SỐ LIỆU GIẢ LẬP — có dòng chứa ảnh hoặc dữ liệu kinh tế dùng kiểm thử.')

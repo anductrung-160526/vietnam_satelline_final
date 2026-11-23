@@ -115,9 +115,9 @@ async function refreshDemo(){
     // Có thể có ảnh tỉnh đã đăng ký trước khi ghép COG toàn quốc.
     ++cardRequest;
     const field = name => data.fields.find(f => f.field === name)?.value;
-    $('the-so').innerHTML = theSo('SOL', dinhDang(field('sol'),0) ?? '—', data.unit)
-      + theSo('Diện tích sáng', dinhDang(field('lit_area_km2'),2) ?? '—', 'km²')
-      + theSo('Mật độ', dinhDang(field('sol_density'),2) ?? '—', data.unit + '/km²');
+    $('the-so').innerHTML = theSo('Quy mô kinh tế đêm theo ánh sáng (SOL)', dinhDang(field('sol'),0) ?? '—', data.unit)
+      + theSo('Diện tích được chiếu sáng', dinhDang(field('lit_area_km2'),2) ?? '—', 'km²')
+      + theSo('Mật độ kinh tế đêm theo ánh sáng', dinhDang(field('sol_density'),2) ?? '—', data.unit + '/km²');
     if(!cacMoc.length && data.processed_asset){
       $('chon-nam').innerHTML = `<option>${contextPeriod()} · ảnh tỉnh</option>`;
     }
@@ -195,6 +195,7 @@ function downloadSelectedImage(){
 }
 
 let economyInitialized=false;
+let economySelectedFields=null;
 function economyRange(){return [Number($('economy-start').value),Number($('economy-end').value)];}
 function initEconomyPanel(){
   if(economyInitialized)return;
@@ -202,11 +203,12 @@ function initEconomyPanel(){
     +'<label for="economy-end">Đến năm</label><select id="economy-end"></select>'
     +'<label for="economy-province">Phạm vi phân tích</label><select id="economy-province"><option value="">Toàn bộ tỉnh</option></select>'
     +'<label for="economy-basis">Cơ sở giá GRDP</label><select id="economy-basis"><option value="so_sanh">Giá so sánh</option><option value="hien_hanh">Giá hiện hành</option><option value="compare">Đối chiếu hai cơ sở giá</option></select>'
-    +'<p class="canh-nho">Bảng và hồi quy dùng chung dữ liệu năm trong phạm vi đã chọn. Giá so sánh là cơ sở phân tích chính.</p>';
+    +'<label for="economy-frequency">Tần suất bảng dữ liệu</label><select id="economy-frequency"><option value="annual">Theo năm</option><option value="monthly">Theo tháng</option><option value="both">Năm và tháng</option></select><div id="economy-indicators"></div>'
+    +'<p class="canh-nho">Hồi quy sử dụng dữ liệu năm trong phạm vi đã chọn; GRDP ở dòng tháng để trống. Giá so sánh là cơ sở phân tích chính.</p>';
   for(const id of ['economy-start','economy-end'])$(id).innerHTML=Array.from({length:22},(_,i)=>2004+i).map(y=>`<option>${y}</option>`).join('');
   $('economy-start').value=2020;$('economy-end').value=2024;
   $('economy-province').innerHTML+=danhSachTinh.map(p=>`<option value="${p.province_code}">${thoat(p.province_name)}</option>`).join('');
-  for(const id of ['economy-start','economy-end','economy-province','economy-basis'])$(id).onchange=dungManKinhTe;
+  for(const id of ['economy-start','economy-end','economy-province','economy-basis','economy-frequency'])$(id).onchange=dungManKinhTe;
   $('economy-moran').ontoggle=()=>{if($('economy-moran').open)refreshSpatial();};
   economyInitialized=true;
 }
@@ -218,7 +220,7 @@ async function dungManKinhTe(){
   $('economy-results').innerHTML='<p>Đang đọc dữ liệu kinh tế đêm…</p>';
   invalidateSpatial();
   if(first>last){$('economy-results').textContent='Năm bắt đầu phải nhỏ hơn hoặc bằng năm kết thúc.';return;}
-  const params=new URLSearchParams({nam_tu:first,nam_den:last,price_basis:basis,thang:0});
+  const params=new URLSearchParams({nam_tu:first,nam_den:last,price_basis:basis,thang:0,view_frequency:$('economy-frequency').value});
   if(code)params.set('province_code',code);
   try{
     const data=await layJSON('/api/demo/economy?'+params);if(request!==economyRequest)return;
@@ -227,26 +229,46 @@ async function dungManKinhTe(){
     const bases=basis==='compare'?['so_sanh','hien_hanh']:[selected];
     const label=b=>b==='so_sanh'?'Giá so sánh':'Giá hiện hành';
     const scope=code ? danhSachTinh.find(p=>p.province_code===code)?.province_name || code : 'Toàn bộ tỉnh';
-    const columns=[['province_name','Tỉnh'],['year','Năm'],['grdp_so_sanh','GRDP so sánh'],['grdp_hien_hanh','GRDP hiện hành'],['sol','SOL'],['gdp_change_pct','Δ GRDP '+(selected==='so_sanh'?'so sánh':'hiện hành')+' (%)']];
-    const cell=(r,f)=>f==='province_name'?thoat(r[f]):f==='year'?String(r[f]):dinhDang(r[f],2)??'—';
+    const allColumns=data.columns;
+    const regression=data.regression_rows;
+    if(economySelectedFields===null)economySelectedFields=new Set(allColumns.map(c=>c.field));
+    const visible=allColumns.filter(c=>economySelectedFields.has(c.field));
+    const families=[];
+    for(const stage of ['Raw','Processed']){
+      const group=allColumns.filter(c=>c.stage===stage);
+      families.push(`<h3 class="indicator-section">${stage==='Raw'?'Dữ liệu đầu vào · Raw':'Chỉ số tính toán · Processed'}</h3><ul class="ds">`+group.map(c=>`<li class="indicator-row"><label><input type="checkbox" data-economy-field="${c.field}"${economySelectedFields.has(c.field)?' checked':''}><span>${thoat(c.name)}</span></label>${indicatorInfoButton(c)}</li>`).join('')+'</ul>');
+    }
+    $('economy-indicators').innerHTML=families.join('');
+    $('economy-indicators').onchange=event=>{const field=event.target.dataset.economyField;if(!field)return;event.target.checked?economySelectedFields.add(field):economySelectedFields.delete(field);dungManKinhTe();};
+    if(visible.length)params.set('fields',visible.map(c=>c.field).join(','));
+    const columns=[{field:'province_name',name:'Tỉnh',stage:'identity'},{field:'year',name:'Năm',stage:'identity'},{field:'month',name:'Tháng',stage:'identity'},...visible];
+    const cell=(r,f)=>f==='province_name'?thoat(r[f]):['year','month'].includes(f)?String(r[f]??0):dinhDang(r[f],2)??'—';
+    const groups=[['identity','Định danh'],['Raw','Dữ liệu đầu vào · Raw'],['Processed','Chỉ số tính toán · Processed']].map(([stage,label])=>{const count=columns.filter(c=>c.stage===stage).length;return count?`<th colspan="${count}" class="economy-group-${stage}">${label}</th>`:'';}).join('');
     const fitCard=b=>{const fit=data.hoi_quy[b];return `<article class="fit-card"><h3>${label(b)}</h3>`
       +`<p>β = ${dinhDang(fit.beta,4)??'—'} · R² = ${dinhDang(fit.r2,4)??'—'} · n = ${data.paired_count}</p>`
       +`<small>${fit.beta==null ? 'Chưa đủ quan sát dương hoặc phương sai để khớp hồi quy.' : 'ln(GRDP) = '+dinhDang(fit.alpha,4)+' + ('+dinhDang(fit.beta,4)+') × ln(SOL)'}</small></article>`;};
-    $('economy-results').innerHTML=`<h2>Ánh sáng ban đêm và GRDP</h2><p>${thoat(scope)} · ${first}–${last} · dữ liệu năm. GRDP: tỷ đồng; SOL: thang đo theo nguồn ảnh.</p>`
-      +(!data.dong.some(r=>r.grdp_so_sanh!=null || r.grdp_hien_hanh!=null)?'<p class="canh">Chưa tìm thấy GRDP năm trong database đang mở; kiểm tra bộ dữ liệu đã nạp.</p>':'')
+    $('economy-results').innerHTML=`<h2>Ánh sáng ban đêm và GRDP</h2><p>${thoat(scope)} · ${first}–${last} · bảng ${$('economy-frequency').value==='annual'?'theo năm':$('economy-frequency').value==='monthly'?'theo tháng':'năm và tháng'}; hồi quy theo năm. GRDP: tỷ đồng; SOL: thang đo theo nguồn ảnh.</p>`
+      +(!regression.some(r=>r.grdp_so_sanh!=null || r.grdp_hien_hanh!=null)?'<p class="canh">Chưa tìm thấy GRDP năm trong database đang mở; kiểm tra bộ dữ liệu đã nạp.</p>':'')
       +`<div class="fit-grid">${bases.map(fitCard).join('')}</div>`
       +'<div class="economy-layout"><section><h3>Bảng dữ liệu</h3><div class="economy-table-scroll"><table id="economy-data-table"><thead><tr>'
-      +columns.map(([f,name])=>`<th>${name}</th>`).join('')+'</tr></thead><tbody>'
-      +data.dong.map(r=>'<tr>'+columns.map(([f])=>`<td>${cell(r,f)}</td>`).join('')+'</tr>').join('')+'</tbody></table></div>'
-      +`<p class="nho">${data.dong.length} dòng; ${data.paired_count} cặp đủ hai giá GRDP và SOL dương, cùng nguồn VIIRS, dùng cho hồi quy. Ô thiếu giữ trống.</p>`
-      +`<a class="asset-link" href="/api/demo/economy.csv?${params}">Tải CSV theo bộ lọc</a></section>`
-      +'<section><h3>Quan hệ ánh sáng – GRDP</h3><div id="economy-scatter" class="economy-scatter"></div><p class="nho">Các điểm và đường hồi quy dùng cùng mẫu đủ điều kiện của bảng. Hồi quy log–log mô tả mối liên hệ, không chứng minh nhân quả.</p></section></div>'
+      +groups+'</tr><tr>'+columns.map(c=>`<th title="${thoat(c.definition || c.name)}">${thoat(c.name)}</th>`).join('')+'</tr></thead><tbody>'
+      +data.dong.slice(0,100).map(r=>'<tr>'+columns.map(c=>`<td>${cell(r,c.field)}</td>`).join('')+'</tr>').join('')+'</tbody></table></div><div class="chan-bang economy-pages"><button id="economy-prev" type="button">← Trang trước</button><span id="economy-page"></span><button id="economy-next" type="button">Trang sau →</button></div>'
+      +`<p class="nho">${data.dong.length} dòng (phân trang 100 dòng; CSV gồm toàn bộ); ${data.paired_count} cặp đủ hai giá GRDP và SOL dương, cùng nguồn VIIRS, dùng cho hồi quy. Ô thiếu giữ trống.</p>`
+      +(visible.length?`<a class="asset-link" href="/api/demo/economy.csv?${params}">Tải CSV theo bộ lọc</a>`:'<p class="nho">Chọn chỉ số trong bộ lọc để xuất CSV.</p>')+'</section>'
+      +'<section><h3>Quan hệ ánh sáng – GRDP</h3><div id="economy-scatter" class="economy-scatter"></div><p class="nho">Biểu đồ dùng mẫu năm đủ điều kiện trong cùng phạm vi; chọn bảng tháng không chuyển GRDP năm thành GRDP tháng. Hồi quy log–log mô tả mối liên hệ, không chứng minh nhân quả.</p></section></div>'
       +(basis!=='so_sanh'?'<p class="nho">Giá hiện hành dùng đối chiếu, có ảnh hưởng biến động giá.</p>':'');
+    let page=0;
+    const drawPage=()=>{
+      const pages=Math.max(1,Math.ceil(data.dong.length/100));page=Math.max(0,Math.min(page,pages-1));
+      $('economy-data-table').querySelector('tbody').innerHTML=data.dong.slice(page*100,(page+1)*100).map(r=>'<tr>'+columns.map(c=>`<td>${cell(r,c.field)}</td>`).join('')+'</tr>').join('');
+      $('economy-page').textContent=`Trang ${page+1}/${pages}`;$('economy-prev').disabled=page===0;$('economy-next').disabled=page===pages-1;
+    };
+    $('economy-prev').onclick=()=>{page--;drawPage();};$('economy-next').onclick=()=>{page++;drawPage();};drawPage();
     if(typeof echarts!=='undefined'){
       economyChart=echarts.init($('economy-scatter'));
       const colors=['#ffc857','#6aa9ff'],series=[];
       bases.forEach((b,i)=>{
-        const fit=data.hoi_quy[b];const points=data.dong.filter(r=>r.paired && r.sol>0 && r['grdp_'+b]>0).map(r=>({value:[Math.log(r.sol),Math.log(r['grdp_'+b])],province:r.province_name,year:r.year}));
+        const fit=data.hoi_quy[b];const points=data.regression_rows.filter(r=>r.paired && r.sol>0 && r['grdp_'+b]>0).map(r=>({value:[Math.log(r.sol),Math.log(r['grdp_'+b])],province:r.province_name,year:r.year}));
         series.push({name:label(b),type:'scatter',data:points,itemStyle:{color:colors[i]},symbolSize:7});
         if(fit.beta!=null && points.length){const xs=points.map(p=>p.value[0]),ends=[Math.min(...xs),Math.max(...xs)];series.push({name:'Hồi quy · '+label(b),type:'line',data:ends.map(x=>[x,fit.alpha+fit.beta*x]),symbol:'none',itemStyle:{color:colors[i]},lineStyle:{color:colors[i],width:2},silent:true});}
       });

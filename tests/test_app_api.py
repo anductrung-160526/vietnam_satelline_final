@@ -109,13 +109,15 @@ class ApiTest(unittest.TestCase):
         """Giao diện phải biết chỉ số nào còn trống để nói ra, thay vì vẽ bảng rỗng."""
         body = self.client.get('/api/indicators').json()['chi_so']
         codes = [c['ma'] for c in body]
-        self.assertIn('sol', codes)
-        self.assertIn('grdp_so_sanh', codes)
+        self.assertIn('rad_mean', codes)
+        self.assertNotIn('sol', codes)
+        self.assertNotIn('grdp_so_sanh', codes)
         for entry in body:
             for field in ('ma', 'ten', 'don_vi', 'bang', 'chu_so', 'so_tinh', 'mo_ta'):
                 self.assertIn(field, entry)
-        # economy rỗng khi giảng viên chưa gửi số liệu: phải báo 0, không báo None.
-        self.assertEqual([c for c in body if c['ma'] == 'grdp_so_sanh'][0]['so_tinh'], 0)
+        economy=self.client.get('/api/demo/economy').json()
+        self.assertIn('grdp_so_sanh', [c['field'] for c in economy['columns']])
+        self.assertTrue(all(r['grdp_so_sanh'] is None for r in economy['dong']))
 
     def test_the_panel_covers_all_63_provinces_even_the_empty_ones(self):
         """Bảng kiểu WDI liệt kê đủ 63 tỉnh; tỉnh chưa có số liệu là ô trống, không bị bỏ."""
@@ -167,7 +169,7 @@ class ApiTest(unittest.TestCase):
         wide = self.client.get('/api/panel.csv', params={'chi_so': 'sol', 'nam_tu': 2004,
                                                          'nam_den': 2006}).content.decode('utf-8-sig')
         self.assertIn('province_code,province_name,chi_so,don_vi,source,2004,2005,2006', wide)
-        self.assertIn('# Tổng độ sáng ban đêm', wide)
+        self.assertIn('# Quy mô kinh tế đêm theo ánh sáng (SOL)', wide)
         self.assertIn('01,Hà Nội', wide)
         long = self.client.get('/api/panel.csv', params={'chi_so': 'sol', 'dang': 'dai'}
                                ).content.decode('utf-8-sig')
@@ -626,11 +628,6 @@ class EconomyIndicatorDocTest(unittest.TestCase):
 
     DOC = REPO / 'docs' / 'CHI_SO_KINH_TE_DEM.md'
 
-    # Tên nhóm B là ĐỀ XUẤT, chưa tồn tại trong app; liệt kê để test không báo nhầm.
-    DE_XUAT = {'sol_bq_dau_nguoi', 'do_co_gian_sol_gdp', 'gdp_du_bao_tu_anh',
-               'chenh_lech_gdp_anh', 'sol_tren_gdp', 'cuong_do_vung_sang',
-               'ty_trong_sol_quoc_gia', 'gdp_du_bao'}
-
     def test_the_three_mandated_indicators_are_documented_and_real(self):
         from backend.api import store
         text = self.DOC.read_text(encoding='utf-8')
@@ -639,30 +636,20 @@ class EconomyIndicatorDocTest(unittest.TestCase):
                 self.assertIn(f'`{ma}`', text)
                 self.assertIn(ma, store.NIGHT_FIELDS)
 
-    def test_every_group_a_column_named_in_the_doc_exists_in_the_app(self):
+    def test_every_current_economic_column_matches_the_document(self):
         import re
-        from backend.api import store
+        from backend.core.indicator_catalog import ECONOMY_FIELDS
         text = self.DOC.read_text(encoding='utf-8')
-        thuc = set(store.NIGHT_FIELDS) | {i['ma'] for i in store.INDICATORS}
-        bo_qua = self.DE_XUAT | {
-            'province_code', 'year', 'economy', 'population', 'gdp', 'sol_t', 'sol_viirs', 'sol_dmsp',
-            'stable_lights', 'data_processed', 'metadata', 'backend', 'derive',
-            'ntl_annual', '_hc',
-            # Tài liệu nhắc ba tên này để nói chúng ĐÃ BỊ GỠ theo Night Data
-            # Dictionary, không phải để giới thiệu cột đang có. Bỏ qua chúng,
-            # nếu không thì mỗi lần ghi lại một quyết định là test đỏ.
-            'sol_density_cal', 'sol_change_cal_pct', 'light_basis'}
-        ten = {t for t in re.findall(r'`([a-z0-9_]+)`', text)
-               if '.' not in t and '/' not in t}
-        thieu = sorted(t for t in ten - thuc - bo_qua)
-        self.assertEqual(thieu, [], f'Tài liệu nhắc cột không có thật: {thieu}')
+        fields=re.findall(r'^\| `([a-z0-9_]+)` \|',text,re.MULTILINE)
+        self.assertEqual(fields,ECONOMY_FIELDS)
 
     def test_it_states_the_three_method_constraints(self):
         """Ba ràng buộc này là chỗ dễ làm hỏng toàn bộ phân tích nếu bỏ qua."""
         text = self.DOC.read_text(encoding='utf-8')
         self.assertIn('giá so sánh', text)        # khử lạm phát trước khi tính độ co giãn
-        self.assertIn('_hc', text)                # bắc qua 2013 phải dùng chuỗi đã hiệu chỉnh
-        self.assertIn('Gibson', text)             # DMSP kém tin cậy ở tỉnh nhỏ
+        self.assertIn('2010 hoặc 2014', text)      # chuỗi chưa hiệu chỉnh không bắc qua đổi vệ tinh
+        self.assertIn('nguồn VIIRS', text)         # mẫu hồi quy thống nhất cảm biến
+        self.assertIn('ít nhất 10 quan sát', text)
 
 
 class MonthlyIndicesLoadIntoTheDatabase(unittest.TestCase):

@@ -413,15 +413,33 @@ def demo_province(province_code: str, nam: int = Query(..., ge=2004, le=2025),
 @app.get('/api/demo/economy')
 def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
                  nam_den: int = Query(2024, ge=2004, le=2025),
-                 province_code: str = '', price_basis: str = 'so_sanh', thang: int=Query(0,ge=0,le=12)):
+                 province_code: str = '', price_basis: str = 'so_sanh', thang: int=Query(0,ge=0,le=12),fields: str='',view_frequency: str='annual'):
     if nam_tu > nam_den or price_basis not in ('so_sanh', 'hien_hanh', 'compare'):
         raise HTTPException(400, 'Khoảng năm hoặc cơ sở giá không hợp lệ.')
+    if view_frequency not in ('annual','monthly','both'):raise HTTPException(400,'Tần suất không hợp lệ.')
     result=demo_view.economic_view(nam_tu, nam_den, _code(province_code) if province_code else None, price_basis)
-    for row in result['dong']:row['month']=thang
+    result['regression_rows']=[dict(r) for r in result['dong']]
+    if view_frequency!='annual':
+        from .data_table import data_table
+        periods=[f'{y}-{m:02}' for y in range(max(2014,nam_tu),nam_den+1) for m in range(1,13)]
+        monthly=[]
+        if periods:
+            monthly_data=data_table(periods,[_code(province_code)] if province_code else None)
+            if monthly_data['snapshot_id']!=result['snapshot_id']:
+                raise HTTPException(409,'Bộ dữ liệu đã đổi trong khi đọc bảng tháng; tải lại trang.')
+            monthly=monthly_data['rows']
+        for row in monthly:
+            row.update(paired=False,gdp_change_pct=None,light_gdp_elasticity=None,predicted_gdp=None,sol_gdp_ratio=None)
+        result['dong']=sorted((result['dong'] if view_frequency=='both' else [])+monthly,key=lambda r:(r['province_code'],r['year'],r.get('month',0)))
+    if fields:
+        wanted=set(fields.split(','));allowed={c['field'] for c in result['columns']}
+        if not wanted<=allowed:raise HTTPException(400,'Trường kinh tế không hợp lệ.')
+        result['columns']=[c for c in result['columns'] if c['field'] in wanted]
+    for row in result['dong']:row.setdefault('month',thang)
     if thang:
         for row in result['dong']:
-            for field in ('population','grdp','grdp_so_sanh','grdp_hien_hanh','gdp_change_pct'):row[field]=None
-    for row in result['dong']:
+            for field in ('population','grdp','grdp_so_sanh','grdp_hien_hanh','gdp_change_pct','predicted_gdp','light_gdp_elasticity','sol_gdp_ratio'):row[field]=None
+    for row in result['dong']+result['regression_rows']:
         row.pop('population',None);row.pop('sol_per_capita',None)
     result.pop('population_missing',None)
     result.setdefault('snapshot_id',demo_snapshot_id())
@@ -431,18 +449,12 @@ def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
 @app.get('/api/demo/economy.csv')
 def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
                      nam_den: int = Query(2024, ge=2004, le=2025),
-                     province_code: str = '', price_basis: str = 'so_sanh',expected_snapshot: str='',thang: int=Query(0,ge=0,le=12)):
+                     province_code: str = '', price_basis: str = 'so_sanh',expected_snapshot: str='',thang: int=Query(0,ge=0,le=12),fields: str='',view_frequency: str='annual'):
     import csv
-    data = demo_economy(nam_tu, nam_den, province_code, price_basis,thang)
+    data = demo_economy(nam_tu, nam_den, province_code, price_basis,thang,fields,view_frequency)
     if expected_snapshot and data.get('snapshot_id')!=expected_snapshot:
         raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
-    fields = ['province_code', 'province_name', 'year', 'month', 'population', 'grdp_so_sanh',
-              'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
-              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh',
-              'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
-              'model_training_period', 'model_n', 'model_beta','dataset_id','stats_version','sol_unit',
-              'provenance_consistent','provenance_reason','source_image_path','source_image_sha256']
-    fields=[f for f in fields if is_public(f) or f=='class_area_km2']
+    fields=['province_code','province_name','year','month']+[c['field'] for c in data['columns']]
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()

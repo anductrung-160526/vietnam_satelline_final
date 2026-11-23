@@ -1,165 +1,76 @@
 # Chỉ số kinh tế đêm — danh mục và phương pháp
 
-Tài liệu này liệt kê các chỉ số kinh tế đêm của dự án: cái gì đã tính, cái gì còn thiếu,
-công thức, đơn vị, và những ràng buộc phương pháp phải tôn trọng khi dùng.
+## Phạm vi và thuật ngữ
 
-Khoá chính mọi bảng: `province_code + nam` (63 tỉnh trước sáp nhập 01/7/2025).
+Tab **Chỉ số đêm** trình bày đặc trưng bức xạ và điểm ảnh. Tab **Chỉ số kinh tế đêm** trình bày GRDP, các chỉ báo kinh tế từ ánh sáng, quan hệ ánh sáng–GRDP và hồi quy. Một số thống kê bức xạ xuất hiện ở cả hai tab để hỗ trợ diễn giải; tên gọi và công thức giữ thống nhất. SOL, mật độ, tăng trưởng SOL và hai trường GRDP không còn trong bộ lọc Chỉ số đêm.
 
----
+`sol` có tên thống nhất **Quy mô kinh tế đêm theo ánh sáng (SOL)**. Đây là chỉ báo đại diện từ tổng bức xạ sau lọc nền, không phải giá trị gia tăng, doanh thu hay GRDP riêng của kinh tế đêm. `sol_density` là **Mật độ kinh tế đêm theo ánh sáng**, tức SOL chia diện tích tự nhiên tỉnh. Diện tích được chiếu sáng và tổng bức xạ là hai đại lượng khác nhau.
 
-## 1. Nhóm A — đã tính xong, thuần từ ảnh vệ tinh
+`predicted_gdp` là **GRDP ước lượng từ ánh sáng**, không gọi là dự báo tương lai hoặc GDP kinh tế đêm. `light_gdp_elasticity` là **Tỷ số tăng trưởng ánh sáng–GRDP**, không đồng nhất với hệ số β của hồi quy mức log–log và không diễn giải như quan hệ nhân quả.
 
-Nguồn: `backend/core/chi_so.py`, bảng `data_processed/ntl_annual.csv`.
+## Danh mục hiển thị
 
-### 1.1. Ba chỉ số kế hoạch quản lý dữ liệu bắt buộc
+Khoá dòng: `province_code`, `province_name`, `year`, `month`; tháng bằng 0 là dòng năm. Các khoá đứng trước 25 trường dưới đây: 2 Raw, 23 Processed. Trong mỗi nhóm, các biến có cùng cách đo lường đặt liền nhau. `U` là DN với DMSP hoặc nW/cm²/sr với VIIRS; chỉ so sánh trong cùng thang đo. Raw là dữ liệu đầu vào của dự án; tổng và thống kê tính từ ảnh, kể cả `sol_raw`, đều là Processed.
 
-| Cột | Tên | Công thức | Đơn vị |
-|---|---|---|---|
-| `sol` | **Quy mô kinh tế đêm** | tổng giá trị mọi pixel hợp lệ trong tỉnh, sau khi trừ nền | nW/cm²/sr (VIIRS) · DN (DMSP) |
-| `sol_density` | **Mật độ kinh tế đêm** | `sol ÷ area_km2` | đơn vị bức xạ trên km² |
-| `sol_change_pct` | **Mức độ thay đổi** | `(sol_t − sol_{t−1}) ÷ sol_{t−1} × 100` | % |
+| field | Tên chuẩn | Loại | Định nghĩa | Công thức | Đơn vị |
+|---|---|---|---|---|---|
+| `grdp_so_sanh` | GRDP theo giá so sánh | Raw | GRDP tỉnh giá so sánh năm gốc 2010, cơ sở chính thức cho phân tích tăng trưởng. | Đọc sheet giá so sánh. | tỷ đồng, giá 2010 |
+| `grdp_hien_hanh` | GRDP theo giá hiện hành | Raw | GRDP tỉnh giá hiện hành, dùng đối chiếu. | Đọc sheet giá hiện hành. | tỷ đồng, giá từng năm |
+| `background_threshold` | Ngưỡng lọc bức xạ nền | Processed | Ngưỡng nền đang dùng: VIIRS 0,5; DMSP 0. Tham số xử lý, không phải biến ảnh Raw. | b = 0,5 với VIIRS; b = 0 với DMSP. | U |
+| `background_pixels` | Số pixel dưới ngưỡng nền | Processed | Số pixel dưới ngưỡng nền; vẫn là pixel hợp lệ nhưng đóng góp 0 vào SOL. | Số i thuộc V có R_i < b. | pixel |
+| `sol_raw` | Tổng bức xạ trước lọc nền | Processed | Tổng bức xạ trên tập pixel hợp lệ trước bước lọc nền SOL, không nhân trọng số diện tích. Đây là thống kê tính từ ảnh thuộc nhóm Processed, dù tên trường chứa raw; không khôi phục tín hiệu đã bị loại ở bước xử lý đầu vào. | S_raw = tổng R_i, i thuộc V. | U |
+| `sol` | Quy mô kinh tế đêm theo ánh sáng (SOL) | Processed | Chỉ báo đại diện cho quy mô hoạt động kinh tế đêm, đo bằng tổng bức xạ của các pixel hợp lệ đạt ngưỡng nền trong tỉnh. Chỉ số phản ánh ánh sáng quan sát được; không đo trực tiếp doanh thu hoặc giá trị gia tăng của kinh tế đêm. | S = tổng R_i × 1[R_i ≥ b]. Pixel dưới nền đóng góp 0; không lấy R_i trừ b. | U |
+| `sol_density` | Mật độ kinh tế đêm theo ánh sáng | Processed | Chỉ báo mật độ hoạt động kinh tế đêm dựa trên tổng bức xạ sau lọc nền trên một đơn vị diện tích tự nhiên tỉnh. Không phải mật độ GDP hoặc dân số. | SOL / diện tích tự nhiên tỉnh, diện tích phải dương; dùng SOL chưa hiệu chỉnh. | U/km² |
+| `lit_threshold` | Ngưỡng xác định pixel sáng | Processed | Ngưỡng xác định pixel sáng, khác ngưỡng nền: VIIRS 1,5; DMSP 5. | h = 1,5 VIIRS; h = 5 DMSP. | U |
+| `lit_pixels` | Số pixel được chiếu sáng | Processed | Số pixel bức xạ hợp lệ đạt ngưỡng sáng. | L = tổng 1[R_i ≥ h], i thuộc V. | pixel |
+| `lit_sol` | Tổng bức xạ trên vùng được chiếu sáng | Processed | Tổng bức xạ vùng sáng; tên lịch sử có pop nhưng không phải số dân. | T_lit = tổng R_i × 1[R_i ≥ h]. | U |
+| `lit_area_km2` | Diện tích được chiếu sáng | Processed | Diện tích pixel sáng nằm thực sự trong tỉnh; v9 fractional cộng phần giao EPSG:6933, không cộng cả ô chạm biên hoặc nhân cố định 0,25 km². | A_lit = tổng area(pixel_i ∩ tỉnh)/10⁶ × 1[R_i ≥ h]. | km² |
+| `lit_area_pct` | Tỷ lệ diện tích được chiếu sáng | Processed | Tỷ lệ diện tích sáng trên diện tích tự nhiên tỉnh; mẫu số A. | 100 × A_lit / A. | % |
+| `min_rad` | Bức xạ nhỏ nhất | Processed | Bức xạ nhỏ nhất trên pixel hợp lệ. | min(R_i), i thuộc V. | U |
+| `mean_rad` | Bức xạ trung bình | Processed | Bức xạ trung bình trên pixel hợp lệ. | μ = T / N. | U |
+| `max_rad` | Bức xạ lớn nhất | Processed | Bức xạ lớn nhất trên pixel hợp lệ. | max(R_i), i thuộc V. | U |
+| `std_rad` | Độ lệch chuẩn bức xạ | Processed | Độ lệch chuẩn tổng thể, ddof=0. | σ = sqrt(max(tổng R_i² / N − μ², 0)). | U |
+| `spatial_cv` | Hệ số biến thiên bức xạ | Processed | Hệ số biến thiên; dictionary giữ quy ước Task 3 bằng 0 khi μ ≤ 0, trống nếu N=0. App ánh xạ rad_cv nên có thể hiển thị trống khi μ ≤ 0. | σ / μ nếu μ > 0; trường hợp khác theo mô tả. | không thứ nguyên |
+| `sol_change_pct` | Tốc độ thay đổi quy mô kinh tế đêm theo năm | Processed | Tốc độ thay đổi chỉ báo quy mô kinh tế đêm theo ánh sáng so với năm liền trước. Chỉ so sánh khi cùng nguồn ảnh; không tính qua mốc đổi DMSP F16/F18 năm 2010 hoặc DMSP–VIIRS năm 2014. | 100 × (SOL_y / SOL_y−1 − 1); thiếu hoặc mẫu số không dương thì trống. | % |
+| `gdp_change_pct` | Tốc độ tăng trưởng GRDP | Processed | Tăng trưởng GRDP năm liền trước, tính riêng từng cơ sở giá; không phụ thuộc có ảnh. Thiếu/không dương giá trị năm trước thì trống. | 100 × (gdp_y / gdp_y−1 − 1). | % |
+| `light_gdp_elasticity` | Tỷ số tăng trưởng ánh sáng–GRDP | Processed | Tỷ số tăng trưởng quy mô kinh tế đêm theo ánh sáng và tăng trưởng GRDP trong cùng hai năm liên tiếp. Không đồng nhất với hệ số beta của hồi quy log–log. | (phần trăm thay đổi SOL) / (phần trăm thay đổi GRDP); tăng trưởng GRDP bằng 0 hoặc thiếu tham chiếu thì trống. | không thứ nguyên |
+| `sol_gdp_ratio` | Cường độ ánh sáng trên GRDP | Processed | Cường độ ánh sáng trên một tỷ đồng GRDP; so sánh trong cùng nguồn ảnh và cùng cơ sở giá. | SOL / GRDP, chỉ khi GRDP dương. | U/tỷ đồng |
+| `predicted_gdp` | GRDP ước lượng từ ánh sáng | Processed | GRDP ước lượng từ mô hình log–log trên mẫu VIIRS có SOL và đủ hai loại GRDP dương trong phạm vi đang chọn. Cần ít nhất 10 quan sát và phương sai ln(SOL) dương. Đây là ước lượng từ ánh sáng, không phải giá trị kinh tế đêm đo trực tiếp hoặc dự báo cho tương lai. | exp(alpha + beta × ln(SOL)); mô hình theo từng cơ sở giá. | tỷ đồng |
+| `sol_change_mom_pct` | Tốc độ thay đổi quy mô kinh tế đêm theo tháng | Processed | So đúng tháng lịch trước, thiếu tháng trước thì trống. | 100 × (S_t / S_(t−1 tháng) − 1). | % |
+| `sol_change_yoy_pct` | Tốc độ thay đổi quy mô kinh tế đêm so với cùng kỳ | Processed | So đúng tháng cùng kỳ năm trước. | 100 × (S_t / S_(t−12 tháng) − 1). | % |
+| `sol_ma3` | Quy mô kinh tế đêm trung bình ba tháng lịch | Processed | Trung bình quy mô theo ánh sáng trên phần dữ liệu có sẵn trong ba tháng lịch gồm tháng hiện tại và hai tháng trước. Giữ quy tắc hiện hành của bộ tính; không diễn giải là đủ ba quan sát nếu có tháng thiếu. | mean(SOL) trên dữ liệu hiện có của các tháng t, t−1, t−2. | U |
 
-`sol_change_pct` **chỉ so trong cùng một nguồn ảnh** và bỏ trống tại mốc đổi vệ tinh
-2013→2014. Muốn so xuyên mốc thì đổi `light_basis` sang chuỗi đã hiệu chỉnh — vẫn là
-cột `sol_change_pct`, chỉ khác tử số.
+## Tính toán và dữ liệu thiếu
 
-### 1.2. Chuỗi đã hiệu chỉnh liên vệ tinh
+Ảnh tháng và ảnh năm đọc từ kết quả đã nạp. Không xử lý lại raster khi mở app. SOL = Σ Rᵢ × 1[Rᵢ ≥ b] trên tập pixel hợp lệ; đây là lọc theo ngưỡng, không trừ b khỏi từng pixel. Ngưỡng nền VIIRS 0,5 nW/cm²/sr; DMSP 0 DN. Ngưỡng sáng VIIRS 1,5 nW/cm²/sr; DMSP 5 DN. Diện tích sáng dùng diện tích phần giao pixel–tỉnh trong EPSG:6933. Số liệu thập phân làm tròn khi hiển thị, không thay đổi ngưỡng dùng tính toán.
 
-| Cột | Ý nghĩa |
-|---|---|
-| `sol_cal` | `sol` sau khi quy DMSP về thang VIIRS |
-| `light_basis` | ghi chuỗi đang dùng là `sol` hay `sol_cal` |
+GRDP chính thức dùng **giá so sánh năm gốc 2010**, đơn vị tỷ đồng; giá hiện hành chỉ dùng đối chiếu. Hai cột GRDP cùng hiển thị; các đại lượng ghép và hồi quy theo cơ sở giá đang chọn. Khi chọn đối chiếu hai cơ sở giá, bảng chỉ số ghép dùng giá so sánh, còn biểu đồ có hai mô hình trên cùng mẫu.
 
-Chỉ **một** cột `sol_cal`. Night Data Dictionary ghi rõ *"không thêm field
-`sol_density_cal` vào dictionary"*, và `sol_change_cal_pct` cũng không có trong từ
-điển: mật độ và biến động chỉ có một tên mỗi thứ, còn chuỗi nào đang được dùng thì
-đọc ở `light_basis`. Hai bộ cột song song là cách làm cũ, đã gỡ ngày 23/11/2026.
+GRDP chỉ có theo năm; bảng tháng để null cả GRDP, tăng trưởng GRDP, tỷ số tăng trưởng ánh sáng–GRDP, cường độ ánh sáng trên GRDP và GRDP ước lượng. Không chia GRDP cho 12 hoặc lặp số năm xuống tháng. Hồi quy vẫn dùng quan sát năm ngay cả khi bảng đang xem theo tháng.
 
-Phương pháp: hồi quy log–log `sol_viirs = a × sol_dmsp^b` khớp trên các tỉnh có cả hai
-nguồn ở năm chồng lấn 2013. Tham số lưu tại `metadata/hieu_chinh_dmsp_viirs.json`.
+Tăng trưởng dùng đúng năm/tháng lịch tham chiếu, kể cả mốc trước nằm ngoài khoảng đang hiển thị. Thiếu mốc hoặc mẫu số không dương thì null; tăng trưởng GRDP bằng 0 thì tỷ số tăng trưởng ánh sáng–GRDP null. Không so SOL chưa hiệu chỉnh qua năm 2010 hoặc 2014. Tổng ảnh năm được tính từ ảnh tổng hợp cấp pixel, không thay bằng trung vị tổng SOL tháng.
 
-> **Dùng cột nào:** phân tích bắc qua 2013 → luôn dùng `_hc`. Phân tích chỉ trong
-> 2014–2025 → dùng cột gốc, không cần hiệu chỉnh.
+## Hồi quy và GRDP ước lượng
 
-### 1.3. Phân bố và vùng sáng
+Hai mô hình dùng chung các cặp tỉnh–năm có SOL dương, đủ hai loại GRDP dương cùng đơn vị tỷ đồng, nguồn VIIRS và nguồn gốc dữ liệu nhất quán. Mẫu phụ thuộc khoảng năm/phạm vi tỉnh đang chọn, không cố định ở 2020–2024. Giao diện mặc định chọn 2020–2024; có thể chọn từ 2015 khi số liệu đủ điều kiện.
 
-| Cột | Ý nghĩa | Đơn vị |
-|---|---|---|
-| `rad_mean` | Bức xạ trung bình mỗi pixel | nW/cm²/sr · DN |
-| `rad_std` | Độ lệch chuẩn trong tỉnh | nW/cm²/sr · DN |
-| `rad_min`, `rad_max` | Nhỏ nhất, lớn nhất | nW/cm²/sr · DN |
-| `rad_cv` | `std ÷ mean` — mức chênh lệch sáng–tối trong tỉnh | không thứ nguyên |
-| `lit_pixels` | Số pixel vượt ngưỡng sáng | pixel |
-| `lit_area_km2` | Diện tích được chiếu sáng | km² |
-| `lit_area_pct` | `lit_area_km2 ÷ diện tích tỉnh × 100` | % |
-| `lit_sol` | Tổng bức xạ **chỉ trên vùng vượt ngưỡng** | nW/cm²/sr · DN |
+Với mỗi cơ sở giá: `ln(GRDP) = α + β × ln(SOL) + ε`; α, β ước lượng OLS có hệ số chặn. `predicted_gdp = exp(α + β × ln(SOL))`, tính bằng hệ số chưa làm tròn của chính mẫu trên biểu đồ. Giữ quy tắc của dự án: cần ít nhất 10 quan sát và phương sai ln(SOL) dương; không đủ thì để trống, không lấy hệ số đã lưu từ một mẫu khác. Ngưỡng 10 quan sát là điều kiện tối thiểu của phần mềm, không bảo đảm tự động độ tin cậy thống kê.
 
-Ngưỡng sáng: VIIRS **1,5** nW/cm²/sr; DMSP **DN 5**. Hai thang đo khác nhau, không dùng
-chung một con số. Ngưỡng thật đã dùng được ghi ở cột `lit_threshold`.
+Phép chuyển ngược exp không hiệu chỉnh sai lệch do log; vì vậy chưa phải ước lượng không chệch của trung bình GRDP trên thang gốc. R² được tính trên thang log. Kết quả mô tả quan hệ đồng biến, không chứng minh tác động nhân quả và chưa được đánh giá như mô hình dự báo ngoài mẫu.
 
-### 1.4. Cột kiểm chứng
+## Trường loại khỏi màn kinh tế
 
-`sol_raw` (tổng trước khi trừ nền), `background_threshold`, `background_pixels`, `valid_pixels`,
-`area_km2`, `source`, `note`, `calibration`, `status`.
+Theo phạm vi hiện tại, không hiển thị `chenh_lech_gdp_anh`, `cuong_do_vung_sang`, `ty_trong_sol_quoc_gia`, `sol_bq_dau_nguoi`, `sol_cal`, `light_basis`, `valid_pixels`, `area_km2`, `source`, `note`, `calibration`, `status` trong bảng/bộ lọc/CSV kinh tế. Diện tích và số pixel cần cho công thức vẫn được dùng nội bộ; không bổ sung cột hiệu chỉnh hoặc dữ liệu dân số.
 
-Ngưỡng nền: VIIRS **0,5** nW/cm²/sr; DMSP **0** vì `stable_lights` của NOAA đã loại nền sẵn.
+Ba tên trường tiếng Việt cũ được chuẩn hoá: `do_co_gian_sol_gdp` → `light_gdp_elasticity`; `gdp_du_bao_tu_anh` → `predicted_gdp`; `sol_tren_gdp` → `sol_gdp_ratio`.
 
-> **Một tỉnh sáng bất thường chưa chắc là lỗi.** Bình Thuận đứng đầu cả nước về
-> `sol` năm 2025, trên cả TP.HCM, vì vùng trồng thanh long thắp đèn cao áp ban đêm
-> để ép cây ra hoa trái vụ. Đây là hoạt động kinh tế thật và là một ví dụ cho thấy ánh
-> sáng đêm bắt được cả kinh tế nông nghiệp, không riêng đô thị và công nghiệp.
+Moran I nằm trong mục mở rộng của tab kinh tế, dùng mật độ SOL năm và trọng số tiếp giáp Queen chuẩn hoá hàng. Đây là tự tương quan không gian, không trực tiếp đo lan toả kinh tế. Tài liệu: [Định nghĩa biến và công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md).
 
----
+## Nguồn triển khai và tham khảo
 
-## 2. Nhóm B — chưa tính, cần ghép ánh sáng với dân số và GDP
-
-Đây mới là **chỉ số kinh tế đêm theo nghĩa kinh tế học**. Nhóm A mô tả ánh sáng;
-nhóm B nối ánh sáng với hoạt động kinh tế.
-
-Điều kiện: bảng `economy(province_code, year, population, gdp, …)` phải có số liệu.
-
-### 2.1. Ba chỉ số cốt lõi
-
-| Chỉ số đề xuất | Công thức | Vì sao cần |
-|---|---|---|
-| `sol_bq_dau_nguoi` | `sol_cal ÷ population` | Proxy **mức sống**. Hai tỉnh cùng tổng sáng nhưng khác dân số là hai câu chuyện khác hẳn |
-| `do_co_gian_sol_gdp` | `%Δ sol_cal ÷ %Δ gdp` | **Chỉ số trung tâm** của Henderson–Storeygard–Weil [1]. Cho biết ánh sáng phản ánh tăng trưởng tốt đến đâu |
-| `gdp_du_bao_tu_anh` | hồi quy `ln(gdp) ~ ln(sol_cal)` trên 63 tỉnh, rồi dự báo | **Giá trị thực tiễn lớn nhất**: ước lượng GDP cho đơn vị hoặc năm chưa có số liệu thống kê |
-
-### 2.2. Bốn chỉ số bổ sung
-
-| Chỉ số đề xuất | Công thức | Ý nghĩa |
-|---|---|---|
-| `chenh_lech_gdp_anh` | `(gdp − gdp_du_bao) ÷ gdp_du_bao × 100` | Tỉnh sáng hơn hoặc tối hơn mức GDP giải thích được — gợi ý kinh tế phi chính thức hoặc cơ cấu đặc thù |
-| `sol_tren_gdp` | `sol_cal ÷ gdp` | Cường độ sáng trên một đồng GDP. Công nghiệp sáng nhiều, dịch vụ và nông nghiệp ít — phản ánh cơ cấu kinh tế |
-| `cuong_do_vung_sang` | `lit_sol ÷ lit_area_km2` | Cường độ ở chính nơi có sáng, loại bỏ ảnh hưởng của việc tỉnh rộng hay hẹp |
-| `ty_trong_sol_quoc_gia` | `sol tỉnh ÷ tổng sol cả nước × 100` | Theo dõi **dịch chuyển kinh tế giữa các vùng** qua 22 năm |
-
----
-
-## 3. Bốn ràng buộc phương pháp
-
-### 3.1. GDP phải ở giá so sánh
-
-Nếu `gdp` là **giá hiện hành**, độ co giãn ánh sáng–GDP sẽ bị lạm phát làm sai lệch nặng:
-GDP danh nghĩa tăng một phần chỉ vì giá tăng, trong khi ánh sáng không phản ứng với giá.
-
-**Phải khử lạm phát trước khi tính nhóm B.** Đây là câu hỏi quan trọng nhất cần làm rõ
-với người cung cấp số liệu — sai ở đây thì toàn bộ nhóm B sai theo.
-
-### 3.2. Bắc qua 2013 thì dùng cột `_hc`
-
-DMSP (DN 0–63, bão hoà ở lõi đô thị) và VIIRS (bức xạ, không bão hoà) là hai thang đo
-khác nhau. Dùng `sol` gốc cho chuỗi 2004–2025 sẽ tạo một bước nhảy giả ở mốc 2013→2014,
-và mọi độ co giãn tính qua mốc đó đều vô nghĩa.
-
-### 3.3. Không so sánh bắc qua năm 2010
-
-Ảnh DMSP không do một vệ tinh chụp: 2004–2009 là **F16**, 2010–2013 là **F18**, và NOAA
-không hiệu chuẩn các vệ tinh DMSP với nhau. Vì F16 dừng ở 2009 còn F18 bắt đầu 2010,
-hai vệ tinh **không có năm nào cùng phủ**, nên không thể đo độ lệch bằng chính bộ dữ
-liệu này như đã làm được ở mốc 2013. Dự án đã chốt giữ nguyên, không hiệu chỉnh.
-
-Biểu hiện trong bảng: nhiều tỉnh có `sol_change_pct` năm 2010 vọt lên hàng trăm phần trăm
-(Đắk Nông +576%, Bình Phước +371%). Đó là đổi cảm biến chứ không phải kinh tế.
-
-> **Quan trọng:** cột `_hc` **không** sửa mốc này. Nó chỉ quy DMSP về thang VIIRS ở mốc
-> 2013. Bắc qua 2010 thì cả cột gốc lẫn cột `_hc` đều không dùng được.
-
-Chuỗi 2004–2025 vì vậy có ba đoạn so sánh được trong nội bộ: 2004–2009, 2010–2013,
-và 2014–2025. Riêng hai đoạn sau nối được với nhau qua cột `_hc`. Mọi chỉ số nhóm B
-tính trên toàn chuỗi phải nêu hạn chế này, hoặc giới hạn ở 2014–2025.
-
-### 3.4. Thận trọng với DMSP ở tỉnh nhỏ và nghèo
-
-Gibson và cộng sự [8] chỉ ra DMSP kém tin cậy ở đơn vị địa lý nhỏ và vùng nông thôn, do
-bão hoà ở đô thị và nhiễu nền ở nông thôn. Nếu một kết luận phụ thuộc vào các tỉnh nhỏ
-hoặc thu nhập thấp, nên giới hạn ở giai đoạn VIIRS 2014–2025 và **nói rõ trong báo cáo**.
-
----
-
-## 4. Trạng thái
-
-| | |
-|---|---|
-| Nhóm A | ✅ đã tính cho 63 tỉnh × 22 năm |
-| Nhóm B | ⬜ chưa làm — chờ dân số và GDP |
-| Bảng `economy` | ⬜ rỗng — giảng viên cung cấp |
-
-Khi có số liệu kinh tế: bảy chỉ số nhóm B tính trong `backend/core/chi_so.py`, app chỉ
-đọc — đúng nguyên tắc dự án là không tính chỉ số trong API.
-
----
-
-## Tài liệu tham khảo
-
-Đánh số theo danh mục trong đề cương thực tập.
-
-- **[1]** Henderson, Storeygard, Weil (2012), *Measuring economic growth from outer space*,
-  American Economic Review 102(2), 994–1028.
-- **[2]** Chen, Nordhaus (2011), *Using luminosity data as a proxy for economic statistics*,
-  PNAS 108(21), 8589–8594.
-- **[3]** Gibson, Olivia, Boe-Gibson (2020), *Night lights in economics: sources and uses*,
-  Journal of Economic Surveys 34(5), 955–980.
-- **[8]** Gibson, Olivia, Boe-Gibson, Li (2021), *Which night lights data should I use in
-  economics, and where?*, Journal of Development Economics 149, 102602.
+- [Night Data Dictionary](NIGHT_DATA_DICTIONARY.md): trường tiếng Anh, định nghĩa tiếng Việt.
+- `backend/core/indicator_catalog.py`: tên chuẩn, nhóm, định nghĩa và công thức cho bộ lọc, bảng và nút ⓘ.
+- `backend/core/economic_metrics.py`: tăng trưởng, tỷ số và ước lượng theo mẫu hiện tại; API đọc dữ liệu đã nạp và gọi hàm core, không xử lý raster hoặc ghi đè snapshot.
+- Henderson, Storeygard & Weil (2012), *Measuring Economic Growth from Outer Space*, American Economic Review, 102(2), 994–1028. Nghiên cứu là cơ sở cho cách tiếp cận dùng ánh sáng làm biến đại diện; tỷ số tăng trưởng đơn giản trong app không phải bản sao mô hình ước lượng của bài báo.
+- Chen & Nordhaus (2011), *Using Luminosity Data as a Proxy for Economic Statistics*, PNAS, 108(21), 8589–8594.
+- Gibson, Olivia & Boe-Gibson (2020), *Night Lights in Economics: Sources and Uses*, Journal of Economic Surveys, 34(5), 955–980.

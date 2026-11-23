@@ -149,13 +149,17 @@ def test_two_price_export_load_and_filtered_api(inputs, tmp_path, monkeypatch):
     client = TestClient(app)
     so = client.get('/api/demo/economy?province_code=01&nam_tu=2024&nam_den=2024').json()['dong'][0]
     hh = client.get('/api/demo/economy?province_code=01&nam_tu=2024&nam_den=2024&price_basis=hien_hanh').json()['dong'][0]
-    assert so['predicted_gdp'] == pytest.approx(3*12**2)
-    assert hh['predicted_gdp'] == pytest.approx(5*12**3)
+    # Một điểm không đủ khớp hồi quy hiện tại; không lấy dự báo cũ của mẫu khác.
+    assert so['predicted_gdp'] is None and hh['predicted_gdp'] is None
+    for basis,expected in [('so_sanh',3*12**2),('hien_hanh',5*12**3)]:
+        full=client.get(f'/api/demo/economy?province_code=01&nam_tu=2014&nam_den=2024&price_basis={basis}').json()
+        assert full['hoi_quy'][basis]['n']==11
+        assert full['dong'][-1]['predicted_gdp']==pytest.approx(expected)
     assert so['model_training_period'] == '2014-2024' and so['model_n'] == 11
     assert so['image_quality_flags'] and so['quality_flags'] == 'SOURCE_REVIEW'
     body = client.get('/api/demo/economy.csv?province_code=01&nam_tu=2024&nam_den=2024&price_basis=hien_hanh').content.decode('utf-8-sig')
     row = next(csv.DictReader(body.splitlines()))
-    assert 'derived_price_basis' not in row and 'predicted_gdp' not in row and float(row['sol'])==12
+    assert 'derived_price_basis' not in row and row['predicted_gdp']=='' and float(row['sol'])==12
     # Duplicate result keys must fail before overwriting the database.
     duplicate = tables['night_economy'][0]
     with (output/'night_economy.csv').open('a', encoding='utf-8-sig', newline='') as stream:

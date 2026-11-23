@@ -20,7 +20,8 @@ import math
 #
 #     ln(GRDP) = alpha + beta * ln(SOL)
 #
-# beta là độ co giãn: ánh sáng tăng 1% thì GRDP tăng beta phần trăm.
+# beta là độ co giãn thống kê: SOL cao hơn 1% gắn với GRDP cao hơn xấp xỉ beta%,
+# trong mô hình đã khớp; không diễn giải như tác động nhân quả.
 TOI_THIEU_QUAN_SAT = 10      # dưới mức này thì hệ số không nói lên điều gì
 
 
@@ -51,9 +52,8 @@ def do_co_gian(rows,gia_so_sanh=None):
     rows: mỗi phần tử có province_code, sol, grdp. Dòng thiếu hoặc không dương bị bỏ:
     log của số không dương không tồn tại, và một tỉnh tối om không nói gì về quan hệ này.
 
-    gia_so_sanh=False -> vẫn tính nhưng gắn cảnh báo: GRDP giá hiện hành làm beta bị lạm
-    phát thổi lên, vì GRDP danh nghĩa tăng một phần chỉ vì giá còn ánh sáng không phản
-    ứng với giá. Đây là thứ duy nhất có thể làm sai toàn bộ con số beta.
+    gia_so_sanh=False -> vẫn tính để đối chiếu nhưng lưu ý ảnh hưởng biến động giá.
+    Không đồng nhất beta với tỷ số tăng trưởng SOL/GRDP của từng tỉnh–năm.
     """
     cap=[(r.get('sol'),r.get('grdp')) for r in rows]
     chung=_ols_log(cap)
@@ -71,11 +71,11 @@ def do_co_gian(rows,gia_so_sanh=None):
             theo_tinh[ma]={'beta':mot['beta'],'r2':mot['r2'],'n':mot['n']}
     canh=[]
     if gia_so_sanh is False:
-        canh.append('GRDP đang ở GIÁ HIỆN HÀNH: beta bị lạm phát thổi lên. '
-                    'Phải khử lạm phát trước khi trích con số này vào báo cáo.')
+        canh.append('GRDP đang ở GIÁ HIỆN HÀNH, bao gồm ảnh hưởng biến động giá; '
+                    'chỉ dùng đối chiếu. Ưu tiên giá so sánh khi phân tích tăng trưởng.')
     elif gia_so_sanh is None:
-        canh.append('Chưa biết GRDP ở giá so sánh hay giá hiện hành. '
-                    'Giá hiện hành làm beta sai lệch — xác nhận trước khi dùng.')
+        canh.append('Chưa xác định cơ sở giá GRDP; cần xác nhận giá so sánh hoặc '
+                    'giá hiện hành trước khi diễn giải hệ số hồi quy.')
     if chung['r2'] is not None and chung['r2']<0.5:
         canh.append(f"R² = {chung['r2']:.2f} thấp: quan hệ ánh sáng–GRDP yếu trên bộ dữ "
                     'liệu này, không nên rút kết luận định lượng.')

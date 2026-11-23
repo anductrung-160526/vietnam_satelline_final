@@ -256,7 +256,7 @@ async function veThe(muc){
   const request = ++cardRequest;
   const o = $('the-so');
   if(!muc){
-    o.innerHTML = theSo('SOL','—','') + theSo('Diện tích sáng','—','km²') + theSo('Mật độ','—','');
+    o.innerHTML = theSo('Quy mô kinh tế đêm theo ánh sáng (SOL)','—','') + theSo('Diện tích được chiếu sáng','—','km²') + theSo('Mật độ kinh tế đêm theo ánh sáng','—','');
     $('nut-tai-anh').disabled = true;
     $('ghi-chu-tai').textContent = '';
     return;
@@ -280,9 +280,9 @@ async function veThe(muc){
   }catch{ /* chưa có chỉ số của mốc này — ba thẻ để gạch ngang, không bịa số */ }
   if(request !== cardRequest) return;
   o.innerHTML =
-      theSo('SOL', dinhDang(sol, 0) ?? '—', sol === null || sol === undefined ? '' : donVi)
-    + theSo('Diện tích sáng', dinhDang(dienTich, 0) ?? '—', 'km²')
-    + theSo('Mật độ', dinhDang(matDo, 2) ?? '—',
+      theSo('Quy mô kinh tế đêm theo ánh sáng (SOL)', dinhDang(sol, 0) ?? '—', sol === null || sol === undefined ? '' : donVi)
+    + theSo('Diện tích được chiếu sáng', dinhDang(dienTich, 0) ?? '—', 'km²')
+    + theSo('Mật độ kinh tế đêm theo ánh sáng', dinhDang(matDo, 2) ?? '—',
             matDo === null || matDo === undefined ? '' : 'trên km²');
 }
 
@@ -411,16 +411,32 @@ function dsTinhLoc(){
   return congCu('tinh', 'tìm tỉnh…') + `<ul class="ds" id="ds-tinh">${li}</ul>`;
 }
 
+const INDICATOR_HELP=new Map();
+function indicatorInfoButton(entry){
+  const key=entry.field || entry.ma;INDICATOR_HELP.set(key,entry);
+  return `<button type="button" class="indicator-info" data-indicator-info="${thoat(key)}" aria-label="Định nghĩa ${thoat(entry.name || entry.ten)}" aria-haspopup="dialog">i</button>`;
+}
+function closeIndicatorHelp(){document.getElementById('indicator-help')?.remove();}
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closeIndicatorHelp();});
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-indicator-info]');
+  if(!button){if(!event.target.closest('#indicator-help'))closeIndicatorHelp();return;}
+  event.preventDefault();event.stopPropagation();closeIndicatorHelp();
+  const entry=INDICATOR_HELP.get(button.dataset.indicatorInfo);if(!entry)return;
+  const panel=document.createElement('section');panel.id='indicator-help';panel.className='indicator-help';panel.setAttribute('role','dialog');panel.setAttribute('aria-label',entry.name || entry.ten);
+  const economicNotation=/(grdp|gdp)/.test(entry.field || entry.ma);
+  const notation=economicNotation
+    ? 'GRDP là tổng sản phẩm trên địa bàn tỉnh của toàn bộ nền kinh tế; SOL là tổng bức xạ sau lọc nền. Δ% là tốc độ thay đổi so với năm trước; ln là logarit tự nhiên, exp là hàm mũ cơ số e. α là hệ số chặn và β là hệ số góc OLS trong mô hình ln(GRDP) theo ln(SOL).'
+    : 'R_i là bức xạ pixel i; V là tập pixel hợp lệ; N là số pixel hợp lệ; T và S_raw là tổng bức xạ trước lọc nền; S hoặc SOL là tổng sau lọc nền. A là diện tích tự nhiên tỉnh; b và h là ngưỡng nền và ngưỡng sáng. μ là trung bình, σ là độ lệch chuẩn; 1[điều kiện] bằng 1 khi điều kiện đúng, bằng 0 khi sai. t là mốc thời gian hiện tại.';
+  panel.innerHTML=`<button class="help-close" type="button" aria-label="Đóng định nghĩa">×</button><h3>${thoat(entry.name || entry.ten)}</h3><p><code>${thoat(entry.field || entry.ma)}</code></p><p>${thoat(entry.definition || entry.mo_ta)}</p>${entry.formula?'<p><strong>Công thức:</strong> '+thoat(entry.formula)+'</p>':''}<p class="nho">${notation}</p><p><strong>Đơn vị:</strong> ${thoat(entry.unit || entry.don_vi || 'không thứ nguyên')}
+${(entry.unit || '').includes('U')?' (U: DN đối với DMSP; nW/cm²/sr đối với VIIRS)':''}</p>`;
+  document.body.append(panel);panel.querySelector('.help-close').onclick=()=>{closeIndicatorHelp();button.focus();};
+  const box=button.getBoundingClientRect();panel.style.left=Math.min(Math.max(12,box.right+10),Math.max(12,innerWidth-panel.offsetWidth-12))+'px';panel.style.top=Math.min(Math.max(12,box.top),Math.max(12,innerHeight-panel.offsetHeight-12))+'px';
+  panel.querySelector('.help-close').focus();
+});
 function dsChiSoLoc(){
-  /* Trước đây lọc bỏ mọi chỉ số thuộc bảng economy, nên GRDP không bao giờ
-     hiện trong bộ lọc. Nay bày cả: chúng chỉ có theo năm, và chế độ xem tháng trả về
-     trống chứ không lặp lại số của năm. */
-  const li = danhMuc.map(e =>
-    `<li><label><input type="checkbox" data-chiso="${e.ma}"`
-    + `${chon.chiSo.has(e.ma) ? ' checked' : ''}>`
-    + `<span>${thoat(e.ten)} <span class="dv">(${thoat(e.don_vi)})</span></span>`
-    + `</label></li>`).join('');
-  return congCu('chiso', 'tìm chỉ số…') + `<ul class="ds" id="ds-chiso">${li}</ul>`;
+  const li=danhMuc.map(e=>`<li class="indicator-row"><label><input type="checkbox" data-chiso="${e.ma}"${chon.chiSo.has(e.ma)?' checked':''}><span>${thoat(e.ten)} <span class="dv">(${thoat(e.don_vi)})</span></span></label>${indicatorInfoButton(e)}</li>`).join('');
+  return congCu('chiso','tìm chỉ số…')+`<ul class="ds" id="ds-chiso">${li}</ul>`;
 }
 
 function cayThoiGian(){
