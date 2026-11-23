@@ -64,7 +64,7 @@ Theo phạm vi hiện tại, không hiển thị `chenh_lech_gdp_anh`, `cuong_do
 
 Ba tên trường tiếng Việt cũ được chuẩn hoá: `do_co_gian_sol_gdp` → `light_gdp_elasticity`; `gdp_du_bao_tu_anh` → `predicted_gdp`; `sol_tren_gdp` → `sol_gdp_ratio`.
 
-Moran I nằm trong mục mở rộng của tab kinh tế, dùng mật độ SOL năm và trọng số tiếp giáp Queen chuẩn hoá hàng. Đây là tự tương quan không gian, không trực tiếp đo lan toả kinh tế. Tài liệu: [Định nghĩa biến và công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md).
+Tab kinh tế chia thành hai subtab: **Dữ liệu thống kê** gồm bảng năm/tháng, bộ chọn chỉ số và xuất CSV; **Phân tích định lượng** gồm phương trình, hệ số, biểu đồ hồi quy và Moran I. Khoảng năm, phạm vi tỉnh và cơ sở giá dùng chung; chế độ xem và bộ lọc được giữ khi chuyển subtab. Moran dùng mật độ SOL năm của toàn bộ tỉnh đủ điều kiện và trọng số tiếp giáp Queen chuẩn hoá hàng, không tính riêng một tỉnh. Đây là tự tương quan không gian, không trực tiếp đo lan toả kinh tế. Tài liệu: [Định nghĩa biến và công thức](DINH_NGHIA_BIEN_VA_CONG_THUC_DEMO.md).
 
 ## Nguồn triển khai và tham khảo
 

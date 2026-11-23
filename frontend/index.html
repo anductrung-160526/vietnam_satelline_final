@@ -96,11 +96,21 @@
   <div class="than rong" id="man-kinhte" hidden>
     <aside class="loc" id="loc-kinhte"></aside>
     <section class="vung-bang" id="vung-kinhte">
+      <div class="doi-xem economy-tabs" role="tablist" aria-label="Nội dung chỉ số kinh tế đêm">
+        <button type="button" role="tab" id="economy-data-tab" data-economy-view="data" aria-selected="true" aria-controls="economy-data-panel">Dữ liệu thống kê</button>
+        <button type="button" role="tab" id="economy-analysis-tab" data-economy-view="analysis" aria-selected="false" aria-controls="economy-analysis-panel" tabindex="-1">Phân tích định lượng</button>
+      </div>
       <div id="economy-results" aria-live="polite"></div>
-      <details id="economy-moran" class="economy-moran">
-        <summary>Tự tương quan không gian · Moran’s I</summary>
-        <div id="spatial-results" aria-live="polite"></div>
-      </details>
+      <section id="economy-data-panel" class="economy-panel" role="tabpanel" aria-labelledby="economy-data-tab">
+        <div id="economy-data-results"></div>
+      </section>
+      <section id="economy-analysis-panel" class="economy-panel" role="tabpanel" aria-labelledby="economy-analysis-tab" hidden>
+        <div id="economy-analysis-results"></div>
+        <section id="economy-moran" class="economy-moran">
+          <h3>Tự tương quan không gian · Moran’s I</h3>
+          <div id="spatial-results" aria-live="polite"></div>
+        </section>
+      </section>
     </section>
   </div>
 </div>

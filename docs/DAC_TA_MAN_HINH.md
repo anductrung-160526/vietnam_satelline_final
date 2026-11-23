@@ -457,6 +457,8 @@ Nếu về sau có người đọc nhầm con số 2010, đây là chỗ cần x
 
 ## 7. Màn 3 — Chỉ số kinh tế đêm
 
+> Giao diện hiện hành (23/11/2026) có hai subtab: **Dữ liệu thống kê** — bảng năm/tháng, lọc chỉ số, CSV; **Phân tích định lượng** — phương trình, biểu đồ hồi quy và Moran I. Bảng và biểu đồ dùng toàn bộ chiều rộng ở từng subtab. Khoảng năm, tỉnh và cơ sở giá dùng chung; bộ lọc bảng và trang dữ liệu được giữ khi chuyển subtab. Các mô tả cũ bên dưới là lịch sử thiết kế; danh mục hiện hành ở [Chỉ số kinh tế đêm](CHI_SO_KINH_TE_DEM.md) và [Night Data Dictionary](NIGHT_DATA_DICTIONARY.md).
+
 ### 7.1. Mục đích
 
 Ghép ánh sáng với GRDP và dân số của cô, ra hai thứ cô cần: **ánh sáng bình quân đầu
