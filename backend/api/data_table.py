@@ -2,6 +2,7 @@
 import json
 import re
 from . import store
+from backend.core.public_fields import is_public
 from .demo_view import PROCESSED,FIELD_ALIASES,has_table,prices,result_number
 from .provenance import current_id
 from backend.data.dataset import snapshot_status,provenance_rows
@@ -72,7 +73,7 @@ def data_table(periods,codes=None,selected=None):
                 for field,name,unit in PROCESSED:
                     alias=FIELD_ALIASES.get(field,field);value=obs.get('sol_raw' if field=='tnl' else field)
                     payload=nd if alias in nd else ne
-                    if alias in payload:value=result_number(payload,alias)
+                    if alias in payload and field not in ('sol','sol_density','sol_change_pct'):value=result_number(payload,alias)
                     if month and field in ('sol_change_pct','sol_cal'):value=None
                     if not month and field in ('sol_change_mom_pct','sol_change_yoy_pct','sol_ma3','tnl_ma3','tnl_mom_growth_pct'):value=None
                     if field in ('valid_area_km2','valid_area_pct') and key in summaries:value=summaries[key][field]
@@ -83,20 +84,23 @@ def data_table(periods,codes=None,selected=None):
                 if any('GIA_LAP' in str(value).upper() for value in (obs.get('source'),obs.get('status'),a.get('source'),b.get('source'))):
                     row['status']='GIA_LAP'
                 results.append(row)
-    fields=ordered_fields(BASE+list(NUMERIC)+EXTRA)
+    for row in results:
+        if row['month']:
+            for field in ('population','grdp_so_sanh','grdp_hien_hanh'):row[field]=None
+    fields=[f for f in ordered_fields(BASE+list(NUMERIC)+EXTRA) if is_public(f)]
     if selected is not None:
         wanted={FIELD_ALIASES.get(f,f) for f in selected}
         # Hai field hiệu chỉnh mật độ/tăng trưởng đã gộp vào tên thống nhất.
         wanted|={'sol_density' for f in selected if f=='sol_density_cal'}
         wanted|={'sol_change_pct' for f in selected if f=='sol_change_cal_pct'}
-        fields=[f for f in fields if f not in NUMERIC or f in wanted]
+        fields=[f for f in fields if (f not in NUMERIC and f not in ('population','grdp_so_sanh','grdp_hien_hanh','background_threshold','background_pixels','lit_threshold')) or f in wanted]
     names={'province_code':'Mã tỉnh','province_name':'Tên tỉnh','gid_1':'Mã GADM','year':'Năm','month':'Tháng (0 = năm)',
            'avg_rad':'Băng bức xạ Raw (tham chiếu file)','cf_cvg':'Băng lượt quan sát Raw (tham chiếu file)',
            'population':'Dân số năm','grdp_so_sanh':'GRDP so sánh (năm, tỷ đồng)','grdp_hien_hanh':'GRDP hiện hành (năm, tỷ đồng)'}
     names.update(NUMERIC)
     columns=[dict(field=f,name=names.get(f,f),group='identity' if f in IDENTITY_FIELDS else 'raw' if f in RAW_FIELDS else 'processed',
                   numeric=f in NUMERIC or f in ('population','grdp_so_sanh','grdp_hien_hanh','year','month','price_base_year')) for f in fields]
-    warnings=['GRDP/dân số ở dòng tháng là tham chiếu số liệu năm; không phải GRDP/dân số tháng.',
+    warnings=['Dân số và GRDP chỉ có ở dòng năm; dòng tháng để trống.',
               'avg_rad/cf_cvg là tham chiếu băng ảnh Raw, không phải một giá trị pixel đại diện cho tỉnh.']
     if snapshot and not versions.get(snapshot,{}).get('available'):warnings.append('CSV snapshot nền đã mất/đổi; cần kiểm chứng lại.')
     if any(r['status']=='GIA_LAP' for r in results):warnings.append('SỐ LIỆU GIẢ LẬP — có dòng chứa ảnh hoặc dữ liệu kinh tế dùng kiểm thử.')

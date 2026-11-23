@@ -58,6 +58,8 @@ def connect():
             f'Chưa có cơ sở dữ liệu {path}. Chạy: python3 -m backend.data.build_indices --root <gốc dữ liệu>')
     connection = sqlite3.connect(f'file:{path}?mode=ro', uri=True)
     connection.row_factory = sqlite3.Row
+    from backend.data.purge_simulated import hide_simulated
+    hide_simulated(connection)
     return connection
 
 
@@ -260,6 +262,17 @@ INDICATORS = (
     dict(ma='gdp', ten='GDP', don_vi='tỷ đồng', bang='economy', chu_so=0,
          mo_ta='Do giảng viên cung cấp.'),
 )
+from backend.core.public_fields import is_public
+INDICATORS=tuple(e for e in INDICATORS if is_public(e['ma']) and e['bang'].startswith('ntl_'))+(
+    dict(ma='population',ten='Dân số (năm)',don_vi='người',bang='economy_prices',column='population',price_basis='so_sanh',chu_so=0),
+    dict(ma='grdp_so_sanh',ten='GRDP giá so sánh (năm)',don_vi='tỷ đồng',bang='economy_prices',column='grdp',price_basis='so_sanh',chu_so=2),
+    dict(ma='grdp_hien_hanh',ten='GRDP giá hiện hành (năm)',don_vi='tỷ đồng',bang='economy_prices',column='grdp',price_basis='hien_hanh',chu_so=2),
+    dict(ma='min_rad',ten='Bức xạ nhỏ nhất',don_vi='nW/cm²/sr',bang='ntl_annual',bang_thang='ntl_monthly',column='rad_min',chu_so=4),
+    dict(ma='background_threshold',ten='Ngưỡng nền',don_vi='nW/cm²/sr hoặc DN',bang='ntl_annual',bang_thang='ntl_monthly',chu_so=4),
+    dict(ma='background_pixels',ten='Số pixel dưới ngưỡng nền',don_vi='pixel',bang='ntl_annual',bang_thang='ntl_monthly',chu_so=0),
+    dict(ma='lit_threshold',ten='Ngưỡng xác định pixel sáng',don_vi='nW/cm²/sr hoặc DN',bang='ntl_annual',bang_thang='ntl_monthly',chu_so=4),
+)
+for entry in INDICATORS:entry.setdefault('mo_ta',entry['ten'])
 BY_CODE = {entry['ma']: entry for entry in INDICATORS}
 
 
@@ -268,9 +281,11 @@ def indicators():
     out = []
     with connect() as connection:
         for entry in INDICATORS:
-            row = connection.execute(
-                f'SELECT COUNT(DISTINCT province_code),MIN(year),MAX(year) '
-                f'FROM {entry["bang"]} WHERE "{entry["ma"]}" IS NOT NULL').fetchone()
+            exists=connection.execute("SELECT 1 FROM main.sqlite_master WHERE name=?",(entry['bang'],)).fetchone()
+            column=entry.get('column',entry['ma'])
+            where=f'"{column}" IS NOT NULL';args=()
+            if entry.get('price_basis'):where+=' AND price_basis=?';args=(entry['price_basis'],)
+            row=connection.execute(f'SELECT COUNT(DISTINCT province_code),MIN(year),MAX(year) FROM {entry["bang"]} WHERE {where}',args).fetchone() if exists else (0,None,None)
             out.append(dict(entry, so_tinh=row[0] or 0, nam_tu=row[1], nam_den=row[2]))
     return out
 
@@ -356,13 +371,17 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
                 co_co = bang in ('ntl_annual', 'ntl_monthly')
                 cot_co = ',obs_status' if co_co else ",''"
                 if loai == 'thang':
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
+                    cau = (f'SELECT province_code,"{entry.get("column",entry["ma"])}",source{cot_co} FROM {bang} '
                            f'WHERE year=? AND month=?')
                     tham = (year, month)
                 else:
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
+                    cau = (f'SELECT province_code,"{entry.get("column",entry["ma"])}",source{cot_co} FROM {bang} '
                            f'WHERE year=?' + ('' if bang != 'ntl_monthly' else ' AND month=0'))
                     tham = (year,)
+                if bang=='economy_prices':
+                    exists=connection.execute("SELECT 1 FROM sqlite_master WHERE name='economy_prices'").fetchone()
+                    if not exists:continue
+                    cau+=' AND price_basis=?';tham=(*tham,entry['price_basis'])
                 for ma_tinh, gia_tri, src, flag in connection.execute(cau, tham):
                     khoa = (entry['ma'], ma_tinh, ten_moc(loai, year, month))
                     o[khoa] = gia_tri

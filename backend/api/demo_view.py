@@ -2,6 +2,7 @@
 import json
 
 from . import store
+from backend.core.public_fields import is_public
 from .provenance import available_asset,observation_info,current_id
 from backend.data.dataset import snapshot_status,provenance_rows
 from backend.core.chi_so import do_co_gian
@@ -146,11 +147,13 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
 
 FIELD_ALIASES = {'valid_pixels':'total_pixels', 'rad_mean':'mean_rad', 'rad_std':'std_rad',
                  'rad_min':'min_rad', 'rad_max':'max_rad', 'rad_cv':'spatial_cv',
-                 'lit_sol':'lit_pop_proxy', 'lit_pixel_pct':'electrification_ratio_pct'}
+                  'lit_pixel_pct':'electrification_ratio_pct'}
 
 
 PROCESSED = (
     ('area_km2', 'Diện tích tự nhiên', 'km²'),
+    ('background_threshold','Ngưỡng nền','bức xạ'), ('background_pixels','Pixel dưới ngưỡng nền','pixel'),
+    ('lit_threshold','Ngưỡng pixel sáng','bức xạ'),
     ('valid_area_km2', 'Diện tích có dữ liệu', 'km²'), ('valid_area_pct', 'Độ phủ dữ liệu', '%'),
     ('tnl', 'Tổng bức xạ cùng tập pixel đầu vào', 'bức xạ'), ('sol_raw', 'Tổng sáng trước loại nền', 'bức xạ'),
     ('sol', 'Tổng sáng sau loại nền', 'bức xạ'), ('sol_density', 'Mật độ sáng', 'bức xạ/km²'),
@@ -244,7 +247,7 @@ def province_view(code, year, month):
         value = observation.get('sol_raw' if field == 'tnl' else field)
         display_name = FIELD_ALIASES.get(field, field)
         stored = nd if display_name in nd else ne
-        if display_name in stored:
+        if display_name in stored and field not in ('sol','sol_density','sol_change_pct'):
             value = result_number(stored, display_name)
         if class_summary is not None and field in ('valid_area_km2', 'valid_area_pct'):
             value = class_summary[field]
@@ -252,9 +255,12 @@ def province_view(code, year, month):
         fields.append({'field': display_name, 'name': name, 'stage': 'Processed', 'value': value,
                        'unit': field_unit.replace('bức xạ', field_radiance_unit) if field_unit else 'không thứ nguyên',
                        'reason': '' if value is not None else 'Chưa có số liệu hoặc chỉ số không tính được ở mốc này.'})
+    if month:
+        for item in fields:
+            if item['field'] in ('population','grdp_so_sanh','grdp_hien_hanh'):item.update(value=None,reason='Chỉ có dữ liệu theo năm.')
     simulated = 'GIA_LAP' in str(observation.get('source', '')).upper() or observation.get('status') == 'GIA_LAP'
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
-            'fields': fields, 'raw_asset': raw_asset, 'processed_asset': processed_asset,
+            'fields': [f for f in fields if is_public(f['field'])], 'raw_asset': raw_asset, 'processed_asset': processed_asset,
             'classes': classes, 'class_asset': class_asset, 'is_simulated': simulated,
             'snapshot_id':request_snapshot,
             'class_summary': class_summary,

@@ -1,3 +1,5 @@
+> Cập nhật danh mục ngày 23/11/2026: app chỉ dùng 44 mục (11 Raw, 33 Processed); dân số/GRDP chỉ theo năm, dòng tháng null; Moran chỉ còn moran_i. Các hạng mục phân tích/metadata đã bỏ dưới đây là lịch sử triển khai, không phải danh mục giao diện hiện hành. Xem BANG_DU_LIEU_THEO_THANG.md.
+
 # KẾ HOẠCH DEMO APP KINH TẾ ĐÊM
 
 - Ngày lập: thứ Bảy, **21/11/2026**.

@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import export, store
+from backend.core.public_fields import is_public
 
 WEB = Path(__file__).resolve().parent.parent.parent / 'frontend'
 # Khuôn đường dẫn ô bản đồ của TiTiler. Giao diện nối thẳng ?url=<đường dẫn COG> vào sau.
@@ -407,10 +408,14 @@ def demo_province(province_code: str, nam: int = Query(..., ge=2004, le=2025),
 @app.get('/api/demo/economy')
 def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
                  nam_den: int = Query(2024, ge=2004, le=2025),
-                 province_code: str = '', price_basis: str = 'so_sanh'):
+                 province_code: str = '', price_basis: str = 'so_sanh', thang: int=Query(0,ge=0,le=12)):
     if nam_tu > nam_den or price_basis not in ('so_sanh', 'hien_hanh', 'compare'):
         raise HTTPException(400, 'Khoảng năm hoặc cơ sở giá không hợp lệ.')
     result=demo_view.economic_view(nam_tu, nam_den, _code(province_code) if province_code else None, price_basis)
+    for row in result['dong']:row['month']=thang
+    if thang:
+        for row in result['dong']:
+            for field in ('population','grdp','grdp_so_sanh','grdp_hien_hanh','gdp_change_pct'):row[field]=None
     result.setdefault('snapshot_id',demo_snapshot_id())
     return result
 
@@ -418,17 +423,18 @@ def demo_economy(nam_tu: int = Query(2020, ge=2004, le=2025),
 @app.get('/api/demo/economy.csv')
 def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
                      nam_den: int = Query(2024, ge=2004, le=2025),
-                     province_code: str = '', price_basis: str = 'so_sanh',expected_snapshot: str=''):
+                     province_code: str = '', price_basis: str = 'so_sanh',expected_snapshot: str='',thang: int=Query(0,ge=0,le=12)):
     import csv
-    data = demo_economy(nam_tu, nam_den, province_code, price_basis)
+    data = demo_economy(nam_tu, nam_den, province_code, price_basis,thang)
     if expected_snapshot and data.get('snapshot_id')!=expected_snapshot:
         raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
-    fields = ['province_code', 'province_name', 'year', 'population', 'grdp_so_sanh',
+    fields = ['province_code', 'province_name', 'year', 'month', 'population', 'grdp_so_sanh',
               'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
               'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated',
               'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
               'model_training_period', 'model_n', 'model_beta','dataset_id','stats_version','sol_unit',
               'provenance_consistent','provenance_reason','source_image_path','source_image_sha256']
+    fields=[f for f in fields if is_public(f) or f=='class_area_km2']
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -475,6 +481,7 @@ def demo_classes_csv(province_code: str, nam: int = Query(..., ge=2004, le=2025)
     fields = ['province_code', 'year', 'month', 'class_index', 'lower_bound', 'upper_bound',
               'class_area_km2', 'class_area_pct', 'area_km2', 'valid_area_km2', 'valid_area_pct',
               'validation_status', 'reference_year', 'method_version', 'unit', 'area_source','dataset_id','stats_version','source_image_sha256']
+    fields=[f for f in fields if is_public(f) or f=='class_area_km2']
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
@@ -496,7 +503,8 @@ def demo_province_csv(province_code: str,nam: int=Query(...,ge=2004,le=2025),tha
     columns=['province_code','province_name','year','month','field','stage','value','unit','reason',
              'dataset_id','stats_version','light_basis','area_method','grdp_price_basis',
              'source_image_path','source_image_sha256','provenance_consistent']
-    stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=columns);writer.writeheader()
+    columns=[c for c in columns if is_public(c) or c in ('field','stage','value','unit')]
+    stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=columns,extrasaction='ignore');writer.writeheader()
     for field in data['fields']:
         value=field['value']
         if field.get('is_raster') and field.get('available'):
@@ -548,14 +556,15 @@ def spatial(year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024
     if year_start>=year_end:raise HTTPException(400,'Năm đầu phải nhỏ hơn năm cuối.')
     from .spatial_view import read_spatial
     result=read_spatial(year_start,year_end)
-    result['tiles']=TILE_URL if _titiler_ready() else None
-    return result
+    if result['status']!='ready':return {k:result[k] for k in ('status','snapshot_id','message','available_pairs') if k in result}
+    return dict(status='ready',snapshot_id=result['snapshot_id'],run_id=result['run_id'],moran=[dict(year=r['year'],moran_i=r['moran_i']) for r in result['moran']])
 
 
 @app.get('/api/spatial/file')
 def spatial_file(kind: str,run_id: str,expected_snapshot: str,
                  year_start: int=Query(2020,ge=2004,le=2025),year_end: int=Query(2024,ge=2004,le=2025),province_code: str=''):
-    result=spatial(year_start,year_end)
+    from .spatial_view import read_spatial
+    result=read_spatial(year_start,year_end)
     if result['snapshot_id']!=expected_snapshot or result.get('run_id')!=run_id:
         raise HTTPException(409,'Kết quả P1 đã đổi; tải lại màn phân tích trước khi tải file.')
     if result['status']!='ready':raise HTTPException(410,result.get('message','Kết quả P1 không sẵn có.'))
@@ -563,11 +572,12 @@ def spatial_file(kind: str,run_id: str,expected_snapshot: str,
         key=_code(province_code)+'_'+kind
     elif kind in ('moran','moran_values','changes','transitions','neighbors','province_changes'):key=kind
     else:raise HTTPException(400,'Loại file P1 không hợp lệ.')
-    record=result['files'].get(key)
-    if not record:raise HTTPException(404,'Chưa có file cho tỉnh/cặp năm này.')
-    media='image/tiff' if kind in ('change','delta') else 'application/geo+json' if kind=='province_changes' else 'text/csv; charset=utf-8'
-    return FileResponse(record['path'],media_type=media,filename=Path(record['path']).name,
-                        headers={'X-Spatial-Run-ID':run_id,'X-File-SHA256':record['sha256']})
+    if kind!='moran':raise HTTPException(404,'Trường phân tích này đã được bỏ khỏi app.')
+    import csv
+    stream=io.StringIO();writer=csv.DictWriter(stream,fieldnames=['year','moran_i']);writer.writeheader()
+    writer.writerows({'year':r['year'],'moran_i':r['moran_i']} for r in result['moran'])
+    return StreamingResponse(io.BytesIO(stream.getvalue().encode('utf-8-sig')),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="moran.csv"'})
+
 
 
 TILES_MOUNTED = _mount_tiles()

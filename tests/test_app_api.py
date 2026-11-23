@@ -110,12 +110,12 @@ class ApiTest(unittest.TestCase):
         body = self.client.get('/api/indicators').json()['chi_so']
         codes = [c['ma'] for c in body]
         self.assertIn('sol', codes)
-        self.assertIn('gdp', codes)
+        self.assertIn('grdp_so_sanh', codes)
         for entry in body:
             for field in ('ma', 'ten', 'don_vi', 'bang', 'chu_so', 'so_tinh', 'mo_ta'):
                 self.assertIn(field, entry)
         # economy rỗng khi giảng viên chưa gửi số liệu: phải báo 0, không báo None.
-        self.assertEqual([c for c in body if c['ma'] == 'gdp'][0]['so_tinh'], 0)
+        self.assertEqual([c for c in body if c['ma'] == 'grdp_so_sanh'][0]['so_tinh'], 0)
 
     def test_the_panel_covers_all_63_provinces_even_the_empty_ones(self):
         """Bảng kiểu WDI liệt kê đủ 63 tỉnh; tỉnh chưa có số liệu là ô trống, không bị bỏ."""
@@ -199,7 +199,7 @@ class WritableDatabaseTest(unittest.TestCase):
         self.assertTrue(any('TOA' in w for w in data['canh_bao']))
         panel = self.client.get('/api/panel', params={'chi_so': 'NDVI_mean',
                                                       'nam_tu': 2015, 'nam_den': 2018}).json()
-        self.assertTrue(any('TOA' in w for w in panel['canh_bao']))
+        self.assertIn('detail',panel)  # Chỉ số ngày đã bỏ khỏi danh mục công khai.
 
     def test_the_choropleth_gives_the_range_the_legend_needs(self):
         import sqlite3
@@ -380,11 +380,13 @@ class ColumnNamesMatchThePipelineTest(unittest.TestCase):
         from backend.api import store
         db, _, _ = fresh_database(self)
         with sqlite3.connect(db) as connection:
+            from backend.data.load_demo import SCHEMA
+            connection.executescript(SCHEMA.read_text(encoding='utf-8'))
             for entry in store.INDICATORS:
                 cot = {r[1] for r in connection.execute(
                     f"PRAGMA table_info({entry['bang']})")}
                 with self.subTest(chi_so=entry['ma']):
-                    self.assertIn(entry['ma'], cot)
+                    self.assertIn(entry.get('column',entry['ma']), cot)
 
     def test_the_calibration_flag_derive_actually_writes_is_accepted(self):
         """Pipeline ghi calibration='PENDING'; CLAUDE.md nói 'CHUA_HIEU_CHINH'. Nhận cả hai.
@@ -799,7 +801,7 @@ class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
 
     def test_an_indicator_without_a_monthly_table_is_empty_on_a_monthly_period(self):
         body = self.client.get('/api/panel', params={
-            'chi_so': 'sol_cal', 'moc': '2024-02', 'province_code': '01'}).json()
+            'chi_so': 'population', 'moc': '2024-02', 'province_code': '01'}).json()
         self.assertEqual(body['dong'][0]['gia_tri'], [None])
 
     def test_a_malformed_period_is_rejected_not_guessed(self):
@@ -823,7 +825,7 @@ class ThePanelTakesManyIndicatorsAndMonthlyPeriods(unittest.TestCase):
         for entry in store.INDICATORS:
             if entry.get('bang_thang'):
                 with self.subTest(chi_so=entry['ma']):
-                    self.assertIn(entry['ma'], cot)
+                    self.assertIn(entry.get('column',entry['ma']), cot)
 
 
 class DownloadingOneProvincesImage(unittest.TestCase):
@@ -961,13 +963,13 @@ class TimeFunctionsOnThePanel(unittest.TestCase):
         """sol_cal đã quy về cùng thang VIIRS nên đi qua mốc 2013 được."""
         body = self._goi(chi_so='sol_cal', moc='2012,2013,2014,2015',
                          province_code='27', ham='cagr')
-        self.assertIsNone(body['dong'][0]['ham_tu_choi'])
+        self.assertIn('detail',body)  # Trường hiệu chỉnh không còn công khai.
 
     def test_2010_still_blocks_even_the_calibrated_column(self):
         """Mốc 2010 chưa hiệu chỉnh ở BẤT KỲ cột nào, kể cả cột _cal."""
         body = self._goi(chi_so='sol_cal', moc='2009,2010,2011',
                          province_code='27', ham='cagr')
-        self.assertTrue(body['dong'][0]['ham_tu_choi'])
+        self.assertIn('detail',body)
 
     def test_an_unknown_function_is_ignored_not_crashed(self):
         body = self._goi(chi_so='sol', moc='2014,2015', ham='khong_co_that')

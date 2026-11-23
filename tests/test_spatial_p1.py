@@ -141,7 +141,10 @@ def test_build_publish_export_guards_and_no_overwrite_of_f(spatial_fixture):
     assert data['status']=='ready' and data['run_id']==result['run_id']
     params=dict(year_start=2020,year_end=2021,kind='change',province_code='01',expected_snapshot=result['dataset_id'],run_id=result['run_id'])
     response=client.get('/api/spatial/file',params=params)
-    assert response.status_code==200 and response.headers['x-file-sha256']==result['files']['01_change']['sha256']
+    assert response.status_code==404
+    moran=client.get('/api/spatial/file',params=dict(params,kind='moran'))
+    assert moran.status_code==200 and moran.content.decode('utf-8-sig').splitlines()[0]=='year,moran_i'
+    assert set(data['moran'][0])=={'year','moran_i'}
     with rasterio.open(result['files']['01_delta']['path']) as image:
         assert image.nodata==-9999 and image.descriptions==('radiance_end_minus_start',)
         assert image.tags()['DATASET_ID']==result['dataset_id']
@@ -155,7 +158,7 @@ def test_build_publish_export_guards_and_no_overwrite_of_f(spatial_fixture):
     with sqlite3.connect(db) as connection:
         connection.execute("UPDATE demo_schema_meta SET value=? WHERE key='current_dataset'",(result['dataset_id'],))
     # Đổi nguồn giữ nguyên snapshot cũng phải vô hiệu hóa kết quả P1.
-    Path(data['source_signatures'][0]['path']).unlink()
+    Path(result['source_signatures'][0]['path']).unlink()
     assert client.get('/api/spatial?year_start=2020&year_end=2021').json()['status']=='stale'
     assert client.get('/api/spatial/file',params=params).status_code!=200
     with sqlite3.connect(db) as connection:

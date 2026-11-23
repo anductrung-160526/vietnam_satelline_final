@@ -123,4 +123,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit('Đã tắt sinh dữ liệu giả lập. Chỉ nạp dữ liệu thật. Dùng backend.data.purge_simulated để xóa dữ liệu giả cũ.')

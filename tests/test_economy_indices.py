@@ -156,7 +156,7 @@ def test_two_price_export_load_and_filtered_api(inputs, tmp_path, monkeypatch):
     assert so['image_quality_flags'] and so['quality_flags'] == 'SOURCE_REVIEW'
     body = client.get('/api/demo/economy.csv?province_code=01&nam_tu=2024&nam_den=2024&price_basis=hien_hanh').content.decode('utf-8-sig')
     row = next(csv.DictReader(body.splitlines()))
-    assert row['derived_price_basis'] == 'hien_hanh' and float(row['predicted_gdp']) == 8640
+    assert 'derived_price_basis' not in row and 'predicted_gdp' not in row and float(row['sol'])==12
     # Duplicate result keys must fail before overwriting the database.
     duplicate = tables['night_economy'][0]
     with (output/'night_economy.csv').open('a', encoding='utf-8-sig', newline='') as stream:

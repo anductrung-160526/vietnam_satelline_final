@@ -23,10 +23,10 @@ def test_monthly_table_and_csv_share_identity_raw_processed_order(integrated):
     assert data['snapshot_id']==checked['dataset_id']
     assert [r['month'] for r in data['rows']]==[0,7,8]
     annual,july,august=data['rows']
-    assert annual['avg_rad'] is None and annual['grdp_frequency']=='annual'
+    assert annual['avg_rad'] is None and 'grdp_frequency' not in annual
     assert july['avg_rad'].endswith('#band=1') and july['cf_cvg'].endswith('#band=2')
-    assert july['grdp_so_sanh']==annual['grdp_so_sanh']==100
-    assert july['grdp_frequency']=='annual_reference' and july['sol']==20
+    assert july['grdp_so_sanh'] is None and annual['grdp_so_sanh']==100
+    assert july['population'] is None and july['sol']==20
     assert august['sol'] is None and august['total_pixels']==0
     export=client.get('/api/demo/data.csv',params=dict(params,expected_snapshot=data['snapshot_id']))
     reader=csv.DictReader(io.StringIO(export.content.decode('utf-8-sig')));rows=list(reader)
@@ -42,9 +42,9 @@ def test_filters_missing_month_and_invalid_inputs(integrated):
     data=client.get('/api/demo/data?province_code=01&moc=2022-07&chi_so=sol,sol_density_cal').json()
     fields=[c['field'] for c in data['columns']]
     assert 'sol' in fields and 'sol_density' in fields and 'rad_mean' not in fields and 'mean_rad' not in fields
-    assert 'avg_rad' in fields and 'grdp_so_sanh' in fields
+    assert 'avg_rad' in fields and 'grdp_so_sanh' not in fields
     missing=client.get('/api/demo/data?province_code=01&moc=2021-07').json()['rows'][0]
-    assert missing['sol'] is None and missing['status']=='MISSING_OBSERVATION'
+    assert missing['sol'] is None and 'status' not in missing
     assert client.get('/api/demo/data?province_code=999&moc=2022').status_code==400
     assert client.get('/api/demo/data?province_code=01&moc=2022-13').status_code==400
 

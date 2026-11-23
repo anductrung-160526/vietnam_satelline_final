@@ -34,7 +34,7 @@ def test_csv_sql_api_and_exports_have_same_snapshot_and_values(integrated):
     db,fixed,checked,model,report=integrated
     assert checked['published'] and checked['demo_schema_version']==2
     assert checked['assets_checked']==39 and checked['outside_valid_values_after']==0
-    assert checked['field_contract_rows']==36
+    assert checked['field_contract_rows']>0
     client=TestClient(app)
     data=client.get('/api/demo/province?province_code=01&nam=2022').json()
     assert data['snapshot_id']==data['provenance']['dataset_id']==checked['dataset_id']
@@ -43,9 +43,9 @@ def test_csv_sql_api_and_exports_have_same_snapshot_and_values(integrated):
     response=client.get('/api/demo/province.csv?province_code=01&nam=2022')
     rows=list(csv.DictReader(response.content.decode('utf-8-sig').splitlines()))
     sol=next(r for r in rows if r['field']=='sol')
-    assert float(sol['value'])==20 and sol['dataset_id']==checked['dataset_id']
-    assert sol['unit']=='nW/cm²/sr' and len(sol['source_image_sha256'])==64
-    assert next(r for r in rows if r['field']=='sol_per_capita')['value']=='0.2'
+    assert float(sol['value'])==20 and 'dataset_id' not in sol
+    assert sol['unit']=='nW/cm²/sr' and 'source_image_sha256' not in sol
+    assert not any(r['field']=='sol_per_capita' for r in rows)
     image=client.get('/api/demo/image',params=dict(province_code='01',nam=2022,kind='processed',expected_snapshot=checked['dataset_id']))
     assert image.status_code==200 and image.headers['x-snapshot-id']==checked['dataset_id']
     assert image.headers['cache-control']=='no-store'

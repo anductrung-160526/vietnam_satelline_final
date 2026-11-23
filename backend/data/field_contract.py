@@ -8,8 +8,9 @@ def check_fields(directory):
     from backend.api.demo_view import PROCESSED,FIELD_ALIASES
     dictionary=Path(__file__).resolve().parents[2]/'docs/NIGHT_DATA_DICTIONARY.md'
     names={line.strip('|').split('|')[2].strip().strip('`') for line in dictionary.read_text(encoding='utf-8').splitlines()[4:] if line.startswith('|')}
-    required=set(NIGHT_DATA_FIELDS+NIGHT_ECONOMY_FIELDS)
-    required|={FIELD_ALIASES.get(r[0],r[0]) for r in PROCESSED}
+    from backend.core.public_fields import is_public
+    required={f for f in NIGHT_DATA_FIELDS+NIGHT_ECONOMY_FIELDS if is_public(f)}
+    required|={FIELD_ALIASES.get(r[0],r[0]) for r in PROCESSED if is_public(FIELD_ALIASES.get(r[0],r[0]))}
     if not required<=names:raise ValueError('Dictionary thiếu trường CSV/API: '+', '.join(sorted(required-names)))
     result=[]
     for table,fields in [('night_data',NIGHT_DATA_FIELDS),('night_economy',NIGHT_ECONOMY_FIELDS)]:
@@ -17,6 +18,7 @@ def check_fields(directory):
             actual=csv.DictReader(stream).fieldnames or []
         if not set(fields)<=set(actual):raise ValueError(f'{table} thiếu trường chuẩn CSV.')
         for field in fields:
+            if not is_public(field):continue
             sql=next((k for k,v in FIELD_ALIASES.items() if v==field),field)
             note='demo_result JSON giữ tên chuẩn; cột SQL cũ được ánh xạ khi hiển thị.'
             if field=='tnl':sql='sol_raw';note='Chỉ bằng sol_raw trên cùng ảnh/mask/mốc; không gộp TNL theo thời gian với SOL.'

@@ -59,7 +59,7 @@ def test_paired_regressions_same_sample_and_csv(database):
     assert data['hoi_quy']['hien_hanh']['beta']==pytest.approx(.8)
     body=client.get('/api/demo/economy.csv?'+query).content.decode('utf-8-sig')
     assert 'grdp_so_sanh' in body and 'grdp_hien_hanh' in body
-    assert 'True' in body
+    assert 'province_code' in body
     assert client.get('/api/demo/economy?price_basis=bad').status_code==400
 
 
@@ -160,7 +160,7 @@ def test_resume_classes_after_windows_schema_error(database, tmp_path, monkeypat
     assert data['class_summary']['nodata_pixels'] == 1
     assert data['class_summary']['valid_area_pct'] == .5
     assert sum(c['class_area_pct'] for c in data['classes']) == pytest.approx(.5)
-    assert next(r for r in data['fields'] if r['field'] == 'valid_area_km2')['value'] == 5
+    assert not any(r['field']=='valid_area_km2' for r in data['fields'])
     csv_result = client.get('/api/demo/classes.csv?province_code=01&nam=2024')
     records = list(csv.DictReader(csv_result.content.decode('utf-8-sig').splitlines()))
     assert len(records) == 5 and float(records[0]['area_km2']) == 1000
