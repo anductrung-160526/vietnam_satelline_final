@@ -237,8 +237,10 @@ INDICATORS = (
          mo_ta='Trường chất lượng. Dưới 2 lượt thì con số của tháng đó kém tin cậy.'),
     dict(ma='population', ten='Dân số', don_vi='người', bang='economy', chu_so=0,
          mo_ta='Do giảng viên cung cấp.'),
-    dict(ma='gdp', ten='GDP', don_vi='tỷ đồng', bang='economy', chu_so=0,
-         mo_ta='Do giảng viên cung cấp.'),
+    dict(ma='gdp', ten='GRDP', don_vi='tỷ đồng', bang='economy', chu_so=0,
+         cot='COALESCE(grdp, gdp)',
+         mo_ta='Do giảng viên cung cấp. Cơ sở giá ghi ở grdp_price_basis: giá hiện '
+               'hành làm hệ số co giãn bị lạm phát thổi lên.'),
 )
 BY_CODE = {entry['ma']: entry for entry in INDICATORS}
 
@@ -335,12 +337,16 @@ def panel(codes, moc=None, tinh=None, year_from=2004, year_to=2025, ham=None):
                     continue
                 co_co = bang in ('ntl_annual', 'ntl_monthly')
                 cot_co = ',obs_status' if co_co else ",''"
+                # Mã chỉ số là tên trong từ điển, không nhất thiết trùng tên cột SQL.
+                # Ví dụ gdp: từ điển gọi là gdp, nhưng số nằm ở cột grdp, còn cột gdp
+                # là cột tương thích cũ và rỗng hoàn toàn trên dữ liệu thật.
+                cot_sql = entry.get('cot') or f'"{entry["ma"]}"'
                 if loai == 'thang':
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
+                    cau = (f'SELECT province_code,{cot_sql},source{cot_co} FROM {bang} '
                            f'WHERE year=? AND month=?')
                     tham = (year, month)
                 else:
-                    cau = (f'SELECT province_code,"{entry["ma"]}",source{cot_co} FROM {bang} '
+                    cau = (f'SELECT province_code,{cot_sql},source{cot_co} FROM {bang} '
                            f'WHERE year=?' + ('' if bang != 'ntl_monthly' else ' AND month=0'))
                     tham = (year,)
                 for ma_tinh, gia_tri, src, flag in connection.execute(cau, tham):

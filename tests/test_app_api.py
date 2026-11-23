@@ -987,3 +987,25 @@ class TheFlagsTravelWithTheValues(unittest.TestCase):
         self.assertIn('vệ tinh', body['chu_giai_co']['B'])
 
 
+
+
+class GdpReadsTheColumnThatHasTheNumbers(unittest.TestCase):
+    """economy.gdp rỗng 100% trên dữ liệu thật; số nằm ở economy.grdp.
+
+    Đọc nhầm cột thì bảng ra một cột toàn dấu gạch mà không có gì báo lỗi, và người
+    dùng tưởng chưa có số liệu kinh tế. Đã xảy ra thật, phát hiện ngày 23/11/2026.
+    """
+
+    def test_panel_shows_grdp_even_when_the_legacy_gdp_column_is_empty(self):
+        import sqlite3
+        from backend.api import store
+        db, client, _ = fresh_database(self)
+        with sqlite3.connect(db) as connection:
+            connection.executemany(
+                'INSERT OR REPLACE INTO economy(province_code,year,grdp,gdp) VALUES(?,?,?,?)',
+                [('01', 2024, 1234.5, None)])
+        body = client.get('/api/panel', params={'chi_so': 'gdp', 'moc': '2024',
+                                                'province_code': '01'}).json()
+        gia_tri = [d['gia_tri'][0] for d in body['dong'] if d['chi_so'] == 'gdp']
+        self.assertEqual(gia_tri, [1234.5],
+                         'chỉ số gdp phải lấy từ cột grdp khi cột gdp rỗng')
