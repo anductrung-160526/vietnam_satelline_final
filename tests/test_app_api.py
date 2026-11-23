@@ -1009,3 +1009,34 @@ class GdpReadsTheColumnThatHasTheNumbers(unittest.TestCase):
         gia_tri = [d['gia_tri'][0] for d in body['dong'] if d['chi_so'] == 'gdp']
         self.assertEqual(gia_tri, [1234.5],
                          'chỉ số gdp phải lấy từ cột grdp khi cột gdp rỗng')
+
+
+class EconomyIndicatorsAreAnnualOnly(unittest.TestCase):
+    """Dân số và hai loại GRDP là số liệu NĂM, không có bản theo tháng.
+
+    Khai bang_thang cho chúng thì chế độ xem tháng sẽ lặp lại số của năm trên cả 12
+    tháng — tạo ra dữ liệu không tồn tại. Phải trống.
+    """
+
+    def test_no_monthly_table_is_declared(self):
+        from backend.api import store
+        for ma in ('population', 'grdp_so_sanh', 'grdp_hien_hanh', 'gdp'):
+            with self.subTest(chi_so=ma):
+                self.assertIsNone(store.BY_CODE[ma].get('bang_thang'))
+
+    def test_monthly_view_returns_nothing_for_them(self):
+        import sqlite3
+        db, client, _ = fresh_database(self)
+        with sqlite3.connect(db) as connection:
+            connection.execute(
+                'INSERT OR REPLACE INTO economy(province_code,year,population,grdp,'
+                'grdp_price_basis) VALUES(?,?,?,?,?)', ('01', 2024, 8_500_000, 1234.5, 'so_sanh'))
+        nam = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+                                               'moc': '2024', 'province_code': '01'}).json()
+        co = {d['chi_so']: d['gia_tri'][0] for d in nam['dong']}
+        self.assertEqual(co['population'], 8_500_000)
+        self.assertEqual(co['grdp_so_sanh'], 1234.5, 'grdp phải được rót theo grdp_price_basis')
+        thang = client.get('/api/panel', params={'chi_so': 'population,grdp_so_sanh',
+                                                 'moc': '2024-07', 'province_code': '01'}).json()
+        self.assertEqual([d['gia_tri'][0] for d in thang['dong']], [None, None],
+                         'chế độ tháng phải trống, không được lặp số của năm')

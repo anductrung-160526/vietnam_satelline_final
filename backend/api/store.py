@@ -105,13 +105,7 @@ def indices(code, year_from=2004, year_to=2025):
         warnings.append('Chuỗi ánh sáng đêm CHƯA hiệu chỉnh liên vệ tinh DMSP–VIIRS: '
                         'chỉ so sánh trong cùng một nguồn (DMSP 2004–2013, VIIRS 2014–2025). '
                         'Chạy: python3 -m task_pipeline.harmonize')
-    fake = any(row.get('status') == 'GIA_LAP' for row in night) \
-        or any(row.get('source') == 'GIA_LAP' for row in economy)
-    if fake:
-        warnings.insert(0, 'SỐ LIỆU GIẢ LẬP — chỉ để minh họa giao diện, tuyệt đối không dùng '
-                           'cho báo cáo hay kết luận. Chỉ số thật chưa tính xong.')
     return {'province_code': code, 'province_name': found['province_name'], 'slug': found['slug'],
-            'gia_lap': fake,
             'nam_tu': year_from, 'nam_den': year_to,
             'dem': night, 'economy': economy,
             'thieu_du_lieu': {'dem': not night, 'economy': not economy},
@@ -200,6 +194,17 @@ INDICATORS = (
          bang='ntl_annual', chu_so=2, mo_ta='Giá trị lớn nhất trong ranh giới tỉnh.', bang_thang='ntl_monthly'),
     dict(ma='rad_std', ten='Độ lệch chuẩn bức xạ', don_vi='nW/cm²/sr',
          bang='ntl_annual', chu_so=4, mo_ta='Mức phân tán độ sáng giữa các điểm ảnh.', bang_thang='ntl_monthly'),
+    dict(ma='rad_min', ten='Điểm tối nhất tỉnh', don_vi='nW/cm²/sr',
+         bang='ntl_annual', bang_thang='ntl_monthly', chu_so=4,
+         mo_ta='Bức xạ nhỏ nhất trên pixel hợp lệ. Từ điển gọi là min_rad.'),
+    dict(ma='background_threshold', ten='Ngưỡng trừ nền', don_vi='nW/cm²/sr',
+         bang='ntl_annual', bang_thang='ntl_monthly', chu_so=2,
+         mo_ta='Tham số: VIIRS 0,5; DMSP 0. Hằng số theo nguồn ảnh nên cột này lặp '
+               'một giá trị — bày ra để biết con số sol đến từ ngưỡng nào.'),
+    dict(ma='background_pixels', ten='Số điểm ảnh dưới ngưỡng nền', don_vi='pixel',
+         bang='ntl_annual', bang_thang='ntl_monthly', chu_so=0,
+         mo_ta='Vẫn là pixel hợp lệ nhưng đóng góp 0 vào sol. Đo trực tiếp bước lọc '
+               'nền lấy đi bao nhiêu.'),
     dict(ma='rad_cv', ten='Hệ số biến thiên ánh sáng', don_vi='không thứ nguyên',
          bang='ntl_annual', chu_so=4,
          mo_ta='std/mean — chênh lệch sáng–tối trong tỉnh; cao nghĩa là tập trung vào vài điểm.', bang_thang='ntl_monthly'),
@@ -235,8 +240,26 @@ INDICATORS = (
     dict(ma='cloud_free_obs', ten='Số lượt quan sát sạch mây', don_vi='lượt',
          bang='ntl_annual', bang_thang='ntl_monthly', chu_so=2,
          mo_ta='Trường chất lượng. Dưới 2 lượt thì con số của tháng đó kém tin cậy.'),
+    # Ba chỉ số kinh tế dưới đây CHỈ có ở dòng năm: GRDP và dân số là số liệu năm,
+    # không có bản theo tháng. Không khai bang_thang nên ở chế độ xem tháng chúng
+    # trả về trống thay vì lặp lại số của năm — lặp lại là tạo ra dữ liệu không tồn tại.
     dict(ma='population', ten='Dân số', don_vi='người', bang='economy', chu_so=0,
-         mo_ta='Do giảng viên cung cấp.'),
+         mo_ta='Do giảng viên cung cấp. Chỉ có theo năm.'),
+    # Hai cột grdp_* do build_indices rót theo grdp_price_basis. Nhưng cơ sở dữ liệu
+    # nạp trước bước đó chỉ có grdp + nhãn cơ sở giá, nên đọc dự phòng thẳng từ đó:
+    # thiếu phép dự phòng này thì chỉ cần quên chạy lại build_indices là cột rỗng
+    # trơn mà không có gì báo lỗi.
+    dict(ma='grdp_so_sanh', ten='GRDP giá so sánh', don_vi='tỷ đồng, giá 2010',
+         bang='economy', chu_so=0,
+         cot="COALESCE(grdp_so_sanh, CASE WHEN grdp_price_basis='so_sanh' "
+             "THEN COALESCE(grdp, gdp) END)",
+         mo_ta='Cơ sở chính thức cho phân tích tăng trưởng. Chỉ có theo năm.'),
+    dict(ma='grdp_hien_hanh', ten='GRDP giá hiện hành', don_vi='tỷ đồng, giá từng năm',
+         bang='economy', chu_so=0,
+         cot="COALESCE(grdp_hien_hanh, CASE WHEN grdp_price_basis='hien_hanh' "
+             "THEN COALESCE(grdp, gdp) END)",
+         mo_ta='Dùng đối chiếu. Giá hiện hành làm hệ số co giãn bị lạm phát thổi lên. '
+               'Chỉ có theo năm.'),
     dict(ma='gdp', ten='GRDP', don_vi='tỷ đồng', bang='economy', chu_so=0,
          cot='COALESCE(grdp, gdp)',
          mo_ta='Do giảng viên cung cấp. Cơ sở giá ghi ở grdp_price_basis: giá hiện '

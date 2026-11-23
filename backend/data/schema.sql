@@ -78,7 +78,12 @@ CREATE TABLE IF NOT EXISTS ntl_monthly(
 CREATE TABLE IF NOT EXISTS economy(
   province_code TEXT NOT NULL, year INTEGER NOT NULL,
   population REAL,            -- dân số trung bình năm
-  grdp REAL,                  -- GRDP theo tỉnh
+  grdp REAL,                  -- GRDP của cơ sở giá ghi ở grdp_price_basis
+  -- Hai cột tách theo cơ sở giá, để bộ lọc bày được cả hai cạnh nhau. Một dòng
+  -- economy chỉ mang MỘT cơ sở giá, nên build_indices rót grdp vào đúng cột theo
+  -- grdp_price_basis; CSV nào có sẵn hai cột thì nạp thẳng.
+  grdp_so_sanh REAL,          -- giá so sánh, năm gốc 2010
+  grdp_hien_hanh REAL,        -- giá hiện hành
   gdp REAL,                   -- giữ tên cũ để không phá dữ liệu đã nạp
   gdp_per_capita REAL,
   -- 'so_sanh' hoặc 'hien_hanh'. Trường quan trọng nhất của bảng này: GRDP giá hiện hành

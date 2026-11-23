@@ -416,7 +416,7 @@ def demo_economy_csv(nam_tu: int = Query(2020, ge=2004, le=2025),
         raise HTTPException(409,'Bộ dữ liệu đã đổi; tải lại trang trước khi tải CSV.')
     fields = ['province_code', 'province_name', 'year', 'population', 'grdp_so_sanh',
               'grdp_hien_hanh', 'sol', 'sol_per_capita', 'light_gdp_elasticity', 'predicted_gdp', 'derived_price_basis', 'paired', 'unit',
-              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh', 'is_simulated',
+              'price_base_year', 'is_provisional', 'quality_flags', 'source_so_sanh', 'source_hien_hanh',
               'gdp_change_pct', 'image_quality_flags', 'comparison_note', 'light_basis', 'area_method',
               'model_training_period', 'model_n', 'model_beta','dataset_id','stats_version','sol_unit',
               'provenance_consistent','provenance_reason','source_image_path','source_image_sha256']

@@ -83,7 +83,6 @@ def build(root,integration_report,db,year_start=2020,year_end=2024,permutations=
                 row=connection.execute('SELECT * FROM ntl_annual WHERE province_code=? AND year=?',(code,year)).fetchone()
                 if row is None:reasons[code]='missing_annual_row';continue
                 if row['source']!='VIIRS':reasons[code]='not_viirs';continue
-                if 'status' in row.keys() and row['status']=='GIA_LAP':reasons[code]='simulated_data';continue
                 info=observation_info(connection,code,year,0,versions)
                 item=available_asset(connection,code,year,0,'processed')
                 if not info['consistent'] or info['dataset_id']!=dataset or not item or item['verification_status']!='verified':

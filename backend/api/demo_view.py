@@ -76,12 +76,10 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         a = data.get((province, year, 'so_sanh'), {})
         b = data.get((province, year, 'hien_hanh'), {})
         light = night.get((province, year), {})
-        sources = [str(r.get('source') or '') for r in (a, b)]
-        fake = any('GIA_LAP' in s.upper() for s in sources) or 'GIA_LAP' in str(light.get('source', '')).upper()
-        # Hai mô hình dùng cùng tỉnh–năm với GRDP và SOL dương; dữ liệu giả luôn được gắn nhãn.
+        # Hai mô hình dùng cùng tỉnh–năm với GRDP và SOL dương.
         paired = (all(v is not None and v > 0 for v in (a.get('grdp'), b.get('grdp'), light.get('sol')))
                   and a.get('unit') == b.get('unit') == 'ty_vnd'
-                  and light.get('source') == 'VIIRS' and not fake)
+                  and light.get('source') == 'VIIRS')
         selected = a if basis != 'hien_hanh' else b
         result = saved.get((province, year, 0, 'night_economy', 'hien_hanh' if basis == 'hien_hanh' else 'so_sanh'), {})
         info=image_info.get((province,year),{})
@@ -109,7 +107,7 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
                       ('Ảnh và kết quả kinh tế không cùng snapshot.' if not consistent else ''),
                      'source_image_path':info.get('source_path'),'source_image_sha256':info.get('source_sha256'),
                      'sol_unit':'DN' if light.get('source')=='DMSP' else 'nW/cm²/sr',
-                     'sol': light.get('sol'), 'paired': paired, 'is_simulated': fake,
+                     'sol': light.get('sol'), 'paired': paired,
                      'sol_per_capita': light['sol']/population
                      if light.get('sol') is not None and population is not None and population > 0 else None,
                      'derived_price_basis': 'hien_hanh' if basis == 'hien_hanh' else 'so_sanh',
@@ -130,8 +128,6 @@ def economic_view(year_from=2020, year_to=2024, code=None, basis='so_sanh'):
         warnings.append('Có kết quả diện tích dùng toàn bộ pixel giao biên; cần tính lại theo phần giao pixel–tỉnh. SOL là tổng bức xạ pixel, chưa quy đổi thành giá trị tiền tệ kinh tế đêm.')
     if any(r['image_quality_flags'] for r in rows):
         warnings.append('Kết quả ghép có cờ chất lượng ảnh; xem cột chất lượng và CSV. Biến động độ phủ có thể ảnh hưởng chỉ số ánh sáng.')
-    if any(r['is_simulated'] for r in rows):
-        warnings.append('SỐ LIỆU GIẢ LẬP — chỉ dùng kiểm thử giao diện, không dùng cho báo cáo.')
     if basis in ('hien_hanh', 'compare'):
         warnings.append('GRDP giá hiện hành dùng đối chiếu; giá so sánh năm gốc 2010 là cơ sở chính thức của bộ dữ liệu cô cung cấp.')
     if any(r['quality_flags'] for r in rows):
@@ -252,10 +248,9 @@ def province_view(code, year, month):
         fields.append({'field': display_name, 'name': name, 'stage': 'Processed', 'value': value,
                        'unit': field_unit.replace('bức xạ', field_radiance_unit) if field_unit else 'không thứ nguyên',
                        'reason': '' if value is not None else 'Chưa có số liệu hoặc chỉ số không tính được ở mốc này.'})
-    simulated = 'GIA_LAP' in str(observation.get('source', '')).upper() or observation.get('status') == 'GIA_LAP'
     return {'province': province, 'year': year, 'month': month, 'source': source, 'unit': unit,
             'fields': fields, 'raw_asset': raw_asset, 'processed_asset': processed_asset,
-            'classes': classes, 'class_asset': class_asset, 'is_simulated': simulated,
+            'classes': classes, 'class_asset': class_asset,
             'snapshot_id':request_snapshot,
             'class_summary': class_summary,
             'observation_support': observation_support,

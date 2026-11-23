@@ -22,7 +22,7 @@ REPO = HERE.parent.parent
 # Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
 # tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
 # An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
@@ -118,6 +118,23 @@ def cell(name, raw):
     return text(raw) if name in TEXT_COLUMNS else number(raw)
 
 
+def tach_co_so_gia(row):
+    """Rót grdp vào grdp_so_sanh hoặc grdp_hien_hanh theo grdp_price_basis.
+
+    Một dòng economy chỉ mang MỘT cơ sở giá, nên không thể vừa có giá so sánh vừa có
+    giá hiện hành. Tách ra hai cột để bộ lọc bày được cả hai; CSV nào đã có sẵn hai
+    cột thì giữ nguyên, không ghi đè.
+    """
+    co_so = (row.get('grdp_price_basis') or '').strip()
+    gia = row.get('grdp') if row.get('grdp') is not None else row.get('gdp')
+    if gia is None or not co_so:
+        return row
+    cot = 'grdp_so_sanh' if co_so == 'so_sanh' else 'grdp_hien_hanh' if co_so == 'hien_hanh' else None
+    if cot and row.get(cot) is None:
+        row[cot] = gia
+    return row
+
+
 def rows_of(records, want, monthly):
     """Chuyển bản ghi CSV thành dòng của bảng, gộp lên năm nếu nguồn ghi theo tháng.
 
@@ -137,7 +154,7 @@ def rows_of(records, want, monthly):
         key = (code.zfill(2), int(year))
         row = {name: cell(name, record[name]) for name in want if name in record}
         row['province_code'], row['year'] = key
-        gom.setdefault(key, []).append(row)
+        gom.setdefault(key, []).append(tach_co_so_gia(row))
 
     out = []
     for (code, year), phan in sorted(gom.items()):

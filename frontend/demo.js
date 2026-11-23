@@ -130,7 +130,7 @@ async function refreshDemo(){
     const supportInfo = recoveryInfo + (support ? `<p class="nho">Ảnh năm ${data.year}: số tháng hợp lệ trên pixel có quan sát từ ${supportValue('valid_month_min')} đến ${supportValue('valid_month_max')}, trung bình ${supportValue('valid_month_mean')}. Diện tích không có tháng nào hợp lệ: ${supportValue('area_without_observations_km2')} km². Có file tháng không đồng nghĩa có quan sát ở mọi pixel.</p>${data.support_asset?.available ? `<a class="asset-link" href="/api/demo/image?${supportParams}">Tải bản đồ số tháng hợp lệ trong năm</a>` : '<p class="nho">Bản đồ số tháng hợp lệ hiện không sẵn có.</p>'}` : '');
     const group = stage => `<section class="data-group ${stage.toLowerCase()}"><h2>${stage === 'Raw' ? '01 · Raw — dữ liệu đầu vào' : '02 · Processed — kết quả tính toán'}</h2>`
       + `<div class="cuon"><table><thead><tr><th>Trường dữ liệu</th><th>Giá trị / dữ liệu nguồn</th><th>Đơn vị</th></tr></thead><tbody>${fields(stage)}</tbody></table></div>${stage === 'Processed' ? supportInfo : ''}</section>`;
-    $('detail-fields').innerHTML = identity + (data.is_simulated ? '<p class="canh thieu">SỐ LIỆU GIẢ LẬP — chỉ kiểm thử giao diện.</p>' : '')
+    $('detail-fields').innerHTML = identity
       + `<p class="nho">Bộ dữ liệu: ${thoat(data.provenance?.dataset_id?.slice(0,12) || 'chưa có mã snapshot')} · phiên bản thống kê ${data.provenance?.stats_version ?? 'chưa xác minh'}.</p>`
       + (data.provenance?.reason ? `<p class="canh">${thoat(data.provenance.reason)} Các số đã lưu vẫn được giữ để tra cứu.</p>` : '')
       + group('Raw') + group('Processed')
@@ -249,7 +249,7 @@ async function dungManKinhTe(){
       + `<div class="cuon"><table id="economy-raw"><thead><tr><th>Tỉnh</th><th>Năm</th><th>Dân số</th>${rawHeader}<th>Chất lượng</th></tr></thead><tbody>`
       + data.dong.map(r=>`<tr><td>${thoat(r.province_name)}</td><td>${r.year}</td><td>${valueCell(r.population,'Chưa có dân số',0)}</td>`
         + (economyBasis === 'compare' ? `<td>${valueCell(r.grdp_so_sanh,'Thiếu GRDP giá so sánh',0)}</td><td>${valueCell(r.grdp_hien_hanh,'Thiếu GRDP giá hiện hành',0)}</td>` : `<td>${valueCell(r.grdp,'Thiếu GRDP ở cơ sở giá đang chọn',0)}</td>`)
-        + `<td>${r.is_provisional ? '<span class="badge">Sơ bộ</span>' : ''}${r.quality_flags ? `<small title="${thoat(r.quality_flags)}">Cần đối chiếu nguồn</small>` : ''}${r.image_quality_flags ? `<small title="${thoat(r.image_quality_flags)}">Cần rà soát chất lượng ảnh</small>` : ''}${r.is_simulated ? '<b>SỐ GIẢ LẬP</b>' : ''}</td></tr>`).join('')
+        + `<td>${r.is_provisional ? '<span class="badge">Sơ bộ</span>' : ''}${r.quality_flags ? `<small title="${thoat(r.quality_flags)}">Cần đối chiếu nguồn</small>` : ''}${r.image_quality_flags ? `<small title="${thoat(r.image_quality_flags)}">Cần rà soát chất lượng ảnh</small>` : ''}</td></tr>`).join('')
       + `</tbody></table></div>${!data.dong.length ? '<p class="empty-state">Chưa nạp GRDP cho phạm vi này.</p>' : ''}</section>`
       + `<section class="data-group processed"><h2>02 · Processed — ánh sáng và quan hệ với GRDP</h2><p class="nho">${economyBasis === 'compare' ? 'Các cột dẫn xuất và biểu đồ dùng giá so sánh; hai ô hồi quy đối chiếu riêng hai loại giá trên cùng mẫu.' : 'Các cột dẫn xuất và biểu đồ theo cơ sở giá đang chọn.'}</p>`
       + `<div class="fit-grid">${economyBasis === 'compare' ? fitCard('so_sanh','Giá so sánh')+fitCard('hien_hanh','Giá hiện hành') : fitCard(basis,basis === 'so_sanh'?'Giá so sánh':'Giá hiện hành')}</div>`

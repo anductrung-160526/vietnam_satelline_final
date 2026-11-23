@@ -430,8 +430,7 @@ def add_dictionary_tables(tables, records, economy, calibrate):
     # predicted_gdp: khớp mô hình trên VIIRS 2014–2025, GRDP giá so sánh, >=10 điểm.
     # Không dùng hệ số này như light_gdp_elasticity: hai phép tính khác nhau.
     training = [(r['sol_cal'], r['gdp']) for r in annual
-                if r['year'] >= 2014 and r['price_basis'] == 'so_sanh'
-                and 'GIA_LAP' not in r['economy_source'].upper()]
+                if r['year'] >= 2014 and r['price_basis'] == 'so_sanh']
     gdp_model = fit_log_model(training, minimum=10)
     annual_lookup = {(r['province_code'], r['year']): r for r in annual}
     for row in annual:

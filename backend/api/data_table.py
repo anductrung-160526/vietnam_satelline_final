@@ -80,8 +80,6 @@ def data_table(periods,codes=None,selected=None):
                 for field in ('background_threshold','background_pixels','lit_threshold','status','obs_status'):
                     row[field]=obs.get(field)
                 if not obs:row['status']='MISSING_OBSERVATION'
-                if any('GIA_LAP' in str(value).upper() for value in (obs.get('source'),obs.get('status'),a.get('source'),b.get('source'))):
-                    row['status']='GIA_LAP'
                 results.append(row)
     fields=ordered_fields(BASE+list(NUMERIC)+EXTRA)
     if selected is not None:
@@ -97,6 +95,5 @@ def data_table(periods,codes=None,selected=None):
     warnings=['GRDP/dân số ở dòng tháng là tham chiếu số liệu năm; không phải GRDP/dân số tháng.',
               'avg_rad/cf_cvg là tham chiếu băng ảnh Raw, không phải một giá trị pixel đại diện cho tỉnh.']
     if snapshot and not versions.get(snapshot,{}).get('available'):warnings.append('CSV snapshot nền đã mất/đổi; cần kiểm chứng lại.')
-    if any(r['status']=='GIA_LAP' for r in results):warnings.append('SỐ LIỆU GIẢ LẬP — có dòng chứa ảnh hoặc dữ liệu kinh tế dùng kiểm thử.')
     if any(r['dataset_id'] and r['dataset_id']!=snapshot for r in results):warnings.append('Có dòng thuộc snapshot cũ; xem dataset_id của từng dòng.')
     return dict(snapshot_id=snapshot,columns=columns,rows=[{f:r.get(f) for f in fields} for r in results],warnings=warnings)

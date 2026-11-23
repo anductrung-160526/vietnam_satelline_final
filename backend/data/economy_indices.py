@@ -119,8 +119,7 @@ def attach_two_prices(tables, prices, quality=None, calibrate=False):
         values = [prices.get((*key, basis), {}) for basis in BASES]
         light = row.get(light_key)
         positive = light is not None and light > 0 and all(r.get('gdp') is not None and r['gdp'] > 0 for r in values)
-        fake = 'GIA_LAP' in row.get('source', '').upper() or any('GIA_LAP' in r.get('economy_source', '').upper() for r in values)
-        if row['source'] == 'VIIRS' and row['year'] >= 2014 and positive and not fake:
+        if row['source'] == 'VIIRS' and row['year'] >= 2014 and positive:
             paired_keys.add(key)
     models = {}
     for basis in BASES:
