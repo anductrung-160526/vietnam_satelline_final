@@ -171,15 +171,6 @@ def get_tong_hop(nam: int = Query(..., ge=1990, le=2100),
     return data
 
 
-@app.get('/api/kinh-te-dem')
-def get_kinh_te_dem(nam_tu: int = Query(2014, ge=1990, le=2100),
-                    nam_den: int = Query(YEAR_MAX, ge=1990, le=2100)):
-    """Bảng kinh tế đêm và hệ số co giãn β. Chưa có số liệu thì trả mảng rỗng, không lỗi."""
-    if nam_tu > nam_den:
-        raise HTTPException(400, 'nam_tu phải nhỏ hơn hoặc bằng nam_den')
-    return store.kinh_te_dem(nam_tu, nam_den)
-
-
 @app.get('/api/coverage')
 def get_coverage():
     """Năm nào đã có dữ liệu gì — dùng cho trang trạng thái và báo cáo tiến độ."""

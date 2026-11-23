@@ -87,8 +87,6 @@ def data_table(periods,codes=None,selected=None):
     if selected is not None:
         wanted={FIELD_ALIASES.get(f,f) for f in selected}
         # Hai field hiệu chỉnh mật độ/tăng trưởng đã gộp vào tên thống nhất.
-        wanted|={'sol_density' for f in selected if f=='sol_density_cal'}
-        wanted|={'sol_change_pct' for f in selected if f=='sol_change_cal_pct'}
         fields=[f for f in fields if f not in NUMERIC or f in wanted]
     names={'province_code':'Mã tỉnh','province_name':'Tên tỉnh','gid_1':'Mã GADM','year':'Năm','month':'Tháng (0 = năm)',
            'avg_rad':'Băng bức xạ Raw (tham chiếu file)','cf_cvg':'Băng lượt quan sát Raw (tham chiếu file)',

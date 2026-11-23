@@ -26,7 +26,7 @@ def seed(db, seed_value=20261104):
     # Chạy demo_seed một mình cũng phải ra app dùng được: nạp luôn danh mục 63 tỉnh,
     # nếu không thì mọi truy vấn theo tỉnh trả None và giao diện trắng.
     load_provinces(connection)
-    night, day, economy = [], [], []
+    night, economy = [], []
     for index, code in enumerate(TINH):
         area = 1000 + index * 700
         base = 40 + index * 55
@@ -47,8 +47,7 @@ def seed(db, seed_value=20261104):
             night.append((code, year, source, round(sol, 2), round(sol / area, 6),
                           None if previous is None or year == 2014
                           else round((sol - previous) / previous * 100, 2),
-                          hc, round(hc / area, 6), None if previous is None
-                          else round((hc - (previous_hc or hc)) / (previous_hc or hc) * 100, 2),
+                          hc,
                           round(sol * 1.04, 2), nen, int(area * 0.3),
                           round(sol / area, 6), round(sol / area * 0.6, 6), 0.0,
                           round(sol / 9, 4), 0.6,
@@ -60,15 +59,6 @@ def seed(db, seed_value=20261104):
                           float(area), 'GIA_LAP',
                           'DMSP_TO_VIIRS_POWER_OVERLAP2013_v1', 'GIA_LAP'))
             previous = sol; previous_hc = hc
-            if year >= 2016:
-                phase = (year - 2016) / 9
-                day.append((code, year, 'SENTINEL2_GIA_LAP', 'TOA' if year < 2019 else 'SR',
-                            round(0.52 - 0.07 * phase + random.uniform(-.01, .01), 4), 0.11,
-                            round(-0.12 + 0.09 * phase + random.uniform(-.01, .01), 4), 0.09,
-                            round(-0.31 + random.uniform(-.02, .02), 4), 0.14,
-                            round(0.04 + 0.03 * phase, 4), 0.08,
-                            round(random.uniform(90, 99), 2), float(area) * 0.96,
-                            float(area), 12, 'GIA_LAP'))
             economy.append((code, year,
                             round(900_000 * (index + 1) * math.pow(1.013, year - 2004), 0),
                             round(50_000 * (index + 1) * math.pow(1.065, year - 2004), 0),
@@ -76,23 +66,18 @@ def seed(db, seed_value=20261104):
 
     connection.executemany(
         'INSERT OR REPLACE INTO ntl_annual(province_code,year,source,sol,sol_density,'
-        'sol_change_pct,sol_cal,sol_density_cal,sol_change_cal_pct,'
+        'sol_change_pct,sol_cal,'
         'sol_raw,background_threshold,background_pixels,'
         'rad_mean,rad_std,rad_min,rad_max,rad_cv,valid_pixels,'
         'lit_pixels,lit_area_km2,lit_area_pct,lit_sol,lit_threshold,'
         'area_km2,note,calibration,status) VALUES('
-        + ','.join('?' * 27) + ')', night)
-    connection.executemany(
-        'INSERT OR REPLACE INTO day_annual(province_code,year,source,reflectance_type,'
-        'NDVI_mean,NDVI_std,NDBI_mean,NDBI_std,MNDWI_mean,MNDWI_std,BSI_mean,BSI_std,'
-        'valid_area_pct,valid_area_km2,area_km2,months_used,status) VALUES('
-        + ','.join('?' * 17) + ')', day)
+        + ','.join('?' * 25) + ')', night)
     connection.executemany(
         'INSERT OR REPLACE INTO economy(province_code,year,population,gdp,gdp_per_capita,source) '
         'VALUES(?,?,?,?,?,?)', economy)
     connection.commit()
     connection.close()
-    return {'ntl_annual': len(night), 'day_annual': len(day), 'economy': len(economy),
+    return {'ntl_annual': len(night), 'economy': len(economy),
             'tinh': TINH}
 
 
@@ -101,7 +86,7 @@ def main():
     parser.add_argument('--db', default=str(HERE / 'vngis.db'))
     report = seed(parser.parse_args().db)
     print('ĐÃ NẠP SỐ LIỆU GIẢ LẬP (status=GIA_LAP) cho các tỉnh', ', '.join(report['tinh']))
-    print('  ntl_annual %(ntl_annual)d dòng · day_annual %(day_annual)d · economy %(economy)d' % report)
+    print('  ntl_annual %(ntl_annual)d dòng · economy %(economy)d' % report)
     print('  Không dùng cho báo cáo. Chạy build_indices.py để thay bằng số liệu thật.')
 
 

@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS ntl_annual(
   sol_density REAL,          -- mật độ: sol / area_km2
   sol_change_pct REAL,       -- % so năm trước, CHỈ trong cùng một nguồn
   -- Sau hiệu chỉnh liên kết DMSP->VIIRS: so sánh được xuyên mốc 2013.
-  sol_cal REAL, sol_density_cal REAL, sol_change_cal_pct REAL,
+  -- Chỉ sol_cal. Night Data Dictionary ghi rõ "không thêm field sol_density_cal vào
+  -- dictionary", và sol_change_cal_pct cũng không có trong từ điển: chuỗi đã hiệu
+  -- chỉnh là một chế độ xem ghi ở light_basis, không phải bộ cột song song.
+  sol_cal REAL,
   rad_mean REAL,             -- trung bình mỗi điểm ảnh
   rad_std REAL,              -- độ lệch chuẩn
   rad_min REAL, rad_max REAL,
@@ -68,22 +71,8 @@ CREATE TABLE IF NOT EXISTS ntl_monthly(
   PRIMARY KEY(province_code,year,month)
 );
 
--- Chỉ số ảnh ngày theo năm: Landsat 2004-2014, Sentinel-2 2015-2025.
--- Cảnh báo: Sentinel-2 2015-2018 là TOA (L1C), 2019-2025 là phản xạ bề mặt (L2A).
--- Hậu tố _std, KHÔNG phải _stdDev. derive sinh bảng này theo THÁNG; build_indices gộp
--- lên năm bằng trung bình các tháng.
-CREATE TABLE IF NOT EXISTS day_annual(
-  province_code TEXT NOT NULL, province_name TEXT, year INTEGER NOT NULL, source TEXT,
-  reflectance_type TEXT,     -- TOA (Sentinel-2 trước 2019) hoặc SR
-  NDVI_mean REAL, NDVI_std REAL, NDBI_mean REAL, NDBI_std REAL,
-  MNDWI_mean REAL, MNDWI_std REAL, BSI_mean REAL, BSI_std REAL,
-  BLUE_mean REAL, GREEN_mean REAL, RED_mean REAL,
-  NIR_mean REAL, SWIR1_mean REAL, SWIR2_mean REAL,
-  valid_area_pct REAL, valid_area_km2 REAL, area_km2 REAL,
-  months_used INTEGER,       -- số tháng đã gộp lên năm này
-  status TEXT,
-  PRIMARY KEY(province_code,year)
-);
+-- Không có bảng day_annual: Night Data Dictionary không định nghĩa chỉ số ảnh ngày,
+-- và phạm vi dự án đã thu về chỉ còn kinh tế đêm.
 
 -- Chỉ số kinh tế do giảng viên cung cấp. Bảng rỗng là trạng thái hợp lệ: app vẫn chạy.
 CREATE TABLE IF NOT EXISTS economy(
@@ -125,4 +114,3 @@ CREATE TABLE IF NOT EXISTS source_image(
 
 CREATE INDEX IF NOT EXISTS ix_ntl_year ON ntl_annual(year);
 CREATE INDEX IF NOT EXISTS ix_ntl_thang ON ntl_monthly(year,month);
-CREATE INDEX IF NOT EXISTS ix_day_year ON day_annual(year);

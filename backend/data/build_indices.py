@@ -22,7 +22,7 @@ REPO = HERE.parent.parent
 # Tăng mỗi khi schema.sql đổi cấu trúc bảng. 'CREATE TABLE IF NOT EXISTS' bỏ qua bảng đã
 # tồn tại, nên cơ sở dữ liệu cũ sẽ thiếu cột mới mà không báo gì — phải dựng lại.
 # An toàn: mọi thứ trong vngis.db đều sinh ra từ CSV, không có dữ liệu gốc nào ở đây.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 NTL_PACKAGE = 'VN_NTL_Panel_2004_2025'
 DAY_PACKAGE = 'VN_LandCover_Panel_2004_2025'
 
@@ -39,10 +39,6 @@ SOURCES = {
     # Bảng theo tháng giữ nguyên từng tháng, KHÔNG gộp lên năm: cả app lẫn biểu đồ
     # tháng đều cần từng mốc một. Khoá có thêm cột month.
     'ntl_monthly': ([f'{NTL_PACKAGE}/data_processed/ntl_monthly.csv'], 'GIU_THANG'),
-    # derive ghi chỉ số ngày theo THÁNG; app hiển thị theo năm nên gộp trung bình các tháng.
-    # day_indices_monthly_ee.csv cũng là di sản Earth Engine, cùng lý do.
-    'day_annual': ([f'{DAY_PACKAGE}/data_processed/day_indices_monthly.csv',
-                    f'{DAY_PACKAGE}/data_processed/day_indices_annual.csv'], 'month'),
     'economy': (['data_processed/economy.csv', 'backend/data/economy.csv'], None),
 }
 
@@ -248,7 +244,7 @@ def main():
     report = build(arguments.root, arguments.db)
 
     print(f"province: {report['province']} dòng")
-    for table in ('ntl_annual', 'ntl_monthly', 'day_annual', 'economy'):
+    for table in ('ntl_annual', 'ntl_monthly', 'economy'):
         info = report[table]
         print(f"\n{table}: {info['rows']} dòng")
         if not info['rows']:

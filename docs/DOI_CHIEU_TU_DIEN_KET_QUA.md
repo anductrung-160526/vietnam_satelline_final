@@ -114,7 +114,36 @@ không được gọi chung là "độ co giãn" rồi trích lẫn số của n
 
 ---
 
-## Việc cần quyết
+## Đã sửa ngày 23/11/2026
+
+Anh duyệt "gỡ và sửa tất cả những gì không khớp với từ điển, và dọn
+store.kinh_te_dem". Đã làm:
+
+| Việc | Chỗ sửa |
+|---|---|
+| Gỡ `sol_density_cal`, `sol_change_cal_pct` khỏi bộ chọn, schema, và khỏi `calculate_ntl` — tầng tính toán vẫn đang SINH RA chúng | `store.py`, `schema.sql`, `calculate_ntl.py`, `column_order.py`, `data_table.py`, `demo_seed.py` |
+| Gỡ bốn chỉ số ảnh ngày, bảng `day_annual`, `DAY_FIELDS`, phần ảnh ngày trong export và cảnh báo TOA | `store.py`, `export.py`, `schema.sql`, `build_indices.py`, `demo_seed.py` |
+| Bổ sung 6 trường API vào từ điển: `is_simulated`, `missing_reason`, `provenance_reason`, `sol_unit`, `canh_bao`, `theo_tinh` | `NIGHT_DATA_DICTIONARY.md` (121 → 127 trường), sinh lại `.docx` |
+| Xoá `store.kinh_te_dem` và `/api/kinh-te-dem` | `store.py`, `main.py` |
+| `SCHEMA_VERSION` 8 → 9 | `build_indices.py` |
+
+Bộ chọn chỉ số: 28 → 22. Sau khi sửa, công cụ đối chiếu **không còn báo lệch tên
+nào**; 16 dòng còn lại đều là "cột toàn NULL" của bộ dữ liệu giả lập.
+
+**Phải chạy lại trên máy anh**: `SCHEMA_VERSION` tăng nên `build_indices` sẽ dựng lại
+cơ sở dữ liệu từ đầu.
+
+```
+python -m backend.data.build_indices --root E:\SatelliteData
+```
+
+Mục A4 (hai bộ tên) **không sửa**: từ điển khai cả hai là hợp lệ (`mean_rad` ghi rõ
+"SQLite rad_mean"), nên đó không phải chỗ không khớp. Đổi tên cột SQL sẽ kéo theo cả
+schema, CSV và nhánh pipeline — việc lớn, và không phải việc từ điển đòi.
+
+---
+
+## Việc cần quyết (bản gốc, giữ để tra lại)
 
 1. **A1 + A2** — gỡ `sol_density_cal` và `sol_change_cal_pct` khỏi bộ chọn, chuyển
    sang cơ chế `light_basis` như từ điển quy định? Hay sửa từ điển?

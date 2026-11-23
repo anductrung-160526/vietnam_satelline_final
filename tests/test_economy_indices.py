@@ -127,7 +127,7 @@ def test_quality_changed_support_and_2010_transition(inputs):
     second = dict(first, year=2010)
     legacy = calculate([first, second])
     assert legacy['ntl_annual'][1]['sol_change_pct'] is None
-    assert legacy['ntl_annual'][1]['sol_change_cal_pct'] is None
+    assert 'sol_change_cal_pct' not in legacy['ntl_annual'][1], 'từ điển không có cột này'
     assert legacy['night_economy'][1]['sol_change_pct'] is None
 
 

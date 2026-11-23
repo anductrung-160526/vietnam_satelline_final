@@ -20,15 +20,20 @@ Nguồn: `backend/core/chi_so.py`, bảng `data_processed/ntl_annual.csv`.
 | `sol_change_pct` | **Mức độ thay đổi** | `(sol_t − sol_{t−1}) ÷ sol_{t−1} × 100` | % |
 
 `sol_change_pct` **chỉ so trong cùng một nguồn ảnh** và bỏ trống tại mốc đổi vệ tinh
-2013→2014. Muốn so xuyên mốc thì dùng `sol_change_cal_pct`.
+2013→2014. Muốn so xuyên mốc thì đổi `light_basis` sang chuỗi đã hiệu chỉnh — vẫn là
+cột `sol_change_pct`, chỉ khác tử số.
 
 ### 1.2. Chuỗi đã hiệu chỉnh liên vệ tinh
 
 | Cột | Ý nghĩa |
 |---|---|
 | `sol_cal` | `sol` sau khi quy DMSP về thang VIIRS |
-| `sol_density_cal` | `sol_cal ÷ diện tích` |
-| `sol_change_cal_pct` | biến động trên chuỗi đã hiệu chỉnh, **có giá trị cả ở mốc 2013→2014** |
+| `light_basis` | ghi chuỗi đang dùng là `sol` hay `sol_cal` |
+
+Chỉ **một** cột `sol_cal`. Night Data Dictionary ghi rõ *"không thêm field
+`sol_density_cal` vào dictionary"*, và `sol_change_cal_pct` cũng không có trong từ
+điển: mật độ và biến động chỉ có một tên mỗi thứ, còn chuỗi nào đang được dùng thì
+đọc ở `light_basis`. Hai bộ cột song song là cách làm cũ, đã gỡ ngày 23/11/2026.
 
 Phương pháp: hồi quy log–log `sol_viirs = a × sol_dmsp^b` khớp trên các tỉnh có cả hai
 nguồn ở năm chồng lấn 2013. Tham số lưu tại `metadata/hieu_chinh_dmsp_viirs.json`.

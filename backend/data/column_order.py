@@ -9,5 +9,5 @@ def ordered_fields(fields):
     leading=[f for f in IDENTITY_FIELDS+RAW_FIELDS if f in fields]
     remaining=[f for f in fields if f not in leading]
     # Phiên bản ánh sáng hiệu chỉnh đứng cuối nhóm Processed.
-    calibrated=[f for f in remaining if f in ('sol_cal','sol_density_cal','sol_change_cal_pct','calibration')]
+    calibrated=[f for f in remaining if f in ('sol_cal','calibration')]
     return leading+[f for f in remaining if f not in calibrated]+calibrated

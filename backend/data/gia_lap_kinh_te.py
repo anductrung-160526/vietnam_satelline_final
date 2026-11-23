@@ -2,7 +2,7 @@ r"""Sinh số liệu kinh tế GIẢ LẬP để chạy thử màn "Chỉ số k
 
 LÝ DO TỒN TẠI: cô chưa gửi dân số và GRDP, nên bảng `economy` rỗng và màn thứ ba
 không có gì để vẽ. Script này dựng một bộ số có hình dạng đúng để kiểm thử đường
-ống đầu-cuối: nạp CSV -> build_indices -> /api/kinh-te-dem -> bảng + hệ số beta.
+ống đầu-cuối: nạp CSV -> build_indices -> /api/demo/economy -> bảng + hệ số beta.
 
 CẢNH BÁO: MỌI CON SỐ NÓ SINH RA ĐỀU KHÔNG THẬT.
 GRDP được dựng từ chính `sol` theo công thức grdp = exp(ALPHA) * sol^BETA * nhiễu,
