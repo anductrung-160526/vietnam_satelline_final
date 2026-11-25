@@ -18,7 +18,7 @@ sol_density = sol / area_km2, dùng ánh sáng chưa hiệu chỉnh. Không dùn
 
 lit_threshold của VIIRS là 1,5 nW/cm²/sr, DMSP là 5 DN. lit_pixels đếm pixel R_i ≥ ngưỡng sáng; lit_sol tổng bức xạ trên các pixel này. lit_area_km2 là tổng diện tích phần giao pixel sáng–tỉnh trong EPSG:6933. lit_area_pct = lit_area_km2 / area_km2 × 100. electrification_ratio_pct = lit_pixels / total_pixels × 100, chỉ là tỷ lệ pixel sáng, không phải tỷ lệ hộ có điện.
 
-Năm lớp bức xạ VIIRS dùng ngưỡng cố định 0,50; 2,00; 10,00; 20,00 nW/cm²/sr, kế thừa Ozturk & Ozturk (2025), Bảng 3, trang 72, và Widmer và cộng sự (2022), Bảng 4.2. Các lớp tên Thấp nhất, Rất thấp, Thấp, Trung bình, Cao; chưa phải mức phát triển kinh tế đã kiểm chứng cho Việt Nam. Bằng ngưỡng thuộc lớp cao hơn; cận trên lớp cuối không hữu hạn. Diện tích dùng phần giao pixel–tỉnh; NoData không thuộc lớp thấp nhất. reference_year=0 vì không khớp theo năm tham chiếu. Bộ P50/P90 là lịch sử, không đổi nhãn các diện tích cũ thành diện tích mới. Ngưỡng pixel sáng 1,50 độc lập: không lấy tổng ba lớp >=2,00 thay cho lit_area_km2.
+Năm lớp sáng dùng các ngưỡng VIIRS cố định của bộ D: 0,5; 1,5; 3,0850000381469727; 17,459999084472656. Bằng ngưỡng thuộc lớp cao hơn; cận trên lớp cuối không hữu hạn. Tổng diện tích lớp dùng phần giao pixel–tỉnh. NoData không phải vùng tối.
 
 ## Biến động theo thời gian
 

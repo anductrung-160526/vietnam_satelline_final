@@ -213,7 +213,6 @@ function doiAnhNen(chiSo){
   if(muc){ demoSelection.year = muc.year; demoSelection.month = muc.month || 0; syncContext(); }
   if(demoReady) refreshDemo();
   veThe(muc);
-  if($('layer-mode').value==='classes'){renderDemoLayer();return;}
   if(!banDo) return;
   if(banDo.getLayer('anh-dem')) banDo.removeLayer('anh-dem');
   if(banDo.getSource('anh-dem')) banDo.removeSource('anh-dem');
@@ -237,12 +236,6 @@ function doiAnhNen(chiSo){
 }
 
 function moThangMau(muc){
-  if($('layer-mode').value==='classes'){
-    if(!demoDetails?.classification_current){dongThangMau();return;}
-    $('thang-mau').style.display='';
-    $('thang-mau').innerHTML='<span>Phân lớp bức xạ · '+demoDetails.classification_config.breaks.map(b=>dinhDang(b,2)).join(' / ')+' nW/cm²/sr</span>';
-    return;
-  }
   const donVi = muc.source === 'DMSP' ? 'DN 0–63' : 'nW/cm²/sr';
   $('thang-mau').style.display = '';
   $('thang-mau').innerHTML =

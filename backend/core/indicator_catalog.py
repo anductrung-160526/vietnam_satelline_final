@@ -352,10 +352,9 @@ CATALOG = {'province_code': {'field': 'province_code',
                  'table': 'Night Data',
                  'group': 'Lớp sáng',
                  'stage': 'Processed',
-                 'definition': 'Mã lớp bức xạ: 0 thấp nhất; 1 rất thấp; 2 thấp; 3 trung bình; 4 '
-                               'cao. NoData=255 không thuộc lớp thấp nhất.',
-                 'formula': 'digitize(R_i, [0,50; 2,00; 10,00; 20,00]); bằng ngưỡng thuộc lớp cao '
-                            'hơn.',
+                 'definition': 'Mã lớp 0 tối/dưới nền; 1 yếu; 2 vừa; 3 mạnh; 4 rất sáng. '
+                               'NoData=255 không phải lớp tối.',
+                 'formula': 'digitize(R_i, [0,5; 1,5; q50; q90]); bằng ngưỡng thuộc lớp cao hơn.',
                  'unit': '0–4',
                  'frequency': 'Năm/tháng'},
  'lower_bound': {'field': 'lower_bound',
@@ -363,9 +362,8 @@ CATALOG = {'province_code': {'field': 'province_code',
                  'table': 'Night Data',
                  'group': 'Lớp sáng',
                  'stage': 'Processed',
-                 'definition': 'Cận dưới bao gồm của lớp theo bộ ngưỡng tài liệu, áp dụng riêng '
-                               'VIIRS.',
-                 'formula': 'l_k thuộc [0; 0,50; 2,00; 10,00; 20,00].',
+                 'definition': 'Cận dưới bao gồm của lớp; 0; 0,5; 1,5; q50; q90.',
+                 'formula': 'l_k thuộc [0; 0,5; 1,5; q50; q90].',
                  'unit': 'nW/cm²/sr',
                  'frequency': 'Theo bộ ngưỡng'},
  'upper_bound': {'field': 'upper_bound',
@@ -373,8 +371,9 @@ CATALOG = {'province_code': {'field': 'province_code',
                  'table': 'Night Data',
                  'group': 'Lớp sáng',
                  'stage': 'Processed',
-                 'definition': 'Cận trên không bao gồm; lớp cao nhất không có cận hữu hạn.',
-                 'formula': 'u_k thuộc [0,50; 2,00; 10,00; 20,00; +∞].',
+                 'definition': 'Cận trên không bao gồm; lớp 4 để trống nghĩa là không có cận hữu '
+                               'hạn.',
+                 'formula': 'u_k thuộc [0,5; 1,5; q50; q90; +∞].',
                  'unit': 'nW/cm²/sr',
                  'frequency': 'Theo bộ ngưỡng'},
  'light_class.area_km2': {'field': 'light_class.area_km2',
@@ -382,9 +381,9 @@ CATALOG = {'province_code': {'field': 'province_code',
                           'table': 'Night Data',
                           'group': 'Lớp sáng',
                           'stage': 'Processed',
-                          'definition': 'Diện tích từng lớp bức xạ tính theo phần giao pixel–tỉnh. '
-                                        'Năm lớp là năm dòng, tổng bằng diện tích có quan sát '
-                                        'trong tỉnh.',
+                          'definition': 'Diện tích từng lớp; v3 fractional dùng phần giao '
+                                        'pixel–tỉnh. Năm lớp là năm dòng, tổng bằng diện tích có '
+                                        'quan sát trong polygon.',
                           'formula': 'A_k = tổng area(pixel_i ∩ tỉnh)/10⁶ × 1[l_k ≤ R_i < u_k].',
                           'unit': 'km²',
                           'frequency': 'Năm/tháng/lớp'},
@@ -403,10 +402,11 @@ CATALOG = {'province_code': {'field': 'province_code',
             'table': 'Night Data',
             'group': 'Lớp sáng',
             'stage': 'Processed',
-            'definition': 'Bốn ngưỡng bức xạ VIIRS kế thừa Ozturk & Ozturk (2025), Bảng 3, và '
-                          'Widmer và cộng sự (2022), Bảng 4.2; không phải ngưỡng các mức phát '
-                          'triển kinh tế đã kiểm chứng cho Việt Nam.',
-            'formula': '[0,50; 2,00; 10,00; 20,00], cố định giữa các năm/tháng.',
+            'definition': 'Bốn ngưỡng dùng chung VIIRS; q50/q90 là phân vị trên pixel R≥1,5 của 63 '
+                          'ảnh năm 2020, theo số pixel, không theo trọng số diện tích.; '
+                          'fix_demo_data giữ snapshot 2020 đã chọn, không tự khẳng định đã fit lại '
+                          'phân vị sau sửa',
+            'formula': '[0,5; 1,5; quantile_0.5; quantile_0.9], nội suy tuyến tính.',
             'unit': 'nW/cm²/sr',
             'frequency': 'Theo bộ ngưỡng'},
  'reference_year': {'field': 'reference_year',
@@ -414,9 +414,9 @@ CATALOG = {'province_code': {'field': 'province_code',
                     'table': 'Night Data',
                     'group': 'Lớp sáng',
                     'stage': 'Processed',
-                    'definition': 'Bộ ngưỡng tài liệu không khớp theo năm tham chiếu: lưu 0 nghĩa '
-                                  'là không áp dụng. Lượt P50/P90 lịch sử có thể lưu 2020.',
-                    'formula': '0 với bộ ngưỡng tài liệu; năm thực tế với lượt legacy.',
+                    'definition': 'Năm dùng chọn ngưỡng; mặc định 2020. Cố định ngưỡng giữa các '
+                                  'năm/tháng; không fit lại theo max từng ảnh.',
+                    'formula': '2020 mặc định; cần đủ 63 tỉnh.',
                     'unit': 'năm',
                     'frequency': 'Theo bộ ngưỡng'},
  'moran_i': {'field': 'moran_i',

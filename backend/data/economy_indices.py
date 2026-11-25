@@ -84,8 +84,7 @@ def image_flags(row, quality):
     if not row['valid_pixels']:
         flags.append('NO_VALID_PIXELS')
     if quality:
-        from backend.core.light_classification import METHOD_VERSION as class_version
-        if fractional and quality.get('method_version') not in ('viirs_brightness_classes_v3_fractional',class_version):
+        if fractional and quality.get('method_version') != 'viirs_brightness_classes_v3_fractional':
             raise ValueError('Cần báo cáo D v3 fractional cùng phương pháp diện tích; không ghép báo cáo v2 cũ.')
         if int(quality['valid_pixels']) != row['valid_pixels']:
             raise ValueError('Số pixel hợp lệ của ảnh tính lại khác báo cáo D; kiểm tra đúng phiên bản ảnh.')
